@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../constants/Colors';
 import { Button } from '../components/ui/Button';
+import { Toast, ToastType } from '../components/ui/Toast';
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
@@ -41,10 +42,22 @@ export default function LoginScreen() {
   const [captchaError, setCaptchaError] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Toast State
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: ToastType }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
+
+  const showToast = (message: string, type: ToastType = 'error') => {
+    setToast({ visible: true, message, type });
+  };
+
   // School Selection State
   const [schools, setSchools] = useState<School[]>([]);
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
   const [isSchoolModalVisible, setIsSchoolModalVisible] = useState(false);
+  const [isDemoModalVisible, setIsDemoModalVisible] = useState(false);
   const [isLoadingSchools, setIsLoadingSchools] = useState(false);
   const [searchSchool, setSearchSchool] = useState('');
   
@@ -61,7 +74,86 @@ export default function LoginScreen() {
   useEffect(() => {
     generateCaptcha();
     fetchSchools();
+    checkExistingSession();
   }, []);
+
+  const checkExistingSession = async () => {
+    try {
+      const token = await SecureStore.getItemAsync('sipena_token');
+      const user = await SecureStore.getItemAsync('sipena_user');
+      if (token && user) {
+        router.replace('/(tabs)');
+      }
+    } catch (err) {
+      console.warn('Check session error:', err);
+    }
+  };
+
+  const handleDemoLogin = async (role: 'guru' | 'siswa' | 'orang tua' | 'admin') => {
+    setIsDemoModalVisible(false);
+    setIsLoadingLogin(true);
+    let demoUser: any = {};
+
+    if (role === 'guru') {
+      demoUser = {
+        id: 101,
+        name: 'Budi Santoso, M.Pd',
+        role: 'guru',
+        nip: '198503152010011002',
+        email: 'budi.santoso@sipena.biz.id',
+        phone: '081234567890',
+        teaching_classes: ['XII MIPA 1', 'XII MIPA 2', 'XI MIPA 3'],
+        subject: 'Fisika & Matematika Lanjut',
+      };
+    } else if (role === 'siswa') {
+      demoUser = {
+        id: 202,
+        name: 'Ahmad Fauzan',
+        role: 'siswa',
+        nis: '2024101',
+        nisn: '0078129384',
+        kelas: 'XII MIPA 1',
+        email: 'fauzan@student.sipena.biz.id',
+      };
+    } else if (role === 'orang tua') {
+      demoUser = {
+        id: 303,
+        name: 'Drs. H. Mulyono',
+        role: 'orang tua',
+        student_name: 'Ahmad Fauzan',
+        student_id: 202,
+        nisn: '0078129384',
+        nis: '2024101',
+        phone: '081298765432',
+        student_class: 'XII MIPA 1',
+      };
+    } else {
+      demoUser = {
+        id: 1,
+        name: 'Dr. H. Subagyo, M.Pd',
+        role: 'admin',
+        nip: '197001011995031001',
+        email: 'admin@sipena.biz.id',
+        title: 'Kepala Sekolah SMA SIPENA',
+      };
+    }
+
+    try {
+      await SecureStore.setItemAsync('sipena_api_url', 'https://apidev.sipena.biz.id');
+      await SecureStore.setItemAsync('sipena_school_name', 'SMA SIPENA');
+      await SecureStore.setItemAsync('sipena_token', 'demo-token-' + role);
+      await SecureStore.setItemAsync('sipena_user', JSON.stringify(demoUser));
+
+      setIsLoadingLogin(false);
+      showToast(`Masuk sebagai ${demoUser.name} (${role.toUpperCase()})`, 'success');
+      setTimeout(() => {
+        router.replace('/(tabs)');
+      }, 350);
+    } catch (e: any) {
+      setIsLoadingLogin(false);
+      showToast('Gagal memproses sesi demo.', 'error');
+    }
+  };
 
   const fetchSchools = async () => {
     setIsLoadingSchools(true);
@@ -82,13 +174,13 @@ export default function LoginScreen() {
     
     // Validasi Sekolah
     if (!selectedSchool) {
-      alert("Pilih sekolah Anda terlebih dahulu!");
+      showToast("Pilih sekolah Anda terlebih dahulu!", "warning");
       return;
     }
 
     // Validasi Form
     if (!username || !password) {
-      alert("Harap isi Username dan " + (loginType === 'civitas' ? "Password" : "PIN"));
+      showToast("Harap isi " + (loginType === 'civitas' ? "Username dan Password" : "NISN/NIS dan PIN Wali"), "warning");
       return;
     }
 
@@ -96,14 +188,15 @@ export default function LoginScreen() {
     if (parseInt(captchaAnswer) !== captchaNum1 + captchaNum2) {
       setCaptchaError(true);
       generateCaptcha();
+      showToast("Hasil penjumlahan Captcha belum tepat.", "error");
       return;
     }
 
     try {
       setIsLoadingLogin(true);
       let loginSuccess = false;
-      let userData = null;
-      let token = null;
+      let userData: any = null;
+      let token: string | null = null;
 
       if (loginType === 'civitas') {
         // Coba login sebagai Guru/Admin dulu
@@ -132,8 +225,30 @@ export default function LoginScreen() {
           }
         }
       } else {
-        // TODO: Endpoint parent login belum tersedia di backend
-        throw new Error("Fitur login Orang Tua sedang dalam pengembangan.");
+        // Login Orang Tua / Wali Siswa
+        try {
+          const resParent = await axios.post(`${selectedSchool.api_url}/api/parent/login`, {
+            username: username.trim(),
+            pin: password.trim()
+          });
+          if (resParent.data && resParent.data.success) {
+            loginSuccess = true;
+            token = resParent.data.token;
+            userData = {
+              ...resParent.data.data,
+              role: 'orang tua',
+              name: resParent.data.data?.parent_name || 'Orang Tua / Wali',
+              student_name: resParent.data.data?.name || resParent.data.name,
+              student_id: resParent.data.data?.id,
+              nisn: resParent.data.data?.nisn,
+              nis: resParent.data.data?.nis,
+            };
+          } else {
+            throw new Error(resParent.data?.message || "PIN Wali atau NISN tidak valid");
+          }
+        } catch (errParent: any) {
+          throw new Error(errParent.response?.data?.message || "NISN/NIS atau PIN Wali salah.");
+        }
       }
 
       if (loginSuccess && userData && token) {
@@ -144,14 +259,17 @@ export default function LoginScreen() {
         await SecureStore.setItemAsync('sipena_user', JSON.stringify(userData));
         
         setIsLoadingLogin(false);
-        router.replace('/(tabs)');
+        showToast("Login berhasil! Mengalihkan...", "success");
+        setTimeout(() => {
+          router.replace('/(tabs)');
+        }, 500);
       } else {
         throw new Error("Respon server tidak valid");
       }
 
     } catch (error: any) {
       setIsLoadingLogin(false);
-      alert(error.message || "Gagal masuk. Periksa kembali data Anda.");
+      showToast(error.message || "Gagal masuk. Periksa kembali data Anda.", "error");
     }
   };
 
@@ -296,9 +414,108 @@ export default function LoginScreen() {
             style={styles.loginButton} 
             disabled={isLoadingLogin}
           />
+
+          {/* Quick Demo Preview Access */}
+          <View style={styles.demoDividerContainer}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>ATAU UJI COBA</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <TouchableOpacity 
+            style={styles.demoTriggerButton} 
+            onPress={() => setIsDemoModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="sparkles" size={18} color={Colors.primary} style={{ marginRight: 8 }} />
+            <Text style={styles.demoTriggerText}>Pratinjau Dashboard Cepat (Demo)</Text>
+          </TouchableOpacity>
         </View>
 
       </ScrollView>
+
+      {/* Demo Role Selection Modal */}
+      <Modal visible={isDemoModalVisible} animationType="fade" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.demoModalContent, { paddingBottom: insets.bottom + 20 }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>⚡ Pilih Mode Demo</Text>
+                <Text style={styles.demoModalSubtitle}>Coba langsung dashboard untuk setiap peran</Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsDemoModalVisible(false)} style={styles.closeButton}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.demoRoleList}>
+              <TouchableOpacity 
+                style={[styles.demoRoleCard, { borderLeftColor: '#2B8767' }]}
+                onPress={() => handleDemoLogin('guru')}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.demoRoleIcon, { backgroundColor: '#E8F5E9' }]}>
+                  <Ionicons name="school-outline" size={24} color="#2B8767" />
+                </View>
+                <View style={styles.demoRoleDetails}>
+                  <Text style={styles.demoRoleTitle}>👨‍🏫 Akun Guru</Text>
+                  <Text style={styles.demoRoleDesc}>Budi Santoso, M.Pd • Fisika & Matematika Lanjut</Text>
+                  <Text style={styles.demoRoleBadge}>Jurnal Mengajar, Nilai, Presensi Kelas</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#9E9E9E" />
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.demoRoleCard, { borderLeftColor: '#3B82F6' }]}
+                onPress={() => handleDemoLogin('siswa')}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.demoRoleIcon, { backgroundColor: '#EFF6FF' }]}>
+                  <Ionicons name="book-outline" size={24} color="#3B82F6" />
+                </View>
+                <View style={styles.demoRoleDetails}>
+                  <Text style={styles.demoRoleTitle}>🎒 Akun Siswa</Text>
+                  <Text style={styles.demoRoleDesc}>Ahmad Fauzan • XII MIPA 1 (NISN: 0078129384)</Text>
+                  <Text style={styles.demoRoleBadge}>Jadwal, E-Learning, Tugas, Voting OSIS</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#9E9E9E" />
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.demoRoleCard, { borderLeftColor: '#FF6B6B' }]}
+                onPress={() => handleDemoLogin('orang tua')}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.demoRoleIcon, { backgroundColor: '#FFF0F0' }]}>
+                  <Ionicons name="heart-outline" size={24} color="#FF6B6B" />
+                </View>
+                <View style={styles.demoRoleDetails}>
+                  <Text style={styles.demoRoleTitle}>👨‍👩‍👧 Akun Orang Tua / Wali</Text>
+                  <Text style={styles.demoRoleDesc}>Drs. H. Mulyono • Wali dari Ahmad Fauzan</Text>
+                  <Text style={styles.demoRoleBadge}>Monitoring Presensi Anak, SPP, Izin Sakit</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#9E9E9E" />
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.demoRoleCard, { borderLeftColor: '#8B5CF6' }]}
+                onPress={() => handleDemoLogin('admin')}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.demoRoleIcon, { backgroundColor: '#F3E8FF' }]}>
+                  <Ionicons name="shield-checkmark-outline" size={24} color="#8B5CF6" />
+                </View>
+                <View style={styles.demoRoleDetails}>
+                  <Text style={styles.demoRoleTitle}>👔 Akun Kepala Sekolah / Admin</Text>
+                  <Text style={styles.demoRoleDesc}>Dr. H. Subagyo, M.Pd • Kepala Sekolah</Text>
+                  <Text style={styles.demoRoleBadge}>Ringkasan Eksekutif, Broadcast, Sarpras</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#9E9E9E" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* School Modal */}
       <Modal visible={isSchoolModalVisible} animationType="slide" transparent={true}>
@@ -359,6 +576,13 @@ export default function LoginScreen() {
           </View>
         </View>
       </Modal>
+
+      <Toast 
+        visible={toast.visible} 
+        message={toast.message} 
+        type={toast.type} 
+        onDismiss={() => setToast(prev => ({ ...prev, visible: false }))} 
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -665,5 +889,91 @@ const styles = StyleSheet.create({
     color: Colors.textLight,
     marginTop: 40,
     fontSize: 15,
-  }
+  },
+  demoDividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 18,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E7EB',
+  },
+  dividerText: {
+    marginHorizontal: 12,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    letterSpacing: 1,
+  },
+  demoTriggerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: '#E6F4EA',
+    borderWidth: 1.5,
+    borderColor: '#A8D5BA',
+  },
+  demoTriggerText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  demoModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  demoModalSubtitle: {
+    fontSize: 12,
+    color: Colors.textLight,
+    marginTop: 3,
+  },
+  demoRoleList: {
+    marginTop: 18,
+    gap: 12,
+  },
+  demoRoleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    borderLeftWidth: 4.5,
+  },
+  demoRoleIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  demoRoleDetails: {
+    flex: 1,
+  },
+  demoRoleTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  demoRoleDesc: {
+    fontSize: 12,
+    color: Colors.textLight,
+    marginTop: 2,
+  },
+  demoRoleBadge: {
+    fontSize: 11,
+    color: Colors.primary,
+    fontWeight: '600',
+    marginTop: 4,
+  },
 });
