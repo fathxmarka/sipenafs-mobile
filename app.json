@@ -17,7 +17,19 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_CONTACTS",
+        "WRITE_CONTACTS",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "output": "static",
@@ -33,7 +45,34 @@
           "imageWidth": 76
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Izinkan SIPENAFS mengakses lokasi Anda untuk validasi kehadiran dan presensi GPS."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Izinkan SIPENAFS mengakses kamera untuk verifikasi presensi wajah dan pemindaian QR.",
+          "microphonePermission": "Izinkan SIPENAFS mengakses mikrofon untuk media audio pembelajaran.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Izinkan SIPENAFS mengakses galeri dan media penyimpanan untuk dokumen dan materi KBM.",
+          "savePhotosPermission": "Izinkan SIPENAFS menyimpan foto dan dokumen presensi ke galeri perangkat."
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Izinkan SIPENAFS mengakses kontak untuk menghubungkan data guru, siswa, dan orang tua."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
