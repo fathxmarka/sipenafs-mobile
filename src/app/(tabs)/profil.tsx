@@ -5,11 +5,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Button } from '../../components/ui/Button';
 
+import * as SecureStore from 'expo-secure-store';
+
 export default function ProfilScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await SecureStore.deleteItemAsync('sipena_token');
+      await SecureStore.deleteItemAsync('sipena_user');
+    } catch (_) {}
     router.replace('/login');
   };
 

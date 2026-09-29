@@ -90,6 +90,13 @@ interface StudentItem {
   gender?: string;
 }
 
+interface SchoolSettings {
+  name?: string;
+  is_face_journal?: boolean;
+  journal_grace_period?: number;
+  auto_unblock_journal?: boolean;
+}
+
 export default function KurikulumScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -115,6 +122,7 @@ export default function KurikulumScreen() {
   const [subjectsList, setSubjectsList] = useState<any[]>([]);
   const [classesList, setClassesList] = useState<any[]>([]);
   const [journalsList, setJournalsList] = useState<JournalItem[]>([]);
+  const [schoolSettings, setSchoolSettings] = useState<SchoolSettings | null>(null);
 
   // Jurnal Date Filter (Default Hari Ini: YYYY-MM-DD)
   const [journalDate, setJournalDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -168,12 +176,13 @@ export default function KurikulumScreen() {
 
       const headers = { Authorization: `Bearer ${tok}` };
 
-      // Load Schedules, Subjects, Classes, and Journals in parallel
-      const [resSchedules, resSubjects, resClasses, resJournals] = await Promise.allSettled([
+      // Load Schedules, Subjects, Classes, Journals, and School Settings in parallel
+      const [resSchedules, resSubjects, resClasses, resJournals, resSchool] = await Promise.allSettled([
         axios.get(`${apiUrl}/api/schedules`, { headers }),
         axios.get(`${apiUrl}/api/subjects?perPage=all`, { headers }),
         axios.get(`${apiUrl}/api/classes?perPage=all`, { headers }),
-        axios.get(`${apiUrl}/api/journals`, { headers })
+        axios.get(`${apiUrl}/api/journals`, { headers }),
+        axios.get(`${apiUrl}/api/school`, { headers })
       ]);
 
       if (resSchedules.status === 'fulfilled' && resSchedules.value.data) {
@@ -188,8 +197,11 @@ export default function KurikulumScreen() {
       if (resJournals.status === 'fulfilled' && resJournals.value.data) {
         setJournalsList(resJournals.value.data.data || []);
       }
+      if (resSchool.status === 'fulfilled' && resSchool.value.data) {
+        setSchoolSettings(resSchool.value.data.data || null);
+      }
     } catch (e: any) {
-      console.warn('Gagal memuat data Kurikulum & Jadwal:', e.message);
+      console.log('Gagal memuat data Kurikulum & Jadwal:', e.message);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -267,7 +279,7 @@ export default function KurikulumScreen() {
       });
       setStudentAbsences(initialAbs);
     } catch (e: any) {
-      console.warn('Gagal memuat siswa kelas:', e.message);
+      console.log('Gagal memuat siswa kelas:', e.message);
     } finally {
       setIsLoadingStudents(false);
     }
@@ -362,6 +374,13 @@ export default function KurikulumScreen() {
     ? Math.round(subjectsList.reduce((acc, s) => acc + (s.kkm || 75), 0) / subjectsList.length) 
     : 75;
   const totalHours = subjectsList.reduce((acc, s) => acc + (s.hours_per_week || 0), 0);
+
+  // Parameter Setting & Role Check
+  const adminRoles = ['admin', 'superadmin', 'operator', 'operator sekolah', 'kepala sekolah', 'wakil kepala sekolah', 'tata usaha'];
+  const isAdmin = adminRoles.includes((userRole || '').toLowerCase());
+  const isFaceJournalEnabled = schoolSettings?.is_face_journal !== false; // default true
+  // Admin bebas face; guru wajib face jika is_face_journal aktif di pengaturan sekolah
+  const isFaceRequired = !isAdmin && isFaceJournalEnabled;
 
   const getDayName = (dayNum?: number) => {
     const d = DAYS.find(x => x.value === dayNum);
@@ -643,6 +662,57 @@ export default function KurikulumScreen() {
                 </TouchableOpacity>
               </View>
 
+              {/* Parameter Setting & Kebijakan Absensi KBM */}
+              <View style={styles.policyParameterCard}>
+                <View style={styles.policyParameterHeader}>
+                  <View style={styles.policyParamTitleRow}>
+                    <MaterialCommunityIcons name="shield-check" size={16} color={isFaceJournalEnabled ? "#059669" : "#64748B"} />
+                    <Text style={styles.policyParamTitle}>Parameter Kebijakan Jurnal KBM</Text>
+                  </View>
+                  <View style={[
+                    styles.policyParamBadge, 
+                    { backgroundColor: isFaceJournalEnabled ? '#ECFDF5' : '#F1F5F9' }
+                  ]}>
+                    <Text style={[
+                      styles.policyParamBadgeText,
+                      { color: isFaceJournalEnabled ? '#059669' : '#64748B' }
+                    ]}>
+                      {isFaceJournalEnabled ? 'Absen Wajah: Aktif' : 'Absen Wajah: Nonaktif'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.policyParamDetailsRow}>
+                  <View style={styles.policyParamItem}>
+                    <Text style={styles.policyParamLabel}>Status Mode Anda</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                      <Feather name={isAdmin ? 'shield' : 'user'} size={12} color={isAdmin ? '#2563EB' : '#475569'} />
+                      <Text style={[styles.policyParamValue, isAdmin && { color: '#2563EB', fontWeight: '800' }]}>
+                        {isAdmin ? 'Admin (Bebas Face)' : (isFaceRequired ? 'Guru (Wajib Face)' : 'Guru (Bebas Face)')}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.policyParamDivider} />
+
+                  <View style={styles.policyParamItem}>
+                    <Text style={styles.policyParamLabel}>Toleransi Waktu</Text>
+                    <Text style={styles.policyParamValue}>
+                      {isAdmin ? 'Bebas Jam' : `${schoolSettings?.journal_grace_period || 15} Menit`}
+                    </Text>
+                  </View>
+
+                  <View style={styles.policyParamDivider} />
+
+                  <View style={styles.policyParamItem}>
+                    <Text style={styles.policyParamLabel}>Buka Blokir</Text>
+                    <Text style={styles.policyParamValue}>
+                      {schoolSettings?.auto_unblock_journal ? 'Otomatis' : 'Kepsek'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
               {/* Status Banner */}
               <View style={styles.journalOverviewCard}>
                 <View style={styles.journalOverviewHeader}>
@@ -913,6 +983,37 @@ export default function KurikulumScreen() {
                 <Text style={styles.formTeacherSubtitle}>
                   Guru: {activeScheduleForJournal?.teacher?.name || '-'} • Tanggal: {journalDate}
                 </Text>
+              </View>
+
+              {/* Parameter & Kebijakan Verifikasi Wajah Banner */}
+              <View style={[
+                styles.facePolicyNoticeBanner,
+                isAdmin ? styles.facePolicyNoticeBannerAdmin : (isFaceJournalEnabled ? styles.facePolicyNoticeBannerActive : styles.facePolicyNoticeBannerDisabled)
+              ]}>
+                <Feather 
+                  name={isAdmin ? "shield" : (isFaceJournalEnabled ? "camera" : "check-circle")} 
+                  size={16} 
+                  color={isAdmin ? "#2563EB" : (isFaceJournalEnabled ? "#D97706" : "#059669")} 
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={[
+                    styles.facePolicyNoticeTitle,
+                    isAdmin ? { color: "#1E40AF" } : (isFaceJournalEnabled ? { color: "#92400E" } : { color: "#065F46" })
+                  ]}>
+                    {isAdmin 
+                      ? 'Mode Administrator (Bypass Verifikasi Wajah)' 
+                      : (isFaceJournalEnabled 
+                          ? 'Kebijakan Sekolah: Absen Wajah KBM Aktif' 
+                          : 'Kebijakan Sekolah: Absen Wajah KBM Dinonaktifkan')}
+                  </Text>
+                  <Text style={styles.facePolicyNoticeDesc}>
+                    {isAdmin
+                      ? 'Sebagai Admin, Anda dapat mengisi atau mengedit jurnal dan absensi siswa secara langsung tanpa verifikasi kamera wajah.'
+                      : (isFaceJournalEnabled
+                          ? 'Sesuai pengaturan sekolah, guru wajib melakukan verifikasi wajah pada saat presensi KBM.'
+                          : 'Sesuai pengaturan sekolah, verifikasi wajah dinonaktifkan sehingga jurnal dapat langsung disimpan.')}
+                  </Text>
+                </View>
               </View>
 
               {/* Input: Topik / Materi Pembelajaran */}
@@ -2290,5 +2391,105 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: '700',
     fontSize: 13,
+  },
+
+  // Policy & Parameter Card
+  policyParameterCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  policyParameterHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  policyParamTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  policyParamTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  policyParamBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  policyParamBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  policyParamDetailsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  policyParamItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  policyParamLabel: {
+    fontSize: 10,
+    color: '#64748B',
+    marginBottom: 2,
+  },
+  policyParamValue: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  policyParamDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#E2E8F0',
+  },
+
+  // Face Policy Modal Banner
+  facePolicyNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 14,
+    borderWidth: 1,
+  },
+  facePolicyNoticeBannerAdmin: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  facePolicyNoticeBannerActive: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  facePolicyNoticeBannerDisabled: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  facePolicyNoticeTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  facePolicyNoticeDesc: {
+    fontSize: 11,
+    color: '#475569',
+    lineHeight: 16,
   },
 });
