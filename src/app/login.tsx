@@ -291,10 +291,14 @@ export default function LoginScreen() {
         {/* Header & Logo */}
         <View style={styles.header}>
           <View style={styles.logoBadge}>
-            <Ionicons name="school" size={40} color={Colors.white} />
+            <Image 
+              source={require('@/assets/images/logo_emblem.png')} 
+              style={styles.logoImage} 
+              resizeMode="contain" 
+            />
           </View>
           <Text style={styles.title}>SIPENAFS</Text>
-          <Text style={styles.subtitle}>Mobile App</Text>
+          <Text style={styles.subtitle}>Smart School Ecosystem</Text>
         </View>
 
         {/* Login Card */}
@@ -602,18 +606,25 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   logoBadge: {
-    width: 80,
-    height: 80,
-    borderRadius: 25,
-    backgroundColor: Colors.primary,
+    width: 88,
+    height: 88,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 15,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 15,
-    elevation: 8,
+    marginBottom: 14,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 10,
+  },
+  logoImage: {
+    width: 64,
+    height: 64,
   },
   title: {
     fontSize: 28,
