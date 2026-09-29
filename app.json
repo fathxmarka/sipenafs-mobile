@@ -73,7 +73,8 @@
         {
           "contactsPermission": "Izinkan SIPENAFS mengakses kontak untuk menghubungkan data guru, siswa, dan orang tua."
         }
-      ]
+      ],
+      "./plugins/withAbiSplits.js"
     ],
     "experiments": {
       "typedRoutes": true,
