@@ -29,30 +29,24 @@ const MENU_ITEMS = [
   { id: '14', title: '14. Administrasi\nSurat', icon: 'document-text-outline', type: 'Ionicons', color: '#6366F1', bg: '#EEF2FF', route: '/modules/surat', allowedRoles: ['admin', 'tata usaha', 'kepala sekolah', 'guru', 'siswa', 'orang tua', 'ortu'] },
 ];
 
-const NOTIFICATIONS = [
-  { id: '1', title: 'Presensi Kiosk Masuk Tercatat (06:42 WIB)', time: 'Baru Saja', type: 'success', icon: 'checkmark-circle-outline' },
-  { id: '2', title: 'Nilai Tugas Fisika Telah Diterbitkan', time: '1 Jam Lalu', type: 'success', icon: 'ribbon-outline' },
-  { id: '3', title: 'Tagihan SPP Bulan Oktober Telah Terbit', time: 'Kemarin', type: 'warning', icon: 'card-outline' },
-];
-
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
   const [userData, setUserData] = useState<any>(null);
   const [schoolName, setSchoolName] = useState<string>('Memuat Sekolah...');
-  const [activeRoleView, setActiveRoleView] = useState<RoleViewType>('auto');
 
   const [stats, setStats] = useState({
-    siswa: 720,
-    guru: 48,
-    kelas: 24,
-    kehadiran: '96%',
+    siswa: 0,
+    guru: 0,
+    kelas: 0,
+    kehadiran: '100%',
   });
 
   const [mgmtStats, setMgmtStats] = useState<any>(null);
   const [assetStats, setAssetStats] = useState<any>(null);
   const [bantuanStats, setBantuanStats] = useState<any>(null);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [noticeModule, setNoticeModule] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -70,6 +64,23 @@ export default function HomeScreen() {
 
       if (storedUser) setUserData(JSON.parse(storedUser));
       if (storedSchool) setSchoolName(storedSchool);
+
+      if (apiUrl && token) {
+        try {
+          const resNotif = await axios.get(`${apiUrl}/api/announcements`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (resNotif.data && resNotif.data.success && Array.isArray(resNotif.data.data)) {
+            setNotifications(resNotif.data.data.slice(0, 3).map((item: any, idx: number) => ({
+              id: item.id?.toString() || idx.toString(),
+              title: item.title || 'Pengumuman Sekolah',
+              time: item.created_at ? new Date(item.created_at).toLocaleDateString('id-ID') : 'Baru saja',
+              type: 'success',
+              icon: 'information-circle-outline',
+            })));
+          }
+        } catch (_) {}
+      }
 
       // 2. Ambil Statistik dari Server berdasarkan Role
       if (apiUrl && token && storedUser) {
@@ -146,18 +157,14 @@ export default function HomeScreen() {
     return <Feather name={name} size={24} color={color} />;
   };
 
-  // Determine effective role
+  // Determine effective role strictly from logged in user profile
   const detectedRole = (userData?.role || 'admin').toLowerCase();
   let effectiveRole: 'admin' | 'guru' | 'siswa' | 'ortu' = 'admin';
 
-  if (activeRoleView === 'auto') {
-    if (detectedRole.includes('guru') || detectedRole.includes('teacher')) effectiveRole = 'guru';
-    else if (detectedRole.includes('siswa') || detectedRole.includes('student')) effectiveRole = 'siswa';
-    else if (detectedRole.includes('orang tua') || detectedRole.includes('parent') || detectedRole.includes('wali')) effectiveRole = 'ortu';
-    else effectiveRole = 'admin';
-  } else {
-    effectiveRole = activeRoleView as any;
-  }
+  if (detectedRole.includes('guru') || detectedRole.includes('teacher')) effectiveRole = 'guru';
+  else if (detectedRole.includes('siswa') || detectedRole.includes('student')) effectiveRole = 'siswa';
+  else if (detectedRole.includes('orang tua') || detectedRole.includes('parent') || detectedRole.includes('wali') || detectedRole.includes('ortu')) effectiveRole = 'ortu';
+  else effectiveRole = 'admin';
 
   // Filter Menu Berdasarkan Role
   const filteredMenus = MENU_ITEMS.filter(item => {
@@ -225,30 +232,6 @@ export default function HomeScreen() {
             <View style={styles.notificationDot} />
           </TouchableOpacity>
         </View>
-      </View>
-
-      {/* Role View Switcher Bar */}
-      <View style={styles.roleViewBar}>
-        <Text style={styles.roleViewLabel}>Pratinjau Dashboard:</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-          {[
-            { id: 'auto', label: `Otomatis (${detectedRole.toUpperCase()})` },
-            { id: 'guru', label: '👨‍🏫 Guru' },
-            { id: 'siswa', label: '🎒 Siswa' },
-            { id: 'ortu', label: '👨‍👩‍👧 Orang Tua' },
-            { id: 'admin', label: '👔 Admin / KS' },
-          ].map(r => (
-            <TouchableOpacity
-              key={r.id}
-              style={[styles.rolePill, activeRoleView === r.id && styles.rolePillActive]}
-              onPress={() => setActiveRoleView(r.id as RoleViewType)}
-            >
-              <Text style={[styles.rolePillText, activeRoleView === r.id && styles.rolePillTextActive]}>
-                {r.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 }}>
@@ -613,7 +596,7 @@ export default function HomeScreen() {
                       <Ionicons name="warning-outline" size={18} color="#F57C00" />
                     </View>
                   </View>
-                  <Text style={styles.execValue}>{mgmtStats?.retirement?.thisYear || 2} <Text style={styles.execSubtitle}>Orang</Text></Text>
+                  <Text style={styles.execValue}>{mgmtStats?.retirement?.thisYear ?? 0} <Text style={styles.execSubtitle}>Orang</Text></Text>
                   <Text style={styles.execSubDetail}>Purna tugas tahun ini</Text>
                 </View>
 
@@ -624,7 +607,7 @@ export default function HomeScreen() {
                       <Ionicons name="swap-horizontal-outline" size={18} color="#1976D2" />
                     </View>
                   </View>
-                  <Text style={styles.execValue}>{mgmtStats?.mutations?.pending || 1} <Text style={styles.execSubtitle}>Pending</Text></Text>
+                  <Text style={styles.execValue}>{mgmtStats?.mutations?.pending ?? 0} <Text style={styles.execSubtitle}>Pending</Text></Text>
                   <Text style={styles.execSubDetail}>Menunggu persetujuan</Text>
                 </View>
 
@@ -635,7 +618,7 @@ export default function HomeScreen() {
                       <Ionicons name="checkmark-done-circle-outline" size={18} color="#00796B" />
                     </View>
                   </View>
-                  <Text style={styles.execValue}>{assetStats?.total_assets !== undefined ? assetStats.total_assets : 142} <Text style={styles.execSubtitle}>Unit</Text></Text>
+                  <Text style={styles.execValue}>{assetStats?.total_assets !== undefined ? assetStats.total_assets : 0} <Text style={styles.execSubtitle}>Unit</Text></Text>
                   <Text style={styles.execSubDetail}>Terinventarisasi sistem</Text>
                 </View>
               </ScrollView>
@@ -690,27 +673,28 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.notificationList}>
-            {NOTIFICATIONS.map(notif => (
-              <View key={notif.id} style={styles.notificationCard}>
-                <View style={styles.notifIconWrapper}>
-                  <Ionicons
-                    name={notif.icon as any}
-                    size={22}
-                    color={
-                      notif.type === 'success'
-                        ? Colors.success
-                        : notif.type === 'warning'
-                        ? Colors.warning
-                        : Colors.danger
-                    }
-                  />
-                </View>
-                <View style={styles.notifContent}>
-                  <Text style={styles.notifTitle}>{notif.title}</Text>
-                  <Text style={styles.notifTime}>{notif.time}</Text>
-                </View>
+            {notifications.length === 0 ? (
+              <View style={[styles.notificationCard, { justifyContent: 'center', alignItems: 'center', paddingVertical: 18 }]}>
+                <Ionicons name="notifications-outline" size={24} color="#94A3B8" />
+                <Text style={{ fontSize: 13, color: '#94A3B8', marginTop: 6 }}>Belum ada pengumuman terbaru</Text>
               </View>
-            ))}
+            ) : (
+              notifications.map((notif: any) => (
+                <View key={notif.id} style={styles.notificationCard}>
+                  <View style={styles.notifIconWrapper}>
+                    <Ionicons
+                      name={notif.icon as any}
+                      size={22}
+                      color="#0B8A7D"
+                    />
+                  </View>
+                  <View style={styles.notifContent}>
+                    <Text style={styles.notifTitle}>{notif.title}</Text>
+                    <Text style={styles.notifTime}>{notif.time}</Text>
+                  </View>
+                </View>
+              ))
+            )}
           </View>
         </View>
       </ScrollView>

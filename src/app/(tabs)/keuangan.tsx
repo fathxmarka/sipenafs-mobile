@@ -38,9 +38,9 @@ export default function KeuanganScreen() {
   const [bills, setBills] = useState<BillSummary[]>([]);
   const [history, setHistory] = useState<PaymentHistory[]>([]);
   const [summary, setSummary] = useState({
-    totalUnpaid: 400000,
-    paidThisMonth: 250000,
-    unpaidCount: 2,
+    totalUnpaid: 0,
+    paidThisMonth: 0,
+    unpaidCount: 0,
   });
 
   useEffect(() => {
@@ -54,36 +54,58 @@ export default function KeuanganScreen() {
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
       if (apiUrl && token) {
+        // Fetch real history
         try {
           const res = await axios.get(`${apiUrl}/api/payments/history`, { headers });
           if (res.data && res.data.success && Array.isArray(res.data.data)) {
             const apiHist = res.data.data.map((h: any) => ({
               id: h.id?.toString() || Math.random().toString(),
               receiptNumber: h.receipt_no || `KWT-${h.id || 101}`,
-              title: h.title || h.fee_name || 'SPP Bulanan',
-              amount: Number(h.amount || h.paid_amount || 250000),
+              title: h.title || h.fee_name || 'Pembayaran Administrasi',
+              amount: Number(h.amount || h.paid_amount || 0),
               date: h.payment_date || h.created_at || 'Hari ini',
-              method: h.payment_method || 'Virtual Account BCA',
+              method: h.payment_method || 'Kasir / Bank',
             }));
             setHistory(apiHist);
+          } else {
+            setHistory([]);
           }
-        } catch (_) {}
+        } catch (_) {
+          setHistory([]);
+        }
+
+        // Fetch real bills if endpoint exists
+        try {
+          const resBills = await axios.get(`${apiUrl}/api/billing/bills`, { headers });
+          if (resBills.data && resBills.data.success && Array.isArray(resBills.data.data)) {
+            const apiBills = resBills.data.data.map((b: any) => ({
+              id: b.id?.toString() || Math.random().toString(),
+              title: b.title || b.name || 'Tagihan',
+              month: b.period || '',
+              amount: Number(b.amount || 0),
+              status: b.status === 'paid' ? 'paid' : 'unpaid',
+              dueDate: b.due_date || '-',
+            }));
+            setBills(apiBills);
+
+            const unpaid = apiBills.filter((b: any) => b.status === 'unpaid');
+            const totalUnpaid = unpaid.reduce((sum: number, b: any) => sum + (b.amount || 0), 0);
+            const paid = apiBills.filter((b: any) => b.status === 'paid');
+            const paidThisMonth = paid.reduce((sum: number, b: any) => sum + (b.amount || 0), 0);
+            setSummary({
+              totalUnpaid,
+              paidThisMonth,
+              unpaidCount: unpaid.length,
+            });
+          } else {
+            setBills([]);
+            setSummary({ totalUnpaid: 0, paidThisMonth: 0, unpaidCount: 0 });
+          }
+        } catch (_) {
+          setBills([]);
+          setSummary({ totalUnpaid: 0, paidThisMonth: 0, unpaidCount: 0 });
+        }
       }
-
-      // Default high-fidelity finance items
-      const defaultBills: BillSummary[] = [
-        { id: 'b1', title: 'SPP Bulan Oktober 2026', month: 'Oktober 2026', amount: 250000, status: 'unpaid', dueDate: '10 Okt 2026' },
-        { id: 'b2', title: 'Biaya Ujian Semester Ganjil', month: 'Semester 1', amount: 150000, status: 'unpaid', dueDate: '25 Okt 2026' },
-        { id: 'b3', title: 'SPP Bulan September 2026', month: 'September 2026', amount: 250000, status: 'paid', dueDate: '10 Sep 2026' },
-      ];
-      setBills(defaultBills);
-
-      const defaultHistory: PaymentHistory[] = [
-        { id: 'h1', receiptNumber: 'KWT-202609-089', title: 'SPP Bulan September 2026', amount: 250000, date: '08 Sep 2026', method: 'Virtual Account BCA' },
-        { id: 'h2', receiptNumber: 'KWT-202608-112', title: 'SPP Bulan Agustus 2026', amount: 250000, date: '06 Agu 2026', method: 'Kasir TU' },
-      ];
-      setHistory(prev => (prev.length > 0 ? prev : defaultHistory));
-
     } catch (e: any) {
       console.warn('Keuangan load error:', e.message);
     } finally {
@@ -129,12 +151,18 @@ export default function KeuanganScreen() {
           <View style={styles.balanceCard}>
             <View style={styles.balanceTopRow}>
               <View>
-                <Text style={styles.balanceLabel}>Total Tagihan Belum Dibayar</Text>
+                <Text style={styles.balanceLabel}>Total Tagihan Administrasi</Text>
                 <Text style={styles.balanceAmount}>{formatCurrency(summary.totalUnpaid)}</Text>
               </View>
-              <View style={styles.warningBadge}>
-                <Ionicons name="alert-circle" size={14} color="#EF4444" />
-                <Text style={styles.warningBadgeText}>{summary.unpaidCount} Tagihan</Text>
+              <View style={[styles.warningBadge, summary.unpaidCount === 0 && { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
+                <Ionicons
+                  name={summary.unpaidCount === 0 ? 'checkmark-circle' : 'alert-circle'}
+                  size={14}
+                  color={summary.unpaidCount === 0 ? '#10B981' : '#EF4444'}
+                />
+                <Text style={[styles.warningBadgeText, summary.unpaidCount === 0 && { color: '#10B981' }]}>
+                  {summary.unpaidCount === 0 ? 'Nihil Tagihan' : `${summary.unpaidCount} Tagihan`}
+                </Text>
               </View>
             </View>
 
@@ -145,13 +173,20 @@ export default function KeuanganScreen() {
                 <Text style={styles.subBalanceLabel}>Terbayar Bulan Ini:</Text>
                 <Text style={styles.subBalanceVal}>{formatCurrency(summary.paidThisMonth)}</Text>
               </View>
-              <TouchableOpacity
-                style={styles.openBillingBtn}
-                onPress={() => router.push('/modules/billing' as any)}
-              >
-                <Text style={styles.openBillingBtnText}>Bayar Tagihan</Text>
-                <Ionicons name="arrow-forward" size={14} color="#FFFFFF" />
-              </TouchableOpacity>
+              {summary.totalUnpaid > 0 ? (
+                <TouchableOpacity
+                  style={styles.openBillingBtn}
+                  onPress={() => router.push('/modules/billing' as any)}
+                >
+                  <Text style={styles.openBillingBtnText}>Bayar Tagihan</Text>
+                  <Ionicons name="arrow-forward" size={14} color="#FFFFFF" />
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.freeSchoolBadge}>
+                  <Ionicons name="shield-checkmark" size={14} color="#0B8A7D" />
+                  <Text style={styles.freeSchoolText}>Bebas Biaya / BOS</Text>
+                </View>
+              )}
             </View>
           </View>
 
@@ -163,60 +198,77 @@ export default function KeuanganScreen() {
             </TouchableOpacity>
           </View>
 
-          {bills.map(item => (
-            <View key={item.id} style={styles.billItemCard}>
-              <View style={styles.billIcon}>
-                <Ionicons
-                  name={item.status === 'paid' ? 'checkmark-circle' : 'receipt-outline'}
-                  size={22}
-                  color={item.status === 'paid' ? '#10B981' : '#EF4444'}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.billItemTitle}>{item.title}</Text>
-                <Text style={styles.billItemDue}>Jatuh tempo: {item.dueDate}</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={styles.billItemAmount}>{formatCurrency(item.amount)}</Text>
-                <View
-                  style={[
-                    styles.billStatusPill,
-                    item.status === 'paid' ? styles.pillPaid : styles.pillUnpaid,
-                  ]}
-                >
-                  <Text
+          {bills.length === 0 ? (
+            <View style={styles.emptyStateCard}>
+              <Ionicons name="checkmark-done-circle" size={44} color="#10B981" />
+              <Text style={styles.emptyStateTitle}>Tidak Ada Tagihan Aktif</Text>
+              <Text style={styles.emptyStateDesc}>
+                Sekolah Negeri dibiayai oleh BOS/BOPD, atau seluruh kewajiban administrasi Anda telah lunas.
+              </Text>
+            </View>
+          ) : (
+            bills.map(item => (
+              <View key={item.id} style={styles.billItemCard}>
+                <View style={styles.billIcon}>
+                  <Ionicons
+                    name={item.status === 'paid' ? 'checkmark-circle' : 'receipt-outline'}
+                    size={22}
+                    color={item.status === 'paid' ? '#10B981' : '#EF4444'}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.billItemTitle}>{item.title}</Text>
+                  <Text style={styles.billItemDue}>Jatuh tempo: {item.dueDate}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={styles.billItemAmount}>{formatCurrency(item.amount)}</Text>
+                  <View
                     style={[
-                      styles.billStatusPillText,
-                      item.status === 'paid' ? styles.pillPaidText : styles.pillUnpaidText,
+                      styles.billStatusPill,
+                      item.status === 'paid' ? styles.pillPaid : styles.pillUnpaid,
                     ]}
                   >
-                    {item.status === 'paid' ? 'LUNAS' : 'BELUM BAYAR'}
-                  </Text>
+                    <Text
+                      style={[
+                        styles.billStatusPillText,
+                        item.status === 'paid' ? styles.pillPaidText : styles.pillUnpaidText,
+                      ]}
+                    >
+                      {item.status === 'paid' ? 'LUNAS' : 'BELUM BAYAR'}
+                    </Text>
+                  </View>
                 </View>
               </View>
-            </View>
-          ))}
+            ))
+          )}
 
           {/* Riwayat Transaksi */}
-          <Text style={[styles.sectionTitle, { marginTop: 16, marginBottom: 12 }]}>
+          <Text style={[styles.sectionTitle, { marginTop: 20, marginBottom: 12 }]}>
             Riwayat Pembayaran Terakhir
           </Text>
 
-          {history.map(item => (
-            <View key={item.id} style={styles.historyCard}>
-              <View style={styles.historyLeft}>
-                <View style={styles.historyIconBox}>
-                  <Ionicons name="card-outline" size={18} color="#10B981" />
-                </View>
-                <View>
-                  <Text style={styles.historyTitle}>{item.title}</Text>
-                  <Text style={styles.historyMeta}>{item.receiptNumber} • {item.method}</Text>
-                  <Text style={styles.historyDate}>{item.date}</Text>
-                </View>
-              </View>
-              <Text style={styles.historyAmount}>{formatCurrency(item.amount)}</Text>
+          {history.length === 0 ? (
+            <View style={styles.emptyHistoryCard}>
+              <Ionicons name="receipt-outline" size={32} color="#94A3B8" />
+              <Text style={styles.emptyHistoryText}>Belum ada riwayat transaksi pembayaran tercatat.</Text>
             </View>
-          ))}
+          ) : (
+            history.map(item => (
+              <View key={item.id} style={styles.historyCard}>
+                <View style={styles.historyLeft}>
+                  <View style={styles.historyIconBox}>
+                    <Ionicons name="card-outline" size={18} color="#10B981" />
+                  </View>
+                  <View>
+                    <Text style={styles.historyTitle}>{item.title}</Text>
+                    <Text style={styles.historyMeta}>{item.receiptNumber} • {item.method}</Text>
+                    <Text style={styles.historyDate}>{item.date}</Text>
+                  </View>
+                </View>
+                <Text style={styles.historyAmount}>{formatCurrency(item.amount)}</Text>
+              </View>
+            ))
+          )}
         </ScrollView>
       )}
     </View>
@@ -462,5 +514,58 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#10B981',
+  },
+  freeSchoolBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E6F4F1',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 5,
+  },
+  freeSchoolText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0B8A7D',
+  },
+  emptyStateCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+  },
+  emptyStateTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  emptyStateDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: 12,
+  },
+  emptyHistoryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+  },
+  emptyHistoryText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 6,
   },
 });

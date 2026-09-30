@@ -28,55 +28,49 @@ export default function NotifikasiScreen() {
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
-  const [notifications, setNotifications] = useState<NotificationItem[]>([
-    {
-      id: '1',
-      type: 'presensi',
-      title: 'Presensi Kiosk Masuk Tercatat',
-      body: 'Tap-in kehadiran jam 06:42 WIB di Gerbang Utama telah tervalidasi otomatis oleh sistem presensi.',
-      time: 'Hari ini, 06:43 WIB',
-      isRead: false,
-    },
-    {
-      id: '2',
-      type: 'nilai',
-      title: 'Nilai Tugas Fisika Telah Terbit',
-      body: 'Dr. Hendra Gunawan, M.Si telah memberikan penilaian Tugas Analisis Gelombang dengan skor 88/100.',
-      time: 'Kemarin, 14:20 WIB',
-      isRead: false,
-    },
-    {
-      id: '3',
-      type: 'spp',
-      title: 'Tagihan SPP Bulan Oktober Diterbitkan',
-      body: 'Kewajiban SPP periode Oktober 2026 sebesar Rp 250.000 telah tersedia. Harap melunasi sebelum jatuh tempo.',
-      time: '28 Sep 2026',
-      isRead: true,
-    },
-    {
-      id: '4',
-      type: 'pengumuman',
-      title: 'Jadwal Penilaian Tengah Semester (PTS)',
-      body: 'Ujian PTS Berbasis Komputer (CBT) akan dilaksanakan serentak mulai tanggal 05 Oktober 2026.',
-      time: '25 Sep 2026',
-      isRead: true,
-    },
-    {
-      id: '5',
-      type: 'pengumuman',
-      title: 'E-Voting Pemilihan OSIS Dimulai',
-      body: 'Bilik suara digital pemilihan ketua & wakil ketua OSIS telah dibuka. Salurkan hak suara Anda sekarang!',
-      time: '23 Sep 2026',
-      isRead: true,
-    },
-  ]);
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  const fetchNotifications = async () => {
+    setIsLoading(true);
+    try {
+      const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
+      const token = await SecureStore.getItemAsync('sipena_token');
+      if (apiUrl && token) {
+        const headers = { Authorization: `Bearer ${token}` };
+        try {
+          const res = await axios.get(`${apiUrl}/api/announcements`, { headers });
+          if (res.data && res.data.success && Array.isArray(res.data.data)) {
+            const items = res.data.data.map((item: any, idx: number) => ({
+              id: item.id?.toString() || idx.toString(),
+              type: 'pengumuman' as const,
+              title: item.title || 'Pengumuman Sekolah',
+              body: item.content || item.description || '',
+              time: item.created_at || 'Hari ini',
+              isRead: false,
+            }));
+            setNotifications(items);
+          } else {
+            setNotifications([]);
+          }
+        } catch (_) {
+          setNotifications([]);
+        }
+      }
+    } catch (e: any) {
+      console.warn('Failed to load notifications:', e.message);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  };
 
   const onRefresh = () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 600);
+    fetchNotifications();
   };
 
   const handleMarkAllRead = () => {
@@ -103,6 +97,7 @@ export default function NotifikasiScreen() {
       case 'nilai':
         return { icon: 'ribbon' as const, color: '#3B82F6', bg: '#EFF6FF' };
       case 'spp':
+      case 'keuangan':
         return { icon: 'card' as const, color: '#EF4444', bg: '#FEF2F2' };
       default:
         return { icon: 'megaphone' as const, color: '#F59E0B', bg: '#FFFBEB' };
