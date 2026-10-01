@@ -112,7 +112,7 @@ export default function ElearningModuleScreen() {
         } catch (_) {}
       }
 
-      // Default high-fidelity LMS data
+      // Default fallback LMS data
       const defaultAssignments: AssignmentItem[] = [
         {
           id: 'a1',
@@ -146,7 +146,6 @@ export default function ElearningModuleScreen() {
           myStatus: 'pending',
         },
       ];
-      setAssignments(defaultAssignments);
 
       const defaultMaterials: MaterialItem[] = [
         {
@@ -180,7 +179,6 @@ export default function ElearningModuleScreen() {
           description: 'Bahan tayang pertemuan ke-5 tentang instrumen Bank Sentral dalam menjaga kestabilan rupiah.',
         },
       ];
-      setMaterials(defaultMaterials);
 
       const defaultExams: ExamItem[] = [
         {
@@ -212,7 +210,81 @@ export default function ElearningModuleScreen() {
           score: 92,
         },
       ];
-      setExams(prev => (prev.length > 0 ? prev : defaultExams));
+
+      if (apiUrl && token) {
+        try {
+          const [resExams, resAssignments, resMaterials] = await Promise.allSettled([
+            axios.get(`${apiUrl}/api/exams`, { headers }),
+            axios.get(`${apiUrl}/api/lms/student/assignments`, { headers }),
+            axios.get(`${apiUrl}/api/lms/student/materials`, { headers }),
+          ]);
+
+          if (resExams.status === 'fulfilled' && resExams.value.data?.data) {
+            const apiExams = resExams.value.data.data.map((e: any) => ({
+              id: e.id?.toString() || Math.random().toString(),
+              title: e.title || 'Ujian Penilaian Harian',
+              subjectName: e.subject?.name || 'Mata Pelajaran',
+              durationMinutes: Number(e.duration || 60),
+              totalQuestions: Number(e.question_count || 30),
+              startTime: e.start_time || 'Hari ini, 08:00 WIB',
+              status: e.status || 'upcoming',
+              score: e.score !== undefined ? Number(e.score) : undefined,
+            }));
+            setExams(apiExams);
+          } else {
+            setExams(prev => (prev.length > 0 ? prev : defaultExams));
+          }
+
+          if (
+            resAssignments.status === 'fulfilled' &&
+            resAssignments.value.data?.data &&
+            resAssignments.value.data.data.length > 0
+          ) {
+            const apiAssignments: AssignmentItem[] = resAssignments.value.data.data.map((a: any) => ({
+              id: a.id?.toString() || 'a_' + Math.random(),
+              title: a.title,
+              subjectName: a.subjectName,
+              teacherName: a.teacherName,
+              deadline: a.deadline,
+              description: a.description,
+              totalSubmissions: a.totalSubmissions || 0,
+              myStatus: a.myStatus || 'pending',
+              score: a.score,
+            }));
+            setAssignments(apiAssignments);
+          } else {
+            setAssignments(defaultAssignments);
+          }
+
+          if (
+            resMaterials.status === 'fulfilled' &&
+            resMaterials.value.data?.data &&
+            resMaterials.value.data.data.length > 0
+          ) {
+            const apiMaterials: MaterialItem[] = resMaterials.value.data.data.map((m: any) => ({
+              id: m.id?.toString() || 'm_' + Math.random(),
+              title: m.title,
+              subjectName: m.subjectName,
+              teacherName: m.teacherName,
+              type: m.type || 'PDF',
+              size: m.size || '1.2 MB',
+              uploadDate: m.uploadDate,
+              description: m.description,
+            }));
+            setMaterials(apiMaterials);
+          } else {
+            setMaterials(defaultMaterials);
+          }
+        } catch (_) {
+          setAssignments(defaultAssignments);
+          setMaterials(defaultMaterials);
+          setExams(prev => (prev.length > 0 ? prev : defaultExams));
+        }
+      } else {
+        setAssignments(defaultAssignments);
+        setMaterials(defaultMaterials);
+        setExams(prev => (prev.length > 0 ? prev : defaultExams));
+      }
 
     } catch (e: any) {
       console.warn('LMS fetch error:', e.message);
@@ -240,7 +312,21 @@ export default function ElearningModuleScreen() {
     }
     setIsSubmitting(true);
     try {
-      await new Promise(r => setTimeout(r, 600));
+      const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
+      const token = await SecureStore.getItemAsync('sipena_token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      if (apiUrl && token && selectedAssignment) {
+        try {
+          await axios.post(
+            `${apiUrl}/api/lms/student/assignments/${selectedAssignment.id}/submit`,
+            { submission_text: submissionText },
+            { headers }
+          );
+        } catch (apiErr: any) {
+          console.warn('Submit API response:', apiErr.message);
+        }
+      }
 
       setAssignments(prev =>
         prev.map(a =>
