@@ -24,12 +24,12 @@
         "ACCESS_COARSE_LOCATION",
         "CAMERA",
         "RECORD_AUDIO",
-        "READ_CONTACTS",
-        "WRITE_CONTACTS",
         "READ_MEDIA_IMAGES",
         "READ_MEDIA_VIDEO",
         "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "WRITE_EXTERNAL_STORAGE",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT"
       ]
     },
     "web": {
@@ -38,6 +38,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-local-authentication",
       [
         "expo-splash-screen",
         {
@@ -66,12 +67,6 @@
         {
           "photosPermission": "Izinkan SIPENAFS mengakses galeri dan media penyimpanan untuk dokumen dan materi KBM.",
           "savePhotosPermission": "Izinkan SIPENAFS menyimpan foto dan dokumen presensi ke galeri perangkat."
-        }
-      ],
-      [
-        "expo-contacts",
-        {
-          "contactsPermission": "Izinkan SIPENAFS mengakses kontak untuk menghubungkan data guru, siswa, dan orang tua."
         }
       ],
       "./plugins/withAbiSplits.js"

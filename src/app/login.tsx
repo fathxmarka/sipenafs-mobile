@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, 
   TextInput, KeyboardAvoidingView, Platform, ScrollView, Modal, 
@@ -12,6 +12,16 @@ import { Button } from '../components/ui/Button';
 import { Toast, ToastType } from '../components/ui/Toast';
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import { 
+  checkBiometricSupport, 
+  getBiometricProfile, 
+  saveBiometricProfile, 
+  clearBiometricProfile, 
+  isRoleAllowedForBiometric, 
+  authenticateUser,
+  BiometricProfile,
+  BiometricAvailability
+} from '../services/biometric';
 
 const { width, height } = Dimensions.get('window');
 
@@ -41,6 +51,9 @@ export default function LoginScreen() {
   const [captchaAnswer, setCaptchaAnswer] = useState('');
   const [captchaError, setCaptchaError] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isCaptchaFocused, setIsCaptchaFocused] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   // Toast State
   const [toast, setToast] = useState<{ visible: boolean; message: string; type: ToastType }>({
@@ -63,6 +76,10 @@ export default function LoginScreen() {
   
   const [isLoadingLogin, setIsLoadingLogin] = useState(false);
 
+  // Biometric State
+  const [biometricProfile, setBiometricProfile] = useState<BiometricProfile | null>(null);
+  const [biometricSupport, setBiometricSupport] = useState<BiometricAvailability | null>(null);
+
   // Initialize Captcha
   const generateCaptcha = () => {
     setCaptchaNum1(Math.floor(Math.random() * 10) + 1);
@@ -75,7 +92,79 @@ export default function LoginScreen() {
     generateCaptcha();
     fetchSchools();
     checkExistingSession();
+    checkBiometrics();
+
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setIsKeyboardVisible(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setIsKeyboardVisible(false)
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
   }, []);
+
+  const checkBiometrics = async () => {
+    try {
+      const support = await checkBiometricSupport();
+      setBiometricSupport(support);
+      if (support.available && support.enrolled) {
+        const profile = await getBiometricProfile();
+        // Strict guard: Admin role is never allowed for biometric login
+        if (profile && isRoleAllowedForBiometric(profile.user?.role)) {
+          setBiometricProfile(profile);
+        } else {
+          setBiometricProfile(null);
+        }
+      }
+    } catch (e) {
+      console.warn('Check biometric error:', e);
+    }
+  };
+
+  const handleBiometricLogin = async () => {
+    if (!biometricProfile) {
+      showToast('Tidak ada data akun tersimpan untuk login sidik jari.', 'warning');
+      return;
+    }
+
+    // Security guard: Admin prohibited
+    if (!isRoleAllowedForBiometric(biometricProfile.user?.role)) {
+      showToast('Akun Administrator wajib masuk menggunakan username dan kata sandi.', 'error');
+      await clearBiometricProfile();
+      setBiometricProfile(null);
+      return;
+    }
+
+    const auth = await authenticateUser(
+      `Verifikasi Sidik Jari untuk ${biometricProfile.user?.name || 'SIPENAFS'}`
+    );
+
+    if (auth.success) {
+      try {
+        setIsLoadingLogin(true);
+        await SecureStore.setItemAsync('sipena_api_url', biometricProfile.school.api_url);
+        await SecureStore.setItemAsync('sipena_school_name', biometricProfile.school.name);
+        await SecureStore.setItemAsync('sipena_token', biometricProfile.token);
+        await SecureStore.setItemAsync('sipena_user', JSON.stringify(biometricProfile.user));
+
+        showToast(`Sidik jari terverifikasi! Selamat datang, ${biometricProfile.user?.name || ''}`, 'success');
+        setTimeout(() => {
+          router.replace('/(tabs)');
+        }, 350);
+      } catch (e) {
+        setIsLoadingLogin(false);
+        showToast('Gagal memproses sesi login biometrik.', 'error');
+      }
+    } else if (auth.error && auth.error !== 'Autentikasi dibatalkan') {
+      showToast(auth.error, 'error');
+    }
+  };
 
   const checkExistingSession = async () => {
     try {
@@ -143,6 +232,13 @@ export default function LoginScreen() {
       await SecureStore.setItemAsync('sipena_school_name', 'SMA SIPENA');
       await SecureStore.setItemAsync('sipena_token', 'demo-token-' + role);
       await SecureStore.setItemAsync('sipena_user', JSON.stringify(demoUser));
+
+      // Biometric policy: Strictly prohibited for Admin
+      if (isRoleAllowedForBiometric(role)) {
+        await saveBiometricProfile(demoUser, { name: 'SMA SIPENA', api_url: 'https://apidev.sipena.biz.id' }, 'demo-token-' + role);
+      } else {
+        await clearBiometricProfile();
+      }
 
       setIsLoadingLogin(false);
       showToast(`Masuk sebagai ${demoUser.name} (${role.toUpperCase()})`, 'success');
@@ -257,6 +353,16 @@ export default function LoginScreen() {
         await SecureStore.setItemAsync('sipena_school_name', selectedSchool.name);
         await SecureStore.setItemAsync('sipena_token', token);
         await SecureStore.setItemAsync('sipena_user', JSON.stringify(userData));
+
+        // Kebijakan Biometrik: HANYA untuk non-admin (Guru, Siswa, Orang Tua)
+        if (isRoleAllowedForBiometric(userData.role)) {
+          if (biometricSupport?.available && biometricSupport?.enrolled) {
+            await saveBiometricProfile(userData, selectedSchool, token);
+          }
+        } else {
+          // Akun Administrator WAJIB login manual dan tidak boleh disimpan biometriknya
+          await clearBiometricProfile();
+        }
         
         setIsLoadingLogin(false);
         showToast("Login berhasil! Mengalihkan...", "success");
@@ -284,21 +390,32 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView 
-        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}
+        ref={scrollViewRef}
+        contentContainerStyle={[
+          styles.scrollContent, 
+          { 
+            paddingTop: insets.top + (isKeyboardVisible ? 10 : 20), 
+            paddingBottom: isKeyboardVisible ? 260 : insets.bottom + 20,
+            justifyContent: isKeyboardVisible ? 'flex-start' : 'center',
+          }
+        ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         {/* Header & Logo */}
-        <View style={styles.header}>
-          <View style={styles.logoBadge}>
-            <Image 
-              source={require('@/assets/images/logo_emblem.png')} 
-              style={styles.logoImage} 
-              resizeMode="contain" 
-            />
-          </View>
-          <Text style={styles.title}>SIPENAFS</Text>
-          <Text style={styles.subtitle}>Smart School Ecosystem</Text>
+        <View style={[styles.header, isKeyboardVisible && styles.headerCompact]}>
+          {!isKeyboardVisible && (
+            <View style={styles.logoBadge}>
+              <Image 
+                source={require('@/assets/images/logo_emblem.png')} 
+                style={styles.logoImage} 
+                resizeMode="contain" 
+              />
+            </View>
+          )}
+          <Text style={[styles.title, isKeyboardVisible && styles.titleCompact]}>SIPENAFS</Text>
+          {!isKeyboardVisible && <Text style={styles.subtitle}>Smart School Ecosystem</Text>}
         </View>
 
         {/* Login Card */}
@@ -379,34 +496,61 @@ export default function LoginScreen() {
                 secureTextEntry={!showPassword}
                 keyboardType={loginType === 'parent' ? 'numeric' : 'default'}
                 maxLength={loginType === 'parent' ? 6 : undefined}
+                onFocus={() => {
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollTo({ y: 140, animated: true });
+                  }, 200);
+                }}
               />
               <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 4 }}>
                 <Ionicons 
-                  name={showPassword ? "eye-off-outline" : "eye-outline"} 
+                  name={showPassword ? "eye-outline" : "eye-off-outline"} 
                   size={20} 
                   color={Colors.textLight} 
                 />
               </TouchableOpacity>
             </View>
+            {username.trim().toLowerCase().includes('admin') && (
+              <View style={styles.adminSecurityNotice}>
+                <Ionicons name="shield-outline" size={15} color="#D97706" />
+                <Text style={styles.adminSecurityNoticeText}>
+                  Akun Administrator wajib verifikasi manual (login sidik jari dinonaktifkan).
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Captcha */}
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Verifikasi Keamanan</Text>
+            <View style={styles.labelRow}>
+              <Text style={[styles.label, { marginBottom: 0, marginLeft: 0 }]}>Verifikasi Keamanan</Text>
+              <TouchableOpacity onPress={generateCaptcha} style={styles.reloadCaptchaBtn} activeOpacity={0.7}>
+                <Ionicons name="refresh" size={13} color={Colors.primary} />
+                <Text style={styles.reloadCaptchaText}>Ganti Soal</Text>
+              </TouchableOpacity>
+            </View>
             <View style={styles.captchaRow}>
               <View style={styles.captchaBox}>
                 <Text style={styles.captchaText}>{captchaNum1} + {captchaNum2} = ?</Text>
               </View>
               <TextInput 
-                style={[styles.input, styles.captchaInput, captchaError && styles.inputError]}
-                placeholder="Hasil"
+                style={[styles.captchaInput, captchaError && styles.inputError]}
+                placeholder={isCaptchaFocused ? "" : "Hasil"}
                 placeholderTextColor={Colors.border}
                 keyboardType="numeric"
                 value={captchaAnswer}
+                underlineColorAndroid="transparent"
                 onChangeText={(text) => {
                   setCaptchaAnswer(text);
                   setCaptchaError(false);
                 }}
+                onFocus={() => {
+                  setIsCaptchaFocused(true);
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                  }, 200);
+                }}
+                onBlur={() => setIsCaptchaFocused(false)}
               />
             </View>
             {captchaError && <Text style={styles.errorText}>Jawaban matematika salah!</Text>}
@@ -419,107 +563,48 @@ export default function LoginScreen() {
             disabled={isLoadingLogin}
           />
 
-          {/* Quick Demo Preview Access */}
-          <View style={styles.demoDividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>ATAU UJI COBA</Text>
-            <View style={styles.dividerLine} />
-          </View>
+          {/* Quick Biometric Fingerprint Login (Non-Admin Only) */}
+          {biometricProfile && isRoleAllowedForBiometric(biometricProfile.user?.role) && (
+            <View style={styles.biometricSection}>
+              <View style={styles.biometricDividerContainer}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>MASUK CEPAT BIOMETRIK</Text>
+                <View style={styles.dividerLine} />
+              </View>
 
-          <TouchableOpacity 
-            style={styles.demoTriggerButton} 
-            onPress={() => setIsDemoModalVisible(true)}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="sparkles" size={18} color={Colors.primary} style={{ marginRight: 8 }} />
-            <Text style={styles.demoTriggerText}>Pratinjau Dashboard Cepat (Demo)</Text>
-          </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.biometricCardButton} 
+                onPress={handleBiometricLogin}
+                disabled={isLoadingLogin}
+                activeOpacity={0.82}
+              >
+                <View style={styles.biometricIconCircle}>
+                  <Ionicons name="finger-print" size={26} color="#0B8A7D" />
+                </View>
+                <View style={styles.biometricCardInfo}>
+                  <View style={styles.biometricCardHeader}>
+                    <Text style={styles.biometricCardTitle}>Masuk dengan Sidik Jari</Text>
+                    <View style={styles.biometricRolePill}>
+                      <Text style={styles.biometricRolePillText}>
+                        {biometricProfile.user?.role?.toUpperCase() || 'CIVITAS'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.biometricCardUser} numberOfLines={1}>
+                    {biometricProfile.user?.name || biometricProfile.user?.username} • {biometricProfile.school?.name || 'Sekolah'}
+                  </Text>
+                </View>
+                <Ionicons name="scan-outline" size={20} color="#0B8A7D" />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Quick Demo Preview Access (Hidden) */}
         </View>
 
       </ScrollView>
 
-      {/* Demo Role Selection Modal */}
-      <Modal visible={isDemoModalVisible} animationType="fade" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.demoModalContent, { paddingBottom: insets.bottom + 20 }]}>
-            <View style={styles.modalHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalTitle}>⚡ Pilih Mode Demo</Text>
-                <Text style={styles.demoModalSubtitle}>Coba langsung dashboard untuk setiap peran</Text>
-              </View>
-              <TouchableOpacity onPress={() => setIsDemoModalVisible(false)} style={styles.closeButton}>
-                <Ionicons name="close" size={24} color={Colors.text} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.demoRoleList}>
-              <TouchableOpacity 
-                style={[styles.demoRoleCard, { borderLeftColor: '#2B8767' }]}
-                onPress={() => handleDemoLogin('guru')}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.demoRoleIcon, { backgroundColor: '#E8F5E9' }]}>
-                  <Ionicons name="school-outline" size={24} color="#2B8767" />
-                </View>
-                <View style={styles.demoRoleDetails}>
-                  <Text style={styles.demoRoleTitle}>👨‍🏫 Akun Guru</Text>
-                  <Text style={styles.demoRoleDesc}>Budi Santoso, M.Pd • Fisika & Matematika Lanjut</Text>
-                  <Text style={styles.demoRoleBadge}>Jurnal Mengajar, Nilai, Presensi Kelas</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#9E9E9E" />
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[styles.demoRoleCard, { borderLeftColor: '#3B82F6' }]}
-                onPress={() => handleDemoLogin('siswa')}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.demoRoleIcon, { backgroundColor: '#EFF6FF' }]}>
-                  <Ionicons name="book-outline" size={24} color="#3B82F6" />
-                </View>
-                <View style={styles.demoRoleDetails}>
-                  <Text style={styles.demoRoleTitle}>🎒 Akun Siswa</Text>
-                  <Text style={styles.demoRoleDesc}>Ahmad Fauzan • XII MIPA 1 (NISN: 0078129384)</Text>
-                  <Text style={styles.demoRoleBadge}>Jadwal, E-Learning, Tugas, Voting OSIS</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#9E9E9E" />
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[styles.demoRoleCard, { borderLeftColor: '#FF6B6B' }]}
-                onPress={() => handleDemoLogin('orang tua')}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.demoRoleIcon, { backgroundColor: '#FFF0F0' }]}>
-                  <Ionicons name="heart-outline" size={24} color="#FF6B6B" />
-                </View>
-                <View style={styles.demoRoleDetails}>
-                  <Text style={styles.demoRoleTitle}>👨‍👩‍👧 Akun Orang Tua / Wali</Text>
-                  <Text style={styles.demoRoleDesc}>Drs. H. Mulyono • Wali dari Ahmad Fauzan</Text>
-                  <Text style={styles.demoRoleBadge}>Monitoring Presensi Anak, SPP, Izin Sakit</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#9E9E9E" />
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[styles.demoRoleCard, { borderLeftColor: '#8B5CF6' }]}
-                onPress={() => handleDemoLogin('admin')}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.demoRoleIcon, { backgroundColor: '#F3E8FF' }]}>
-                  <Ionicons name="shield-checkmark-outline" size={24} color="#8B5CF6" />
-                </View>
-                <View style={styles.demoRoleDetails}>
-                  <Text style={styles.demoRoleTitle}>👔 Akun Kepala Sekolah / Admin</Text>
-                  <Text style={styles.demoRoleDesc}>Dr. H. Subagyo, M.Pd • Kepala Sekolah</Text>
-                  <Text style={styles.demoRoleBadge}>Ringkasan Eksekutif, Broadcast, Sarpras</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#9E9E9E" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      {/* Demo Role Selection Modal (Hidden) */}
 
       {/* School Modal */}
       <Modal visible={isSchoolModalVisible} animationType="slide" transparent={true}>
@@ -605,6 +690,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 30,
   },
+  headerCompact: {
+    marginBottom: 12,
+    marginTop: 0,
+  },
   logoBadge: {
     width: 88,
     height: 88,
@@ -631,6 +720,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: Colors.text,
     letterSpacing: 0.5,
+  },
+  titleCompact: {
+    fontSize: 22,
+    fontWeight: '700',
   },
   subtitle: {
     fontSize: 14,
@@ -783,6 +876,27 @@ const styles = StyleSheet.create({
     color: '#1967D2',
     letterSpacing: 2,
   },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  reloadCaptchaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#E8F5E9',
+  },
+  reloadCaptchaText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
   captchaInput: {
     flex: 1,
     backgroundColor: '#F8F9FA',
@@ -790,10 +904,15 @@ const styles = StyleSheet.create({
     borderColor: '#E9ECEF',
     borderRadius: 12,
     height: 52,
-    paddingHorizontal: 16,
+    padding: 0,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
     textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
     fontSize: 18,
     fontWeight: '600',
+    color: Colors.text,
   },
   inputError: {
     borderColor: '#FF4757',
@@ -986,5 +1105,115 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontWeight: '600',
     marginTop: 4,
+  },
+  noBiometricBadge: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 0.5,
+    borderColor: '#FECACA',
+  },
+  noBiometricBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#DC2626',
+    letterSpacing: 0.3,
+  },
+  adminSecurityNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFBEB',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    gap: 6,
+  },
+  adminSecurityNoticeText: {
+    fontSize: 11,
+    color: '#B45309',
+    fontWeight: '500',
+    flex: 1,
+  },
+  biometricSection: {
+    marginTop: 4,
+  },
+  biometricDividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 14,
+  },
+  biometricCardButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderColor: '#A7F3D0',
+    borderRadius: 14,
+    padding: 12,
+    shadowColor: '#0B8A7D',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  biometricIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#DCFCE7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  biometricCardInfo: {
+    flex: 1,
+  },
+  biometricCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  biometricCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#065F46',
+  },
+  biometricRolePill: {
+    backgroundColor: '#D1FAE5',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  biometricRolePillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#047857',
+    letterSpacing: 0.5,
+  },
+  biometricCardUser: {
+    fontSize: 12,
+    color: '#047857',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  adminNoBioTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 5,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  adminNoBioText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
   },
 });

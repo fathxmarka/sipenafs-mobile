@@ -76,6 +76,7 @@ export default function BkModuleScreen() {
   const [violations, setViolations] = useState<ViolationItem[]>([]);
   const [achievements, setAchievements] = useState<AchievementItem[]>([]);
   const [counselingLogs, setCounselingLogs] = useState<CounselingLog[]>([]);
+  const [isAccessDenied, setIsAccessDenied] = useState(false);
   const [stats, setStats] = useState({
     totalViolations: 0,
     totalAchievements: 0,
@@ -88,6 +89,17 @@ export default function BkModuleScreen() {
 
   const fetchBkData = async () => {
     try {
+      const storedUser = await SecureStore.getItemAsync('sipena_user');
+      if (storedUser) {
+        const u = JSON.parse(storedUser);
+        const r = (u.role || '').toLowerCase();
+        if (r.includes('siswa') || r.includes('student') || r.includes('orang tua') || r.includes('parent') || r.includes('wali') || r.includes('ortu')) {
+          setIsAccessDenied(true);
+          setIsLoading(false);
+          return;
+        }
+      }
+
       const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
       const token = await SecureStore.getItemAsync('sipena_token');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
@@ -273,8 +285,28 @@ export default function BkModuleScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* KPI Stats */}
-      <View style={styles.kpiContainer}>
+      {isAccessDenied ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+          <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#FEE2E2', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+            <Ionicons name="lock-closed" size={40} color="#DC2626" />
+          </View>
+          <Text style={{ fontSize: 18, fontWeight: '800', color: '#1E293B', textAlign: 'center' }}>
+            Akses Dibatasi
+          </Text>
+          <Text style={{ fontSize: 14, color: '#64748B', textAlign: 'center', marginTop: 8, lineHeight: 20 }}>
+            Modul Bimbingan & Konseling (BK) bersifat rahasia dan hanya dapat diakses oleh Guru BK, Wali Kelas, dan Administrator Sekolah.
+          </Text>
+          <TouchableOpacity
+            style={{ marginTop: 24, backgroundColor: Colors.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
+            onPress={() => router.back()}
+          >
+            <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 14 }}>Kembali ke Beranda</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <>
+          {/* KPI Stats */}
+          <View style={styles.kpiContainer}>
         <View style={[styles.kpiCard, { backgroundColor: '#FEFCE8' }]}>
           <View style={styles.kpiIconWrapper}>
             <Ionicons name="alert-circle" size={18} color="#CA8A04" />
@@ -541,6 +573,8 @@ export default function BkModuleScreen() {
           </View>
         </View>
       </Modal>
+      </>
+      )}
 
       {/* Toast */}
       <Toast

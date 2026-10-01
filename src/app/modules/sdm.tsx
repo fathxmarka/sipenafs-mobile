@@ -267,7 +267,7 @@ export default function SdmScreen() {
           <Feather name="chevron-left" size={26} color={Colors.secondary} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>3. SDM & Guru</Text>
+          <Text style={styles.headerTitle}>SDM & Guru</Text>
           <View style={styles.headerBadge}>
             <View style={[styles.dotOnline, { backgroundColor: '#3B82F6' }]} />
             <Text style={styles.headerBadgeText}>Data PTK, Beban Kerja & Pensiun</Text>

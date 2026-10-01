@@ -4,7 +4,7 @@ import {
   ActivityIndicator, RefreshControl, TextInput, Platform, Modal, Image, FlatList
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '../../constants/Colors';
 import * as SecureStore from 'expo-secure-store';
@@ -100,12 +100,17 @@ interface SchoolSettings {
 export default function KurikulumScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string }>();
 
   // Determine current day of week (1 = Monday ... 6 = Saturday)
   const currentDayIndex = new Date().getDay(); // 0 is Sunday, 1 is Monday
   const defaultDay = currentDayIndex === 0 ? 1 : Math.min(6, currentDayIndex);
 
-  const [activeTab, setActiveTab] = useState<TabType>('schedule');
+  const initialTab: TabType = 
+    params.tab === 'journal' || params.tab === 'jurnal' ? 'journal' :
+    params.tab === 'subjects' || params.tab === 'mapel' ? 'subjects' : 'schedule';
+
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [selectedDay, setSelectedDay] = useState<number>(defaultDay);
   const [selectedClassId, setSelectedClassId] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -116,6 +121,10 @@ export default function KurikulumScreen() {
   const [token, setToken] = useState('');
   const [userRole, setUserRole] = useState('');
   const [teacherId, setTeacherId] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [studentClassId, setStudentClassId] = useState<string | null>(null);
+  const [studentClassName, setStudentClassName] = useState<string | null>(null);
+  const [teacherScheduleFilter, setTeacherScheduleFilter] = useState<'my' | 'all'>('my');
 
   // Data states
   const [schedulesList, setSchedulesList] = useState<ScheduleItem[]>([]);
@@ -168,13 +177,68 @@ export default function KurikulumScreen() {
       setApiBaseUrl(apiUrl);
       setToken(tok);
 
-      if (storedUser) {
-        const u = JSON.parse(storedUser);
-        setUserRole(u.role || '');
-        if (u.teacher_id) setTeacherId(String(u.teacher_id));
-      }
+      let sClassId: string | null = null;
+      let sClassName: string | null = null;
 
       const headers = { Authorization: `Bearer ${tok}` };
+
+      if (storedUser) {
+        const u = JSON.parse(storedUser);
+        setCurrentUser(u);
+        const r = (u.role || '').toLowerCase();
+        setUserRole(r);
+        if (u.teacher_id) setTeacherId(String(u.teacher_id));
+        if (u.class_id) sClassId = String(u.class_id);
+        if (u.class_name) sClassName = u.class_name;
+
+        // If student and class_id is missing from storedUser, fetch from /api/students/me
+        if ((r.includes('siswa') || r.includes('student')) && (!sClassId || !sClassName)) {
+          try {
+            const resMe = await axios.get(`${apiUrl}/api/students/me`, { headers });
+            if (resMe.data && resMe.data.enrollments && resMe.data.enrollments.length > 0) {
+              const en = resMe.data.enrollments[0];
+              sClassId = String(en.class_id);
+              sClassName = en.class?.name || null;
+            }
+          } catch (err) {
+            console.log('Error fetching student class in kurikulum:', err);
+          }
+        }
+
+        // If parent and class_id is missing, fetch from /api/parent/overview
+        if ((r.includes('parent') || r.includes('orang tua') || r.includes('ortu') || r.includes('wali')) && (!sClassId || !sClassName)) {
+          try {
+            const resOverview = await axios.get(`${apiUrl}/api/parent/overview`, { headers });
+            if (resOverview.data?.data) {
+              const ov = resOverview.data.data;
+              if (ov.class_id) sClassId = String(ov.class_id);
+              if (ov.class_name) sClassName = ov.class_name;
+              if (!sClassId && ov.enrollments && ov.enrollments.length > 0) {
+                sClassId = String(ov.enrollments[0].class_id);
+                sClassName = ov.enrollments[0].class?.name || null;
+              }
+            }
+          } catch (err) {
+            console.log('Error fetching parent student class in kurikulum:', err);
+          }
+        }
+
+        // If teacher and teacher_id is missing, fetch from /api/teachers/me
+        if ((r.includes('guru') || r.includes('teacher')) && !u.teacher_id) {
+          try {
+            const resTMe = await axios.get(`${apiUrl}/api/teachers/me`, { headers });
+            if (resTMe.data?.data?.id) {
+              setTeacherId(String(resTMe.data.data.id));
+            }
+          } catch (_) {}
+        }
+      }
+
+      setStudentClassId(sClassId);
+      setStudentClassName(sClassName);
+      if (sClassId) {
+        setSelectedClassId(sClassId);
+      }
 
       // Load Schedules, Subjects, Classes, Journals, and School Settings in parallel
       const [resSchedules, resSubjects, resClasses, resJournals, resSchool] = await Promise.allSettled([
@@ -192,7 +256,22 @@ export default function KurikulumScreen() {
         setSubjectsList(resSubjects.value.data.data || []);
       }
       if (resClasses.status === 'fulfilled' && resClasses.value.data) {
-        setClassesList(resClasses.value.data.data || []);
+        const clsArr = resClasses.value.data.data || [];
+        setClassesList(clsArr);
+        if (!sClassId && sClassName) {
+          const matched = clsArr.find((c: any) => (c.name || '').toLowerCase() === sClassName?.toLowerCase());
+          if (matched) {
+            sClassId = String(matched.id);
+            setStudentClassId(sClassId);
+            setSelectedClassId(sClassId);
+          }
+        } else if (sClassId && !sClassName) {
+          const matched = clsArr.find((c: any) => String(c.id) === String(sClassId));
+          if (matched) {
+            sClassName = matched.name;
+            setStudentClassName(sClassName);
+          }
+        }
       }
       if (resJournals.status === 'fulfilled' && resJournals.value.data) {
         setJournalsList(resJournals.value.data.data || []);
@@ -349,10 +428,38 @@ export default function KurikulumScreen() {
     }
   };
 
+  // Parameter Setting & Role Check
+  const normalizedRole = (userRole || currentUser?.role || '').toLowerCase();
+  const isStudent = normalizedRole.includes('siswa') || normalizedRole.includes('student');
+  const isParent = normalizedRole.includes('orang tua') || normalizedRole.includes('parent') || normalizedRole.includes('wali') || normalizedRole.includes('ortu');
+  const isTeacher = normalizedRole.includes('guru') || normalizedRole.includes('teacher');
+  const adminRoles = ['admin', 'superadmin', 'operator', 'operator sekolah', 'kepala sekolah', 'wakil kepala sekolah', 'tata usaha'];
+  const isAdmin = !isStudent && !isParent && (adminRoles.includes(normalizedRole) || (!isTeacher && normalizedRole.includes('admin')));
+  const isFaceJournalEnabled = schoolSettings?.is_face_journal !== false; // default true
+  // Admin bebas face; guru wajib face jika is_face_journal aktif di pengaturan sekolah
+  const isFaceRequired = !isAdmin && isFaceJournalEnabled;
+
   // Filter schedules by day, class, and search query (Tab 1)
   const filteredSchedules = schedulesList.filter(s => {
     const dayMatch = s.day_of_week === selectedDay;
-    const classMatch = selectedClassId === 'all' || String(s.class_id || s.class?.id) === selectedClassId;
+    
+    // Role-based schedule filter
+    let classMatch = true;
+    if (isStudent || isParent) {
+      if (studentClassId) {
+        classMatch = String(s.class_id || s.class?.id) === String(studentClassId);
+      } else if (studentClassName) {
+        classMatch = (s.class?.name || '').toLowerCase() === studentClassName.toLowerCase();
+      }
+    } else if (isTeacher && teacherScheduleFilter === 'my') {
+      const isMyClass = teacherId ? String(s.teacher_id) === String(teacherId) : true;
+      classMatch = isMyClass;
+      if (selectedClassId !== 'all') {
+        classMatch = classMatch && String(s.class_id || s.class?.id) === selectedClassId;
+      }
+    } else {
+      classMatch = selectedClassId === 'all' || String(s.class_id || s.class?.id) === selectedClassId;
+    }
     
     const q = searchQuery.toLowerCase().trim();
     const subMatch = (s.subject?.name || '').toLowerCase().includes(q);
@@ -374,13 +481,6 @@ export default function KurikulumScreen() {
     ? Math.round(subjectsList.reduce((acc, s) => acc + (s.kkm || 75), 0) / subjectsList.length) 
     : 75;
   const totalHours = subjectsList.reduce((acc, s) => acc + (s.hours_per_week || 0), 0);
-
-  // Parameter Setting & Role Check
-  const adminRoles = ['admin', 'superadmin', 'operator', 'operator sekolah', 'kepala sekolah', 'wakil kepala sekolah', 'tata usaha'];
-  const isAdmin = adminRoles.includes((userRole || '').toLowerCase());
-  const isFaceJournalEnabled = schoolSettings?.is_face_journal !== false; // default true
-  // Admin bebas face; guru wajib face jika is_face_journal aktif di pengaturan sekolah
-  const isFaceRequired = !isAdmin && isFaceJournalEnabled;
 
   const getDayName = (dayNum?: number) => {
     const d = DAYS.find(x => x.value === dayNum);
@@ -454,15 +554,17 @@ export default function KurikulumScreen() {
             </View>
           </View>
 
-          {/* Direct Isi Jurnal Action Button */}
-          <TouchableOpacity 
-            style={styles.cardJournalActionBtn}
-            onPress={() => handleOpenJournalForm(item)}
-            activeOpacity={0.8}
-          >
-            <Feather name="edit-3" size={14} color="#D97706" />
-            <Text style={styles.cardJournalActionText}>Jurnal</Text>
-          </TouchableOpacity>
+          {/* Direct Isi Jurnal Action Button (Only for Teachers and Admins) */}
+          {(isTeacher || isAdmin) && (
+            <TouchableOpacity 
+              style={styles.cardJournalActionBtn}
+              onPress={() => handleOpenJournalForm(item)}
+              activeOpacity={0.8}
+            >
+              <Feather name="edit-3" size={14} color="#D97706" />
+              <Text style={styles.cardJournalActionText}>Jurnal</Text>
+            </TouchableOpacity>
+          )}
         </TouchableOpacity>
       </View>
     );
@@ -476,10 +578,18 @@ export default function KurikulumScreen() {
           <Feather name="chevron-left" size={26} color={Colors.secondary} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>4. Kurikulum & Jadwal</Text>
+          <Text style={styles.headerTitle}>Kurikulum & Jadwal</Text>
           <View style={styles.headerBadge}>
             <View style={[styles.dotOnline, { backgroundColor: '#F59E0B' }]} />
-            <Text style={styles.headerBadgeText}>Jadwal, KBM & Jurnal Mengajar</Text>
+            <Text style={styles.headerBadgeText}>
+              {isStudent 
+                ? (studentClassName ? `Jadwal Pelajaran Kelas ${studentClassName}` : 'Jadwal Pelajaran Siswa')
+                : isParent
+                ? (studentClassName ? `Jadwal Ananda (${studentClassName})` : 'Jadwal Pelajaran Ananda')
+                : isTeacher
+                ? 'Jadwal Mengajar & Jurnal KBM'
+                : 'Jadwal, KBM & Jurnal Mengajar'}
+            </Text>
           </View>
         </View>
         <TouchableOpacity style={styles.refreshButton} onPress={onRefresh} activeOpacity={0.7}>
@@ -487,40 +597,82 @@ export default function KurikulumScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Tab Segment Selector (4 TABS) */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity 
-          style={[styles.tabButton, activeTab === 'schedule' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('schedule')}
-        >
-          <Feather name="calendar" size={14} color={activeTab === 'schedule' ? '#FFF' : Colors.textLight} />
-          <Text style={[styles.tabText, activeTab === 'schedule' && styles.tabTextActive]}>Jadwal</Text>
-        </TouchableOpacity>
+      {/* Tab Segment Selector */}
+      {isAdmin && (
+        <View style={styles.tabContainer}>
+          <TouchableOpacity 
+            style={[styles.tabButton, activeTab === 'schedule' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('schedule')}
+          >
+            <Feather name="calendar" size={14} color={activeTab === 'schedule' ? '#FFF' : Colors.textLight} />
+            <Text style={[styles.tabText, activeTab === 'schedule' && styles.tabTextActive]}>Jadwal</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={[styles.tabButton, activeTab === 'journal' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('journal')}
-        >
-          <Feather name="edit-3" size={14} color={activeTab === 'journal' ? '#FFF' : Colors.textLight} />
-          <Text style={[styles.tabText, activeTab === 'journal' && styles.tabTextActive]}>Jurnal KBM</Text>
-        </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.tabButton, activeTab === 'journal' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('journal')}
+          >
+            <Feather name="edit-3" size={14} color={activeTab === 'journal' ? '#FFF' : Colors.textLight} />
+            <Text style={[styles.tabText, activeTab === 'journal' && styles.tabTextActive]}>Jurnal KBM</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={[styles.tabButton, activeTab === 'subjects' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('subjects')}
-        >
-          <Feather name="book-open" size={14} color={activeTab === 'subjects' ? '#FFF' : Colors.textLight} />
-          <Text style={[styles.tabText, activeTab === 'subjects' && styles.tabTextActive]}>Mapel ({totalSubjects})</Text>
-        </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.tabButton, activeTab === 'subjects' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('subjects')}
+          >
+            <Feather name="book-open" size={14} color={activeTab === 'subjects' ? '#FFF' : Colors.textLight} />
+            <Text style={[styles.tabText, activeTab === 'subjects' && styles.tabTextActive]}>Mapel ({totalSubjects})</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={[styles.tabButton, activeTab === 'timeline' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('timeline')}
-        >
-          <Feather name="clock" size={14} color={activeTab === 'timeline' ? '#FFF' : Colors.textLight} />
-          <Text style={[styles.tabText, activeTab === 'timeline' && styles.tabTextActive]}>Slot JP</Text>
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity 
+            style={[styles.tabButton, activeTab === 'timeline' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('timeline')}
+          >
+            <Feather name="clock" size={14} color={activeTab === 'timeline' ? '#FFF' : Colors.textLight} />
+            <Text style={[styles.tabText, activeTab === 'timeline' && styles.tabTextActive]}>Slot JP</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {isTeacher && (
+        <View style={styles.tabContainer}>
+          <TouchableOpacity 
+            style={[styles.tabButton, activeTab === 'schedule' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('schedule')}
+          >
+            <Feather name="calendar" size={14} color={activeTab === 'schedule' ? '#FFF' : Colors.textLight} />
+            <Text style={[styles.tabText, activeTab === 'schedule' && styles.tabTextActive]}>Jadwal Mengajar</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.tabButton, activeTab === 'journal' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('journal')}
+          >
+            <Feather name="edit-3" size={14} color={activeTab === 'journal' ? '#FFF' : Colors.textLight} />
+            <Text style={[styles.tabText, activeTab === 'journal' && styles.tabTextActive]}>Jurnal KBM</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {(isStudent || isParent) && (
+        <View style={styles.studentClassBanner}>
+          <View style={styles.studentClassIconCircle}>
+            <Ionicons name="school" size={20} color="#0B8A7D" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.studentClassBannerLabel}>
+              {isParent ? 'Jadwal Pelajaran Ananda' : 'Jadwal Pelajaran Kelas'}
+            </Text>
+            <Text style={styles.studentClassBannerValue}>
+              {studentClassName ? `Kelas ${studentClassName}` : 'Kelas Terdaftar'}
+            </Text>
+          </View>
+          <View style={styles.activePillSmall}>
+            <View style={styles.dotOnlineSmall} />
+            <Text style={styles.activePillSmallText}>Semester Aktif</Text>
+          </View>
+        </View>
+      )}
 
       {/* Main Content Area */}
       {isLoading ? (
@@ -541,7 +693,17 @@ export default function KurikulumScreen() {
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayScrollContent}>
                   {DAYS.map((day) => {
                     const isActive = selectedDay === day.value;
-                    const countOnDay = schedulesList.filter(s => s.day_of_week === day.value).length;
+                    const countOnDay = schedulesList.filter(s => {
+                      if (s.day_of_week !== day.value) return false;
+                      if (isStudent || isParent) {
+                        if (studentClassId) return String(s.class_id || s.class?.id) === String(studentClassId);
+                        if (studentClassName) return (s.class?.name || '').toLowerCase() === studentClassName.toLowerCase();
+                      } else if (isTeacher && teacherScheduleFilter === 'my') {
+                        if (teacherId) return String(s.teacher_id) === String(teacherId);
+                      }
+                      return true;
+                    }).length;
+
                     return (
                       <TouchableOpacity
                         key={day.value}
@@ -557,33 +719,59 @@ export default function KurikulumScreen() {
                 </ScrollView>
               </View>
 
-              {/* Class & Search Filter */}
-              <View style={styles.filterBar}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.classChipsContent}>
+              {/* Teacher Toggle Bar (My Schedule vs All Classes) */}
+              {isTeacher && (
+                <View style={styles.teacherToggleBar}>
                   <TouchableOpacity
-                    style={[styles.classChip, selectedClassId === 'all' && styles.classChipActive]}
-                    onPress={() => setSelectedClassId('all')}
+                    style={[styles.teacherToggleBtn, teacherScheduleFilter === 'my' && styles.teacherToggleBtnActive]}
+                    onPress={() => setTeacherScheduleFilter('my')}
                   >
-                    <Text style={[styles.classChipText, selectedClassId === 'all' && styles.classChipTextActive]}>
-                      Semua Kelas
+                    <Ionicons name="person" size={14} color={teacherScheduleFilter === 'my' ? '#FFF' : Colors.textLight} />
+                    <Text style={[styles.teacherToggleText, teacherScheduleFilter === 'my' && styles.teacherToggleTextActive]}>
+                      Jadwal Mengajar Saya
                     </Text>
                   </TouchableOpacity>
-                  {classesList.map((cls) => {
-                    const isSelected = selectedClassId === String(cls.id);
-                    return (
-                      <TouchableOpacity
-                        key={cls.id}
-                        style={[styles.classChip, isSelected && styles.classChipActive]}
-                        onPress={() => setSelectedClassId(String(cls.id))}
-                      >
-                        <Text style={[styles.classChipText, isSelected && styles.classChipTextActive]}>
-                          Kelas {cls.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </View>
+                  <TouchableOpacity
+                    style={[styles.teacherToggleBtn, teacherScheduleFilter === 'all' && styles.teacherToggleBtnActive]}
+                    onPress={() => setTeacherScheduleFilter('all')}
+                  >
+                    <Ionicons name="grid" size={14} color={teacherScheduleFilter === 'all' ? '#FFF' : Colors.textLight} />
+                    <Text style={[styles.teacherToggleText, teacherScheduleFilter === 'all' && styles.teacherToggleTextActive]}>
+                      Semua Jadwal Kelas
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Class Chips Filter (Only for Admin or Teacher viewing all classes) */}
+              {(isAdmin || (isTeacher && teacherScheduleFilter === 'all')) && (
+                <View style={styles.filterBar}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.classChipsContent}>
+                    <TouchableOpacity
+                      style={[styles.classChip, selectedClassId === 'all' && styles.classChipActive]}
+                      onPress={() => setSelectedClassId('all')}
+                    >
+                      <Text style={[styles.classChipText, selectedClassId === 'all' && styles.classChipTextActive]}>
+                        Semua Kelas
+                      </Text>
+                    </TouchableOpacity>
+                    {classesList.map((cls) => {
+                      const isSelected = selectedClassId === String(cls.id);
+                      return (
+                        <TouchableOpacity
+                          key={cls.id}
+                          style={[styles.classChip, isSelected && styles.classChipActive]}
+                          onPress={() => setSelectedClassId(String(cls.id))}
+                        >
+                          <Text style={[styles.classChipText, isSelected && styles.classChipTextActive]}>
+                            Kelas {cls.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
 
               {/* Search Box */}
               <View style={styles.searchContainer}>
@@ -1384,6 +1572,99 @@ const styles = StyleSheet.create({
     color: Colors.textLight,
   },
   tabTextActive: {
+    color: '#FFF',
+    fontWeight: '700',
+  },
+
+  studentClassBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E6F4F1',
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#B2DFDB',
+    gap: 12,
+  },
+  studentClassIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  studentClassBannerLabel: {
+    fontSize: 11,
+    color: '#00796B',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  studentClassBannerValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#004D40',
+    marginTop: 2,
+  },
+  activePillSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 5,
+  },
+  dotOnlineSmall: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  activePillSmallText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#00796B',
+  },
+
+  teacherToggleBar: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 6,
+    borderRadius: 10,
+    padding: 3,
+    gap: 4,
+  },
+  teacherToggleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  teacherToggleBtnActive: {
+    backgroundColor: Colors.primary,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  teacherToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textLight,
+  },
+  teacherToggleTextActive: {
     color: '#FFF',
     fontWeight: '700',
   },

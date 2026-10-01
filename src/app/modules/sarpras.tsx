@@ -72,10 +72,24 @@ export default function SarprasModuleScreen() {
   const [books, setBooks] = useState<BookItem[]>([]);
   const [borrowings, setBorrowings] = useState<BorrowingItem[]>([]);
   const [assets, setAssets] = useState<AssetItem[]>([]);
+  const [userRole, setUserRole] = useState<string>('admin');
 
   useEffect(() => {
+    loadUserRole();
     fetchSarprasData();
   }, []);
+
+  const loadUserRole = async () => {
+    try {
+      const stored = await SecureStore.getItemAsync('sipena_user');
+      if (stored) {
+        const u = JSON.parse(stored);
+        if (u.role) setUserRole(u.role.toLowerCase());
+      }
+    } catch (_) {}
+  };
+
+  const isManagement = !userRole.includes('siswa') && !userRole.includes('student') && !userRole.includes('orang tua') && !userRole.includes('parent') && !userRole.includes('ortu');
 
   const fetchSarprasData = async () => {
     try {
@@ -85,11 +99,15 @@ export default function SarprasModuleScreen() {
 
       if (apiUrl && token) {
         try {
-          const [resBooks, resBorrowings, resAssets] = await Promise.allSettled([
+          const apiCalls: Promise<any>[] = [
             axios.get(`${apiUrl}/api/elibrary/books`, { headers }),
             axios.get(`${apiUrl}/api/elibrary/borrowings`, { headers }),
-            axios.get(`${apiUrl}/api/assets`, { headers }),
-          ]);
+          ];
+          if (isManagement) {
+            apiCalls.push(axios.get(`${apiUrl}/api/assets`, { headers }));
+          }
+
+          const [resBooks, resBorrowings, resAssets] = await Promise.allSettled(apiCalls);
 
           if (resBooks.status === 'fulfilled' && resBooks.value.data?.data) {
             const apiBooks = resBooks.value.data.data.map((b: any) => ({
@@ -272,13 +290,24 @@ export default function SarprasModuleScreen() {
           <Text style={styles.kpiValue}>{books.length} Judul</Text>
           <Text style={styles.kpiLabel}>Katalog E-Perpus</Text>
         </View>
-        <View style={[styles.kpiCard, { backgroundColor: '#F8FAFC' }]}>
-          <View style={[styles.kpiIconWrapper, { backgroundColor: '#E2E8F0' }]}>
-            <Ionicons name="cube" size={18} color="#475569" />
+
+        {isManagement ? (
+          <View style={[styles.kpiCard, { backgroundColor: '#F8FAFC' }]}>
+            <View style={[styles.kpiIconWrapper, { backgroundColor: '#E2E8F0' }]}>
+              <Ionicons name="cube" size={18} color="#475569" />
+            </View>
+            <Text style={styles.kpiValue}>{assets.length} Sarpras</Text>
+            <Text style={styles.kpiLabel}>Aset Terinventaris</Text>
           </View>
-          <Text style={styles.kpiValue}>{assets.length} Sarpras</Text>
-          <Text style={styles.kpiLabel}>Aset Terinventaris</Text>
-        </View>
+        ) : (
+          <View style={[styles.kpiCard, { backgroundColor: '#F0FDF4' }]}>
+            <View style={[styles.kpiIconWrapper, { backgroundColor: '#DCFCE7' }]}>
+              <Ionicons name="swap-horizontal" size={18} color="#16A34A" />
+            </View>
+            <Text style={styles.kpiValue}>{borrowings.filter(b => b.status === 'active').length} Buku</Text>
+            <Text style={styles.kpiLabel}>Sedang Dipinjam</Text>
+          </View>
+        )}
       </View>
 
       {/* Tabs */}
@@ -311,19 +340,21 @@ export default function SarprasModuleScreen() {
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'sarpras' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('sarpras')}
-        >
-          <Ionicons
-            name="cube-outline"
-            size={16}
-            color={activeTab === 'sarpras' ? '#0284C7' : Colors.textLight}
-          />
-          <Text style={[styles.tabText, activeTab === 'sarpras' && styles.tabTextActive]}>
-            Aset & Ruangan
-          </Text>
-        </TouchableOpacity>
+        {isManagement && (
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'sarpras' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('sarpras')}
+          >
+            <Ionicons
+              name="cube-outline"
+              size={16}
+              color={activeTab === 'sarpras' ? '#0284C7' : Colors.textLight}
+            />
+            <Text style={[styles.tabText, activeTab === 'sarpras' && styles.tabTextActive]}>
+              Aset & Ruangan
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {isLoading ? (
@@ -449,8 +480,8 @@ export default function SarprasModuleScreen() {
             </View>
           )}
 
-          {/* TAB 3: SARPRAS & RUANGAN */}
-          {activeTab === 'sarpras' && (
+          {/* TAB 3: SARPRAS & RUANGAN (Khusus Management Sekolah) */}
+          {isManagement && activeTab === 'sarpras' && (
             <View>
               <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionTitle}>Daftar Fasilitas & Aset Sekolah</Text>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Modal, TextInput, Linking
+  ActivityIndicator, Modal, TextInput, Linking, Switch
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -9,6 +9,15 @@ import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '../../constants/Colors';
 import * as SecureStore from 'expo-secure-store';
 import { Toast, ToastType } from '../../components/ui/Toast';
+import { 
+  checkBiometricSupport, 
+  getBiometricProfile, 
+  saveBiometricProfile, 
+  clearBiometricProfile, 
+  isRoleAllowedForBiometric, 
+  authenticateUser,
+  BiometricAvailability
+} from '../../services/biometric';
 
 export default function ProfilScreen() {
   const insets = useSafeAreaInsets();
@@ -27,6 +36,11 @@ export default function ProfilScreen() {
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+
+  // Biometric state
+  const [biometricSupport, setBiometricSupport] = useState<BiometricAvailability | null>(null);
+  const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
+  const [isBiometricToggling, setIsBiometricToggling] = useState(false);
 
   // Toast
   const [toast, setToast] = useState<{ visible: boolean; message: string; type: ToastType }>({
@@ -49,13 +63,83 @@ export default function ProfilScreen() {
       const storedSchool = await SecureStore.getItemAsync('sipena_school_name');
       const storedApi = await SecureStore.getItemAsync('sipena_api_url');
 
-      if (storedUser) setUserData(JSON.parse(storedUser));
+      let parsedUser = null;
+      if (storedUser) {
+        parsedUser = JSON.parse(storedUser);
+        setUserData(parsedUser);
+      }
       if (storedSchool) setSchoolName(storedSchool);
       if (storedApi) setApiUrl(storedApi);
+
+      // Inisialisasi dukungan biometrik
+      const support = await checkBiometricSupport();
+      setBiometricSupport(support);
+
+      if (parsedUser) {
+        if (!isRoleAllowedForBiometric(parsedUser.role)) {
+          // STRICT RULE: Admin dilarang menggunakan login sidik jari
+          setIsBiometricEnabled(false);
+          await clearBiometricProfile();
+        } else {
+          const profile = await getBiometricProfile();
+          setIsBiometricEnabled(!!profile);
+        }
+      }
     } catch (e) {
       console.warn('Gagal memuat profil user:', e);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleToggleBiometric = async (value: boolean) => {
+    // 1. Validasi Keamanan: Admin strictly prohibited
+    if (!isRoleAllowedForBiometric(userData?.role)) {
+      showToast('Akses dibatasi. Akun Administrator wajib menggunakan kata sandi demi keamanan.', 'error');
+      setIsBiometricEnabled(false);
+      return;
+    }
+
+    // 2. Validasi Hardware
+    if (!biometricSupport?.available) {
+      showToast('Perangkat Anda tidak memiliki sensor biometrik sidik jari.', 'warning');
+      return;
+    }
+    if (!biometricSupport?.enrolled) {
+      showToast('Belum ada sidik jari yang terdaftar di pengaturan sistem HP Anda.', 'warning');
+      return;
+    }
+
+    setIsBiometricToggling(true);
+
+    if (!value) {
+      // Nonaktifkan
+      await clearBiometricProfile();
+      setIsBiometricEnabled(false);
+      setIsBiometricToggling(false);
+      showToast('Login sidik jari telah dinonaktifkan.', 'info');
+    } else {
+      // Aktifkan - verifikasi biometrik dulu
+      const auth = await authenticateUser('Pindai sidik jari Anda untuk mengaktifkan login biometrik SIPENAFS');
+      if (auth.success) {
+        try {
+          const token = await SecureStore.getItemAsync('sipena_token') || 'demo-token-' + (userData?.role || 'user');
+          const saved = await saveBiometricProfile(userData, { name: schoolName, api_url: apiUrl }, token);
+          if (saved) {
+            setIsBiometricEnabled(true);
+            showToast('Login sidik jari berhasil diaktifkan!', 'success');
+          } else {
+            showToast('Gagal mengaktifkan login sidik jari.', 'error');
+          }
+        } catch (e) {
+          showToast('Terjadi kesalahan saat menyimpan pengaturan biometrik.', 'error');
+        }
+      } else {
+        if (auth.error && auth.error !== 'Autentikasi dibatalkan') {
+          showToast(auth.error, 'error');
+        }
+      }
+      setIsBiometricToggling(false);
     }
   };
 
@@ -201,6 +285,62 @@ export default function ProfilScreen() {
                 {apiUrl || 'https://api.sipena.biz.id'}
               </Text>
             </View>
+          </View>
+
+          {/* Keamanan & Biometrik */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionCardHeader}>
+              <Text style={styles.sectionCardTitle}>Keamanan & Biometrik</Text>
+              <Ionicons name="shield-checkmark" size={16} color="#0B8A7D" />
+            </View>
+
+            {!isRoleAllowedForBiometric(userData?.role) ? (
+              // Tampilan Khusus Administrator (Akses Dibatasi)
+              <View style={styles.adminSecurityNoticeCard}>
+                <View style={styles.adminSecurityHeaderRow}>
+                  <View style={styles.adminShieldIconCircle}>
+                    <Ionicons name="lock-closed" size={18} color="#B45309" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.adminSecurityNoticeTitle}>Login Sidik Jari Dinonaktifkan</Text>
+                    <View style={styles.adminBadgePill}>
+                      <Text style={styles.adminBadgePillText}>KHUSUS ADMINISTRATOR</Text>
+                    </View>
+                  </View>
+                </View>
+                <Text style={styles.adminSecurityNoticeDesc}>
+                  Demi kepatuhan standar keamanan data dan hak akses institusi tingkat tinggi, akun Administrator / Kepala Sekolah wajib melakukan otentikasi manual menggunakan username, kata sandi, dan captcha.
+                </Text>
+              </View>
+            ) : (
+              // Tampilan Pengguna Biasa (Guru, Siswa, Orang Tua)
+              <View style={styles.biometricSettingRow}>
+                <View style={styles.biometricSettingLeft}>
+                  <View style={[styles.biometricIconCircle, isBiometricEnabled ? styles.biometricIconCircleActive : styles.biometricIconCircleInactive]}>
+                    <Ionicons 
+                      name="finger-print" 
+                      size={22} 
+                      color={isBiometricEnabled ? "#0B8A7D" : Colors.textLight} 
+                    />
+                  </View>
+                  <View style={styles.biometricTextContainer}>
+                    <Text style={styles.biometricSettingTitle}>Login Sidik Jari</Text>
+                    <Text style={styles.biometricSettingSubtitle}>
+                      {isBiometricEnabled 
+                        ? 'Aktif • Masuk cepat tanpa password' 
+                        : (biometricSupport?.enrolled ? 'Nonaktif • Ketuk switch untuk aktifkan' : 'Daftarkan sidik jari di pengaturan HP')}
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={isBiometricEnabled}
+                  onValueChange={handleToggleBiometric}
+                  disabled={isBiometricToggling || !biometricSupport?.available}
+                  trackColor={{ false: '#E5E7EB', true: '#A7F3D0' }}
+                  thumbColor={isBiometricEnabled ? '#0B8A7D' : '#F3F4F6'}
+                />
+              </View>
+            )}
           </View>
 
           {/* Quick Actions */}
@@ -680,5 +820,95 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  sectionCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  biometricSettingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  biometricSettingLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 12,
+  },
+  biometricIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  biometricIconCircleActive: {
+    backgroundColor: '#DCFCE7',
+  },
+  biometricIconCircleInactive: {
+    backgroundColor: '#F3F4F6',
+  },
+  biometricTextContainer: {
+    flex: 1,
+  },
+  biometricSettingTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  biometricSettingSubtitle: {
+    fontSize: 11,
+    color: Colors.textLight,
+    marginTop: 2,
+  },
+  adminSecurityNoticeCard: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 14,
+  },
+  adminSecurityHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  adminShieldIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FEF3C7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  adminSecurityNoticeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  adminBadgePill: {
+    backgroundColor: '#FDE68A',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+    marginTop: 2,
+  },
+  adminBadgePillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#B45309',
+    letterSpacing: 0.5,
+  },
+  adminSecurityNoticeDesc: {
+    fontSize: 11,
+    color: '#B45309',
+    lineHeight: 16,
   },
 });

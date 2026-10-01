@@ -503,7 +503,7 @@ export default function ERaporScreen() {
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <View style={styles.titleRow}>
-            <Text style={styles.headerTitle}>6. E-Rapor & Penilaian</Text>
+            <Text style={styles.headerTitle}>E-Rapor & Penilaian</Text>
             <View style={styles.merdekaBadge}>
               <Text style={styles.merdekaBadgeText}>Kurikulum Merdeka</Text>
             </View>

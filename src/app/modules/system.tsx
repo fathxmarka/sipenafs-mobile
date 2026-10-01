@@ -129,7 +129,7 @@ export default function SystemSettingsScreen() {
           <Feather name="chevron-left" size={26} color={Colors.secondary} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>1. Pengaturan Sistem</Text>
+          <Text style={styles.headerTitle}>Pengaturan Sistem</Text>
           <View style={styles.headerBadge}>
             <View style={styles.dotOnline} />
             <Text style={styles.headerBadgeText}>Pusat Kontrol</Text>

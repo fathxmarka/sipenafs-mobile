@@ -505,7 +505,7 @@ export default function PresensiScreen() {
           <Feather name="arrow-left" size={22} color={Colors.secondary} />
         </TouchableOpacity>
         <View style={styles.headerTitleWrap}>
-          <Text style={styles.headerTitle}>5. Presensi & Disiplin</Text>
+          <Text style={styles.headerTitle}>Presensi & Disiplin</Text>
           <View style={styles.headerBadge}>
             <Text style={styles.headerBadgeText}>Sistem Kehadiran & Tata Tertib</Text>
           </View>

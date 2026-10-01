@@ -12,21 +12,32 @@ import { useRouter } from 'expo-router';
 
 type RoleViewType = 'auto' | 'admin' | 'guru' | 'siswa' | 'ortu';
 
-const MENU_ITEMS = [
-  { id: '1', title: '1. Pengaturan\nSistem', icon: 'shield-checkmark-outline', type: 'Ionicons', color: '#0B8A7D', bg: '#E6F4F1', route: '/modules/system', allowedRoles: ['admin', 'kepala sekolah', 'wakil kepala sekolah', 'operator'] },
-  { id: '2', title: '2. Kesiswaan', icon: 'people-outline', type: 'Ionicons', color: '#10B981', bg: '#ECFDF5', route: '/modules/kesiswaan', allowedRoles: ['admin', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'operator', 'guru'] },
-  { id: '3', title: '3. SDM & Guru', icon: 'person-outline', type: 'Ionicons', color: '#3B82F6', bg: '#EFF6FF', route: '/modules/sdm', allowedRoles: ['admin', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'guru'] },
-  { id: '4', title: '4. Kurikulum &\nJadwal', icon: 'calendar-outline', type: 'Ionicons', color: '#F59E0B', bg: '#FFFBEB', route: '/modules/kurikulum', allowedRoles: ['admin', 'guru', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'siswa'] },
-  { id: '5', title: '5. Presensi &\nDisiplin', icon: 'clipboard-outline', type: 'Ionicons', color: '#F97316', bg: '#FFF7ED', route: '/modules/presensi', allowedRoles: ['admin', 'guru', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'siswa', 'orang tua', 'ortu'] },
-  { id: '6', title: '6. E-Rapor', icon: 'school-outline', type: 'Ionicons', color: '#0EA5E9', bg: '#F0F9FF', route: '/modules/erapor', allowedRoles: ['admin', 'guru', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'siswa', 'orang tua', 'ortu'] },
-  { id: '7', title: '7. Billing &\nSPP', icon: 'card-outline', type: 'Ionicons', color: '#EF4444', bg: '#FEF2F2', route: '/modules/billing', allowedRoles: ['admin', 'tata usaha', 'operator', 'kepala sekolah', 'siswa', 'orang tua', 'ortu'] },
-  { id: '8', title: '8. E-Learning\n(LMS)', icon: 'book-outline', type: 'Ionicons', color: '#6366F1', bg: '#EEF2FF', route: '/modules/elearning', allowedRoles: ['admin', 'guru', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'siswa', 'orang tua', 'ortu'] },
-  { id: '9', title: '9. Portal\nOrang Tua', icon: 'heart-outline', type: 'Ionicons', color: '#EC4899', bg: '#FDF2F8', route: '/modules/ortu', allowedRoles: ['admin', 'guru', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'orang tua', 'ortu'] },
-  { id: '10', title: '10. Inventaris &\nPerpus', icon: 'library-outline', type: 'Ionicons', color: '#64748B', bg: '#F8FAFC', route: '/modules/sarpras', allowedRoles: ['admin', 'tata usaha', 'kepala sekolah', 'guru', 'siswa'] },
-  { id: '11', title: '11. E-Voting &\nPemilu', icon: 'checkbox-outline', type: 'Ionicons', color: '#D946EF', bg: '#FDF4FF', route: '/modules/voting', allowedRoles: ['admin', 'guru', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'siswa'] },
-  { id: '12', title: '12. Modul BK', icon: 'chatbubbles-outline', type: 'Ionicons', color: '#EAB308', bg: '#FEFCE8', route: '/modules/bk', allowedRoles: ['admin', 'guru', 'kepala sekolah', 'wakil kepala sekolah', 'bk', 'siswa', 'orang tua', 'ortu'] },
-  { id: '13', title: '13. WA\nBroadcast', icon: 'megaphone-outline', type: 'Ionicons', color: '#22C55E', bg: '#F0FDF4', route: '/modules/broadcast', allowedRoles: ['admin', 'kepala sekolah', 'operator', 'tata usaha', 'guru'] },
-  { id: '14', title: '14. Administrasi\nSurat', icon: 'document-text-outline', type: 'Ionicons', color: '#6366F1', bg: '#EEF2FF', route: '/modules/surat', allowedRoles: ['admin', 'tata usaha', 'kepala sekolah', 'guru', 'siswa', 'orang tua', 'ortu'] },
+const MENU_ITEMS: Array<{
+  id: string;
+  title: string;
+  icon: any;
+  type: string;
+  color: string;
+  bg: string;
+  route?: string;
+  allowedRoles?: string[];
+  active?: boolean;
+  disabled?: boolean;
+}> = [
+  { id: '1', title: 'Pengaturan\nSistem', icon: 'shield-checkmark-outline', type: 'Ionicons', color: '#0B8A7D', bg: '#E6F4F1', route: '/modules/system', allowedRoles: ['admin', 'kepala sekolah', 'wakil kepala sekolah', 'operator'], active: true },
+  { id: '2', title: 'Kesiswaan', icon: 'people-outline', type: 'Ionicons', color: '#10B981', bg: '#ECFDF5', route: '/modules/kesiswaan', allowedRoles: ['admin', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'operator', 'guru'], active: true },
+  { id: '3', title: 'SDM & Guru', icon: 'person-outline', type: 'Ionicons', color: '#3B82F6', bg: '#EFF6FF', route: '/modules/sdm', allowedRoles: ['admin', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'guru'], active: true },
+  { id: '4', title: 'Kurikulum &\nJadwal', icon: 'calendar-outline', type: 'Ionicons', color: '#F59E0B', bg: '#FFFBEB', route: '/modules/kurikulum', allowedRoles: ['admin', 'guru', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'siswa', 'orang tua', 'ortu'], active: true },
+  { id: '5', title: 'Presensi &\nDisiplin', icon: 'clipboard-outline', type: 'Ionicons', color: '#F97316', bg: '#FFF7ED', route: '/modules/presensi', allowedRoles: ['admin', 'guru', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'siswa', 'orang tua', 'ortu'], active: true },
+  { id: '6', title: 'E-Rapor', icon: 'school-outline', type: 'Ionicons', color: '#0EA5E9', bg: '#F0F9FF', route: '/modules/erapor', allowedRoles: ['admin', 'guru', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'siswa', 'orang tua', 'ortu'], active: true },
+  { id: '7', title: 'Billing &\nSPP', icon: 'card-outline', type: 'Ionicons', color: '#EF4444', bg: '#FEF2F2', route: '/modules/billing', allowedRoles: ['admin', 'tata usaha', 'operator', 'kepala sekolah', 'siswa', 'orang tua', 'ortu'], active: true },
+  { id: '8', title: 'E-Learning\n(LMS)', icon: 'book-outline', type: 'Ionicons', color: '#6366F1', bg: '#EEF2FF', route: '/modules/elearning', allowedRoles: ['admin', 'guru', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'siswa', 'orang tua', 'ortu'], active: true },
+  { id: '9', title: 'Portal\nOrang Tua', icon: 'heart-outline', type: 'Ionicons', color: '#EC4899', bg: '#FDF2F8', route: '/modules/ortu', allowedRoles: ['admin', 'orang tua', 'ortu'], active: true },
+  { id: '10', title: 'Inventaris &\nPerpus', icon: 'library-outline', type: 'Ionicons', color: '#64748B', bg: '#F8FAFC', route: '/modules/sarpras', allowedRoles: ['admin', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'operator', 'guru'], active: true },
+  { id: '11', title: 'E-Voting &\nPemilu', icon: 'checkbox-outline', type: 'Ionicons', color: '#D946EF', bg: '#FDF4FF', route: '/modules/voting', allowedRoles: ['admin', 'guru', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'siswa'], active: true },
+  { id: '12', title: 'Modul BK', icon: 'chatbubbles-outline', type: 'Ionicons', color: '#EAB308', bg: '#FEFCE8', route: '/modules/bk', allowedRoles: ['admin', 'guru', 'kepala sekolah', 'wakil kepala sekolah', 'bk'], active: true },
+  { id: '13', title: 'WA Broadcast', icon: 'megaphone-outline', type: 'Ionicons', color: '#22C55E', bg: '#F0FDF4', route: '/modules/broadcast', allowedRoles: ['admin', 'kepala sekolah', 'operator', 'tata usaha', 'guru'], active: true },
+  { id: '14', title: 'Administrasi\nSurat', icon: 'document-text-outline', type: 'Ionicons', color: '#6366F1', bg: '#EEF2FF', route: '/modules/surat', allowedRoles: ['admin', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'operator', 'guru'], active: true },
 ];
 
 export default function HomeScreen() {
@@ -182,10 +193,14 @@ export default function HomeScreen() {
   });
 
   const handleOpenModule = (item: any) => {
+    if (item.active === false || item.disabled) {
+      setNoticeModule(`${(item.title || '').replace(/^\d+\.\s*/, '').replace('\n', ' ')} saat ini sedang dinonaktifkan atau dalam pemeliharaan.`);
+      return;
+    }
     if (item.route) {
       router.push(item.route as any);
     } else {
-      setNoticeModule(item.title.replace('\n', ' '));
+      setNoticeModule((item.title || '').replace(/^\d+\.\s*/, '').replace('\n', ' '));
     }
   };
 
@@ -292,7 +307,17 @@ export default function HomeScreen() {
 
                 <TouchableOpacity
                   style={styles.journalActionBtn}
-                  onPress={() => router.push('/modules/kurikulum' as any)}
+                  onPress={() => router.push({
+                    pathname: '/modules/jurnal',
+                    params: {
+                      subject: 'Matematika Peminatan',
+                      class_name: 'Kelas XII MIPA 1',
+                      time: '07:30 - 09:00 WIB',
+                      room: 'Ruang 12-A',
+                      autoOpen: 'true'
+                    }
+                  } as any)}
+                  activeOpacity={0.82}
                 >
                   <Ionicons name="create-outline" size={16} color="#FFFFFF" />
                   <Text style={styles.journalActionBtnText}>Isi Jurnal Mengajar & Absensi</Text>
@@ -310,6 +335,24 @@ export default function HomeScreen() {
 
                 <Text style={styles.classSubject}>Fisika Terapan & Gelombang</Text>
                 <Text style={styles.classTarget}>Kelas XII MIPA 2 • 34 Siswa</Text>
+
+                <TouchableOpacity
+                  style={[styles.journalActionBtn, { backgroundColor: '#2563EB', marginTop: 12 }]}
+                  onPress={() => router.push({
+                    pathname: '/modules/jurnal',
+                    params: {
+                      subject: 'Fisika Terapan & Gelombang',
+                      class_name: 'Kelas XII MIPA 2',
+                      time: '09:15 - 10:45 WIB',
+                      room: 'Lab Fisika',
+                      autoOpen: 'true'
+                    }
+                  } as any)}
+                  activeOpacity={0.82}
+                >
+                  <Ionicons name="create-outline" size={16} color="#FFFFFF" />
+                  <Text style={styles.journalActionBtnText}>Isi Jurnal Mengajar & Absensi</Text>
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -319,7 +362,8 @@ export default function HomeScreen() {
               <View style={styles.quickActionGrid}>
                 <TouchableOpacity
                   style={styles.qaItem}
-                  onPress={() => router.push('/modules/kurikulum' as any)}
+                  onPress={() => router.push('/modules/jurnal' as any)}
+                  activeOpacity={0.7}
                 >
                   <View style={[styles.qaIcon, { backgroundColor: '#FFFBEB' }]}>
                     <Ionicons name="calendar" size={20} color="#D97706" />
@@ -627,39 +671,66 @@ export default function HomeScreen() {
         )}
 
         {/* ======================================================== */}
-        {/* 14 MODUL SIPENAFS (SEMUA MODUL AKTIF)                     */}
+        {/* MODUL SIPENAFS                                            */}
         {/* ======================================================== */}
         <View style={styles.menuSection}>
           <View style={styles.sectionHeader}>
             <View>
-              <Text style={styles.sectionTitle}>14 Modul SIPENAFS</Text>
-              <Text style={styles.sectionSubTitle}>Ekosistem Terintegrasi Seluruh Modul</Text>
+              <Text style={styles.sectionTitle}>
+                {effectiveRole === 'admin' 
+                  ? 'Modul SIPENAFS' 
+                  : effectiveRole === 'siswa'
+                  ? 'Modul Pembelajaran Siswa'
+                  : effectiveRole === 'guru'
+                  ? 'Modul Kerja Guru'
+                  : 'Modul Portal Orang Tua'}
+              </Text>
+              <Text style={styles.sectionSubTitle}>
+                {effectiveRole === 'admin'
+                  ? 'Ekosistem Terintegrasi Seluruh Modul'
+                  : effectiveRole === 'siswa'
+                  ? 'Akses Layanan Akademik & Aktivitas Siswa'
+                  : effectiveRole === 'guru'
+                  ? 'Layanan Manajemen KBM & Akademik'
+                  : 'Pantau Kehadiran & Akademik Ananda'}
+              </Text>
             </View>
             <View style={styles.officialBadge}>
-              <Ionicons name="checkmark-circle" size={12} color="#0B8A7D" />
-              <Text style={styles.officialBadgeText}>Semua Aktif</Text>
+              <Ionicons name="grid-outline" size={12} color="#0B8A7D" />
+              <Text style={styles.officialBadgeText}>
+                {`${filteredMenus.length} Layanan`}
+              </Text>
             </View>
           </View>
 
           <View style={styles.menuGrid}>
-            {filteredMenus.map(item => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.menuItem}
-                onPress={() => handleOpenModule(item)}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.menuIconContainer, { backgroundColor: item.bg }]}>
-                  {renderIcon(item.type, item.icon, item.color)}
-                  <View style={styles.activeTag}>
-                    <Text style={styles.activeTagText}>AKTIF</Text>
+            {filteredMenus.map(item => {
+              const isInactive = item.active === false || item.disabled;
+              const displayTitle = (item.title || '').replace(/^\d+\.\s*/, '');
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.menuItem}
+                  onPress={() => handleOpenModule(item)}
+                  activeOpacity={isInactive ? 0.9 : 0.7}
+                >
+                  <View
+                    style={[
+                      styles.menuIconContainer,
+                      { backgroundColor: isInactive ? '#F1F5F9' : item.bg },
+                    ]}
+                  >
+                    {renderIcon(item.type, item.icon, isInactive ? '#94A3B8' : item.color)}
                   </View>
-                </View>
-                <Text style={styles.menuText} numberOfLines={2}>
-                  {item.title}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <Text
+                    style={[styles.menuText, isInactive && styles.menuTextDisabled]}
+                    numberOfLines={2}
+                  >
+                    {displayTitle}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
 
@@ -1289,43 +1360,33 @@ const styles = StyleSheet.create({
   menuGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     marginTop: 12,
   },
   menuItem: {
-    width: '23%',
+    width: '25%',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 18,
+    paddingHorizontal: 2,
   },
   menuIconContainer: {
-    width: 54,
-    height: 54,
+    width: 52,
+    height: 52,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 6,
-    position: 'relative',
-  },
-  activeTag: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: '#10B981',
-    borderRadius: 4,
-    paddingHorizontal: 3,
-    paddingVertical: 1,
-  },
-  activeTagText: {
-    fontSize: 8,
-    fontWeight: '800',
-    color: '#FFFFFF',
   },
   menuText: {
     fontSize: 11,
     textAlign: 'center',
     color: Colors.secondary,
-    fontWeight: '500',
+    fontWeight: '600',
     lineHeight: 14,
+  },
+  menuTextDisabled: {
+    color: '#94A3B8',
+    fontWeight: '400',
   },
   notificationSection: {
     paddingHorizontal: 20,

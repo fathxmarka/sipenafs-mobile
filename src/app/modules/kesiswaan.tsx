@@ -227,7 +227,7 @@ export default function KesiswaanScreen() {
           <Feather name="chevron-left" size={26} color={Colors.secondary} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>2. Kesiswaan</Text>
+          <Text style={styles.headerTitle}>Kesiswaan</Text>
           <View style={styles.headerBadge}>
             <View style={[styles.dotOnline, { backgroundColor: '#10B981' }]} />
             <Text style={styles.headerBadgeText}>Data Master Siswa & Rombel</Text>

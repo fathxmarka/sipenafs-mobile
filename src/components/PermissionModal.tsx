@@ -29,8 +29,7 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
     !permissions.location ||
     !permissions.camera ||
     !permissions.audio ||
-    !permissions.media ||
-    !permissions.contacts;
+    !permissions.media;
 
   return (
     <Modal
@@ -213,44 +212,6 @@ export const PermissionModal: React.FC<PermissionModalProps> = ({
               </View>
             </View>
 
-            {/* 5. Contacts */}
-            <View style={styles.itemRow}>
-              <View
-                style={[
-                  styles.itemIconBox,
-                  { backgroundColor: permissions.contacts ? '#ECFDF5' : '#FEF3C7' },
-                ]}
-              >
-                <Ionicons
-                  name="people"
-                  size={19}
-                  color={permissions.contacts ? '#059669' : '#D97706'}
-                />
-              </View>
-              <View style={styles.itemContent}>
-                <View style={styles.itemHeader}>
-                  <Text style={styles.itemTitle}>Kontak</Text>
-                  <View
-                    style={[
-                      styles.badge,
-                      { backgroundColor: permissions.contacts ? '#D1FAE5' : '#FEE2E2' },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.badgeText,
-                        { color: permissions.contacts ? '#065F46' : '#991B1B' },
-                      ]}
-                    >
-                      {permissions.contacts ? 'Aktif' : 'Belum Aktif'}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.itemDesc}>
-                  Sinkronisasi nomor telepon guru, staf, dan orang tua wali murid.
-                </Text>
-              </View>
-            </View>
           </ScrollView>
 
           {/* Action Buttons */}

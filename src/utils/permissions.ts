@@ -2,14 +2,12 @@ import { Platform, PermissionsAndroid } from 'react-native';
 import * as Location from 'expo-location';
 import { Camera } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library/legacy';
-import * as Contacts from 'expo-contacts/legacy';
 
 export interface AppPermissionsStatus {
   location: boolean;
   camera: boolean;
   audio: boolean;
   media: boolean;
-  contacts: boolean;
   allGranted: boolean;
 }
 
@@ -19,7 +17,6 @@ export interface AppPermissionsStatus {
  * - Camera (for face verification & QR scanning)
  * - Audio / Microphone (for learning media & audio recording)
  * - Media / Photos & Storage (for document & media attachments)
- * - Contacts (for connecting teachers, students, and parent directories)
  */
 export async function requestAppPermissions(): Promise<AppPermissionsStatus> {
   const result: AppPermissionsStatus = {
@@ -27,7 +24,6 @@ export async function requestAppPermissions(): Promise<AppPermissionsStatus> {
     camera: false,
     audio: false,
     media: false,
-    contacts: false,
     allGranted: false,
   };
 
@@ -69,17 +65,7 @@ export async function requestAppPermissions(): Promise<AppPermissionsStatus> {
       console.log('[expo-media-library] request error:', mediaErr);
     }
 
-    // 5. Contacts permission via expo-contacts
-    try {
-      if (Contacts?.requestPermissionsAsync) {
-        const contactsStatus = await Contacts.requestPermissionsAsync();
-        result.contacts = contactsStatus.status === 'granted';
-      }
-    } catch (contactsErr) {
-      console.log('[expo-contacts] request error:', contactsErr);
-    }
-
-    // 6. Additional verification via PermissionsAndroid on Android
+    // 5. Additional verification via PermissionsAndroid on Android
     if (Platform.OS === 'android') {
       try {
         if (!result.location) {
@@ -92,9 +78,6 @@ export async function requestAppPermissions(): Promise<AppPermissionsStatus> {
         }
         if (!result.audio) {
           result.audio = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
-        }
-        if (!result.contacts) {
-          result.contacts = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_CONTACTS);
         }
         if (!result.media) {
           const hasImages =
@@ -114,8 +97,7 @@ export async function requestAppPermissions(): Promise<AppPermissionsStatus> {
       result.location &&
       result.camera &&
       result.audio &&
-      result.media &&
-      result.contacts;
+      result.media;
 
     console.log('[Permissions] App permissions status:', result);
   } catch (error) {
@@ -134,7 +116,6 @@ export async function checkAppPermissions(): Promise<AppPermissionsStatus> {
     camera: false,
     audio: false,
     media: false,
-    contacts: false,
     allGranted: false,
   };
 
@@ -160,21 +141,11 @@ export async function checkAppPermissions(): Promise<AppPermissionsStatus> {
       console.log('[expo-media-library] check error:', e);
     }
 
-    try {
-      if (Contacts?.getPermissionsAsync) {
-        const contactsStatus = await Contacts.getPermissionsAsync();
-        result.contacts = contactsStatus.status === 'granted';
-      }
-    } catch (e) {
-      console.log('[expo-contacts] check error:', e);
-    }
-
     result.allGranted =
       result.location &&
       result.camera &&
       result.audio &&
-      result.media &&
-      result.contacts;
+      result.media;
   } catch (e) {
     console.log('[Permissions] Check error:', e);
   }

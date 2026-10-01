@@ -126,25 +126,32 @@ export default function NotifikasiScreen() {
       </View>
 
       {/* Filter Tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterBar}>
-        {[
-          { id: 'all', label: 'Semua' },
-          { id: 'presensi', label: 'Presensi' },
-          { id: 'nilai', label: 'Nilai & Tugas' },
-          { id: 'spp', label: 'SPP / Keuangan' },
-          { id: 'pengumuman', label: 'Pengumuman' },
-        ].map(tab => (
-          <TouchableOpacity
-            key={tab.id}
-            style={[styles.filterPill, activeFilter === tab.id && styles.filterPillActive]}
-            onPress={() => setActiveFilter(tab.id as FilterType)}
-          >
-            <Text style={[styles.filterPillText, activeFilter === tab.id && styles.filterPillTextActive]}>
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      <View style={styles.filterBarWrapper}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false} 
+          contentContainerStyle={styles.filterBarContent}
+        >
+          {[
+            { id: 'all', label: 'Semua' },
+            { id: 'presensi', label: 'Presensi' },
+            { id: 'nilai', label: 'Nilai & Tugas' },
+            { id: 'spp', label: 'SPP / Keuangan' },
+            { id: 'pengumuman', label: 'Pengumuman' },
+          ].map(tab => (
+            <TouchableOpacity
+              key={tab.id}
+              style={[styles.filterPill, activeFilter === tab.id && styles.filterPillActive]}
+              onPress={() => setActiveFilter(tab.id as FilterType)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.filterPillText, activeFilter === tab.id && styles.filterPillTextActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
       {/* List */}
       <ScrollView
@@ -246,27 +253,36 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0B8A7D',
   },
-  filterBar: {
+  filterBarWrapper: {
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#EEEEEE',
   },
+  filterBarContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
   filterPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F1F5F9',
     marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   filterPillActive: {
     backgroundColor: '#0B8A7D',
+    borderColor: '#0B8A7D',
   },
   filterPillText: {
     fontSize: 12,
     fontWeight: '600',
-    color: Colors.textLight,
+    color: '#64748B',
   },
   filterPillTextActive: {
     color: '#FFFFFF',

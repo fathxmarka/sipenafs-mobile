@@ -12,7 +12,6 @@ export default function RootLayout() {
     camera: false,
     audio: false,
     media: false,
-    contacts: false,
     allGranted: false,
   });
   const [showPermissionModal, setShowPermissionModal] = useState(false);
@@ -25,7 +24,7 @@ export default function RootLayout() {
         // Hide splash screen first so that permission dialogs and UI are clearly visible to user
         await SplashScreen.hideAsync().catch(() => {});
 
-        // Automatically request essential permissions (GPS, Camera, Audio, Media, Contacts) when app opens
+        // Automatically request essential permissions (GPS, Camera, Audio, Media) when app opens
         const status = await requestAppPermissions();
         if (isMounted) {
           setPermissions(status);
