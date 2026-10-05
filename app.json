@@ -30,7 +30,8 @@
         "WRITE_EXTERNAL_STORAGE",
         "USE_BIOMETRIC",
         "USE_FINGERPRINT",
-        "REQUEST_INSTALL_PACKAGES"
+        "REQUEST_INSTALL_PACKAGES",
+        "POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -68,6 +69,13 @@
         {
           "photosPermission": "Izinkan SIPENAFS mengakses galeri dan media penyimpanan untuk dokumen dan materi KBM.",
           "savePhotosPermission": "Izinkan SIPENAFS menyimpan foto dan dokumen presensi ke galeri perangkat."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#0D9488",
+          "defaultChannel": "sipenafs-updates"
         }
       ],
       "./plugins/withAbiSplits.js"
