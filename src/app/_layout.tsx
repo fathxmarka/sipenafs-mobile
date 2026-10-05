@@ -99,7 +99,8 @@ export default function RootLayout() {
 
   /**
    * Re-check update ketika app kembali dari background ke foreground
-   * Sehingga user yang buka app dari notifikasi langsung dapat modal update
+   * PENTING: Jangan re-trigger jika modal update sedang ditampilkan
+   * (misalnya saat kembali dari Package Installer)
    */
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
@@ -107,8 +108,11 @@ export default function RootLayout() {
         appStateRef.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
-        // App kembali ke foreground → cek update lagi
-        performUpdateCheck(true);
+        // Jangan re-check jika modal update sedang aktif
+        // (user mungkin baru saja kembali dari Package Installer)
+        if (!showUpdateModal) {
+          performUpdateCheck(true);
+        }
       }
       appStateRef.current = nextAppState;
     });
@@ -116,7 +120,7 @@ export default function RootLayout() {
     return () => {
       subscription.remove();
     };
-  }, []);
+  }, [showUpdateModal]);
 
   /**
    * Listener: ketika user klik notifikasi update → langsung buka modal

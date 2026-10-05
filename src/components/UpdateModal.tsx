@@ -113,11 +113,26 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
   const triggerInstallation = async (apkUri: string) => {
     try {
       const contentUri = await FileSystem.getContentUriAsync(apkUri);
-      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-        data: contentUri,
-        flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-        type: 'application/vnd.android.package-archive',
-      });
+
+      // FLAG_GRANT_READ_URI_PERMISSION (1) | FLAG_ACTIVITY_NEW_TASK (268435456) = 268435457
+      // FLAG_ACTIVITY_NEW_TASK diperlukan agar Package Installer bisa berjalan di task terpisah
+      const intentFlags = 268435457;
+
+      try {
+        // Coba dulu dengan action INSTALL_PACKAGE (lebih reliable untuk install APK)
+        await IntentLauncher.startActivityAsync('android.intent.action.INSTALL_PACKAGE', {
+          data: contentUri,
+          flags: intentFlags,
+          type: 'application/vnd.android.package-archive',
+        });
+      } catch (_installErr) {
+        // Fallback ke VIEW action jika INSTALL_PACKAGE tidak tersedia
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: contentUri,
+          flags: intentFlags,
+          type: 'application/vnd.android.package-archive',
+        });
+      }
     } catch (err: any) {
       console.log('[UpdateModal] Intent launch error:', err);
       Alert.alert(
