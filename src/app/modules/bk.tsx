@@ -15,6 +15,7 @@ type TabType = 'pelanggaran' | 'prestasi' | 'konseling';
 
 interface ViolationItem {
   id: string;
+  studentId?: string;
   studentName: string;
   className: string;
   category: string;
@@ -27,6 +28,7 @@ interface ViolationItem {
 
 interface AchievementItem {
   id: string;
+  studentId?: string;
   studentName: string;
   className: string;
   title: string;
@@ -37,6 +39,7 @@ interface AchievementItem {
 
 interface CounselingLog {
   id: string;
+  studentId?: string;
   studentName: string;
   className: string;
   counselorName: string;
@@ -54,6 +57,10 @@ export default function BkModuleScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // User & Role State
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isStudentOrParent, setIsStudentOrParent] = useState(false);
 
   // Booking modal
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
@@ -90,14 +97,21 @@ export default function BkModuleScreen() {
   const fetchBkData = async () => {
     try {
       const storedUser = await SecureStore.getItemAsync('sipena_user');
+      let u: any = null;
+      let isStudent = false;
+      let isParent = false;
+
       if (storedUser) {
-        const u = JSON.parse(storedUser);
+        u = JSON.parse(storedUser);
+        setCurrentUser(u);
         const r = (u.role || '').toLowerCase();
         const j = (u.jabatan || '').toLowerCase();
         const caps: string[] = Array.isArray(u.capabilities) ? u.capabilities.map((c: any) => String(c).toLowerCase()) : [];
 
-        // HANYA Admin, Kepala Sekolah / Pimpinan, dan Guru BK yang berhak mengakses catatan konseling siswa
-        const isAllowed = 
+        isStudent = r.includes('siswa') || r.includes('student') || Boolean(u.student_id && !u.teacher_id && !u.nip);
+        isParent = r.includes('ortu') || r.includes('orang tua') || r.includes('parent');
+
+        const isBkOrAdmin = 
           r.includes('admin') || 
           r.includes('operator') || 
           r.includes('kepala') || 
@@ -106,18 +120,24 @@ export default function BkModuleScreen() {
           Boolean(u.is_bk) || 
           j.includes('bk') || 
           j.includes('konseling') || 
-          caps.includes('bk');
+          caps.includes('bk') ||
+          r.includes('guru') ||
+          r.includes('wali kelas');
 
-        if (!isAllowed) {
+        if (!isBkOrAdmin && !isStudent && !isParent) {
           setIsAccessDenied(true);
           setIsLoading(false);
           return;
         }
+
+        setIsStudentOrParent(isStudent || isParent);
       }
 
       const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
       const token = await SecureStore.getItemAsync('sipena_token');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      let hasLoadedFromApi = false;
 
       if (apiUrl && token) {
         try {
@@ -128,114 +148,166 @@ export default function BkModuleScreen() {
           ]);
 
           if (resViolations.status === 'fulfilled' && resViolations.value.data?.data) {
-            const apiViolations = resViolations.value.data.data.map((v: any) => ({
+            hasLoadedFromApi = true;
+            let apiViolations = resViolations.value.data.data.map((v: any) => ({
               id: v.id?.toString() || Math.random().toString(),
+              studentId: v.student_id?.toString() || v.student?.id?.toString() || '',
               studentName: v.student?.name || 'Siswa',
-              className: v.student?.class_name || 'XII',
+              className: v.student?.enrollments?.[0]?.class?.name || v.student?.class_name || 'XII',
               category: v.type?.name || 'Disiplin',
-              description: v.description || 'Keterangan pelanggaran',
+              description: v.notes || v.description || 'Keterangan pelanggaran',
               points: Number(v.points || v.type?.points || 5),
-              date: v.date || 'Hari ini',
-              sanction: v.sanction || 'Peringatan Lisan',
+              date: v.date ? new Date(v.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Hari ini',
+              sanction: v.sanction || 'Peringatan Lisan & Pembinaan Karakter',
               status: v.status || 'Selesai',
             }));
+
+            // Filter ketat: jika siswa atau orang tua, pastikan HANYA kasus siswa tersebut yang ditampilkan
+            if (isStudent || isParent) {
+              const sid = String(u?.student_id || (isStudent ? u?.id : ''));
+              const sname = (isParent ? (u?.student_name || '') : (u?.name || '')).toLowerCase().trim();
+              apiViolations = apiViolations.filter((v: any) => {
+                if (sid && v.studentId) return String(v.studentId) === sid;
+                if (sname && v.studentName) return v.studentName.toLowerCase().includes(sname);
+                return true; // jika backend sudah memfilter
+              });
+            }
+
             setViolations(apiViolations);
           }
 
           if (resCounseling.status === 'fulfilled' && resCounseling.value.data?.data) {
-            const apiLogs = resCounseling.value.data.data.map((c: any) => ({
+            hasLoadedFromApi = true;
+            let apiLogs = resCounseling.value.data.data.map((c: any) => ({
               id: c.id?.toString() || Math.random().toString(),
+              studentId: c.student_id?.toString() || c.student?.id?.toString() || '',
               studentName: c.student?.name || 'Siswa',
-              className: c.student?.class_name || 'XII',
-              counselorName: c.counselor?.name || 'Guru BK',
-              topic: c.topic || 'Bimbingan Minat Bakat',
-              actionTaken: c.action_plan || 'Tindak lanjut pendampingan',
-              date: c.date || 'Hari ini',
+              className: c.student?.enrollments?.[0]?.class?.name || c.student?.class_name || 'XII',
+              counselorName: c.teacher?.name || c.counselor?.name || 'Guru Pembimbing BK',
+              topic: c.topic || 'Bimbingan Siswa',
+              actionTaken: c.action_taken || c.action_plan || 'Tindak lanjut pendampingan',
+              date: c.date ? new Date(c.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Hari ini',
               status: c.status || 'Selesai',
             }));
+
+            if (isStudent || isParent) {
+              const sid = String(u?.student_id || (isStudent ? u?.id : ''));
+              const sname = (isParent ? (u?.student_name || '') : (u?.name || '')).toLowerCase().trim();
+              apiLogs = apiLogs.filter((c: any) => {
+                if (sid && c.studentId) return String(c.studentId) === sid;
+                if (sname && c.studentName) return c.studentName.toLowerCase().includes(sname);
+                return true;
+              });
+            }
+
             setCounselingLogs(apiLogs);
           }
         } catch (_) {}
       }
 
-      // Default structured BK data
-      const defaultViolations: ViolationItem[] = [
-        {
-          id: 'v1',
-          studentName: 'Rendy Pratama',
-          className: 'XI IPS 2',
-          category: 'Keterlambatan',
-          description: 'Terlambat masuk sekolah lebih dari 3 kali berturut-turut.',
-          points: 15,
-          date: '28 Sep 2026',
-          sanction: 'Bina karakter & piket perpustakaan',
-          status: 'Diproses',
-        },
-        {
-          id: 'v2',
-          studentName: 'Dimas Anggara',
-          className: 'X-3',
-          category: 'Atribut Seragam',
-          description: 'Tidak memakai dasi dan ikat pinggang resmi sekolah saat upacara.',
-          points: 5,
-          date: '23 Sep 2026',
-          sanction: 'Peringatan lisan & teguran tertulis',
-          status: 'Selesai',
-        },
-      ];
-      setViolations(prev => (prev.length > 0 ? prev : defaultViolations));
+      // Default structured BK data jika belum dari API
+      if (!hasLoadedFromApi) {
+        if (isStudent || isParent) {
+          // Bagi siswa: catatan bersih (0 pelanggaran)
+          setViolations([]);
+          setAchievements([
+            {
+              id: 'ac1',
+              studentName: isParent ? (u?.student_name || 'Putra/Putri') : (u?.name || 'Saya'),
+              className: u?.kelas || u?.student_class || 'XII',
+              title: 'Siswa Teladan - Kehadiran Disiplin & Bebas Pelanggaran',
+              level: 'Tingkat Sekolah',
+              points: 25,
+              date: 'Semester Aktif',
+            },
+          ]);
+          setCounselingLogs([
+            {
+              id: 'cl1',
+              studentName: isParent ? (u?.student_name || 'Putra/Putri') : (u?.name || 'Saya'),
+              className: u?.kelas || u?.student_class || 'XII',
+              counselorName: 'Guru Pembimbing BK',
+              topic: 'Pengembangan Minat & Potensi Belajar',
+              actionTaken: 'Pendampingan positif dan penguatan motivasi akademik.',
+              date: 'Tersedia',
+              status: 'Selesai',
+            },
+          ]);
+        } else {
+          // Admin / Guru BK view
+          const defaultViolations: ViolationItem[] = [
+            {
+              id: 'v1',
+              studentName: 'Rendy Pratama',
+              className: 'XI IPS 2',
+              category: 'Keterlambatan',
+              description: 'Terlambat masuk sekolah lebih dari 3 kali berturut-turut.',
+              points: 15,
+              date: '28 Sep 2026',
+              sanction: 'Bina karakter & piket perpustakaan',
+              status: 'Diproses',
+            },
+            {
+              id: 'v2',
+              studentName: 'Dimas Anggara',
+              className: 'X-3',
+              category: 'Atribut Seragam',
+              description: 'Tidak memakai dasi dan ikat pinggang resmi sekolah saat upacara.',
+              points: 5,
+              date: '23 Sep 2026',
+              sanction: 'Peringatan lisan & teguran tertulis',
+              status: 'Selesai',
+            },
+          ];
+          setViolations(defaultViolations);
 
-      const defaultAchievements: AchievementItem[] = [
-        {
-          id: 'ac1',
-          studentName: 'Ahmad Fauzan',
-          className: 'XII MIPA 1',
-          title: 'Juara 1 Olimpiade Sains Nasional (OSN) Fisika',
-          level: 'Tingkat Provinsi',
-          points: 50,
-          date: '25 Sep 2026',
-        },
-        {
-          id: 'ac2',
-          studentName: 'Siti Nur Aini',
-          className: 'XI MIPA 3',
-          title: 'Juara 2 Lomba Debat Bahasa Inggris Nasional',
-          level: 'Tingkat Nasional',
-          points: 40,
-          date: '20 Sep 2026',
-        },
-      ];
-      setAchievements(defaultAchievements);
+          const defaultAchievements: AchievementItem[] = [
+            {
+              id: 'ac1',
+              studentName: 'Ahmad Fauzan',
+              className: 'XII MIPA 1',
+              title: 'Juara 1 Olimpiade Sains Nasional (OSN) Fisika',
+              level: 'Tingkat Provinsi',
+              points: 50,
+              date: '25 Sep 2026',
+            },
+            {
+              id: 'ac2',
+              studentName: 'Siti Nur Aini',
+              className: 'XI MIPA 3',
+              title: 'Juara 2 Lomba Debat Bahasa Inggris Nasional',
+              level: 'Tingkat Nasional',
+              points: 40,
+              date: '20 Sep 2026',
+            },
+          ];
+          setAchievements(defaultAchievements);
 
-      const defaultLogs: CounselingLog[] = [
-        {
-          id: 'cl1',
-          studentName: 'Ahmad Fauzan',
-          className: 'XII MIPA 1',
-          counselorName: 'Dra. Endang Sulastri (Guru BK)',
-          topic: 'Konsultasi Pemilihan Jurusan & Kampus SNBP / UTBK',
-          actionTaken: 'Analisis nilai rapor semester 1-5 dan rekomendasi program studi prioritas.',
-          date: '29 Sep 2026',
-          status: 'Selesai',
-        },
-        {
-          id: 'cl2',
-          studentName: 'Bima Sakti',
-          className: 'X-1',
-          counselorName: 'Ibu Rahmi, S.Pd',
-          topic: 'Adaptasi Lingkungan Baru & Manajemen Waktu',
-          actionTaken: 'Pembuatan jadwal belajar mandiri mingguan.',
-          date: '02 Okt 2026',
-          status: 'Terjadwal',
-        },
-      ];
-      setCounselingLogs(prev => (prev.length > 0 ? prev : defaultLogs));
-
-      setStats({
-        totalViolations: 2,
-        totalAchievements: 2,
-        activeSessions: 3,
-      });
+          const defaultLogs: CounselingLog[] = [
+            {
+              id: 'cl1',
+              studentName: 'Ahmad Fauzan',
+              className: 'XII MIPA 1',
+              counselorName: 'Dra. Endang Sulastri (Guru BK)',
+              topic: 'Konsultasi Pemilihan Jurusan & Kampus SNBP / UTBK',
+              actionTaken: 'Analisis nilai rapor semester 1-5 dan rekomendasi program studi prioritas.',
+              date: '29 Sep 2026',
+              status: 'Selesai',
+            },
+            {
+              id: 'cl2',
+              studentName: 'Bima Sakti',
+              className: 'X-1',
+              counselorName: 'Ibu Rahmi, S.Pd',
+              topic: 'Adaptasi Lingkungan Baru & Manajemen Waktu',
+              actionTaken: 'Pembuatan jadwal belajar mandiri mingguan.',
+              date: '02 Okt 2026',
+              status: 'Terjadwal',
+            },
+          ];
+          setCounselingLogs(defaultLogs);
+        }
+      }
 
     } catch (e: any) {
       console.warn('BK load error:', e.message);
@@ -257,13 +329,33 @@ export default function BkModuleScreen() {
     }
     setIsSubmitting(true);
     try {
-      await new Promise(r => setTimeout(r, 600));
+      const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
+      const token = await SecureStore.getItemAsync('sipena_token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      let savedLog: any = null;
+      if (apiUrl && token) {
+        try {
+          const res = await axios.post(`${apiUrl}/api/bk/counseling`, {
+            student_id: currentUser?.student_id || currentUser?.id,
+            topic: consultTopic,
+            description: `Diajukan melalui aplikasi mobile pada ${consultTime}`,
+            type: 'Konsultasi Siswa',
+            status: 'Terjadwal'
+          }, { headers });
+          if (res.data?.data) {
+            savedLog = res.data.data;
+          }
+        } catch (apiErr) {
+          console.log('[BK] API booking request:', apiErr);
+        }
+      }
 
       const newLog: CounselingLog = {
-        id: `cl-${Date.now()}`,
-        studentName: 'Saya (Pengajuan Baru)',
-        className: 'XII MIPA 1',
-        counselorName: 'Dra. Endang Sulastri',
+        id: savedLog?.id?.toString() || `cl-${Date.now()}`,
+        studentName: isStudentOrParent ? (currentUser?.student_name || currentUser?.name || 'Saya') : 'Siswa',
+        className: currentUser?.kelas || currentUser?.student_class || 'XII',
+        counselorName: savedLog?.teacher?.name || 'Guru Pembimbing BK',
         topic: consultTopic,
         actionTaken: 'Menunggu konfirmasi jadwal di ruang BK',
         date: consultTime,
@@ -291,14 +383,38 @@ export default function BkModuleScreen() {
         <View style={styles.headerCenter}>
           <View style={styles.moduleBadge}>
             <Ionicons name="chatbubbles" size={14} color="#CA8A04" />
-            <Text style={styles.moduleBadgeText}>MODUL 12</Text>
+            <Text style={styles.moduleBadgeText}>
+              {isStudentOrParent ? 'LAYANAN BK SISWA' : 'MODUL 12'}
+            </Text>
           </View>
-          <Text style={styles.headerTitle}>Bimbingan Konseling (BK)</Text>
+          <Text style={styles.headerTitle}>
+            {isStudentOrParent ? 'Buku BK & Konseling' : 'Bimbingan Konseling (BK)'}
+          </Text>
         </View>
         <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
           <Ionicons name="reload" size={20} color={Colors.text} />
         </TouchableOpacity>
       </View>
+
+      {/* Student Personal Info Banner */}
+      {isStudentOrParent && (
+        <View style={styles.studentBanner}>
+          <View style={styles.studentAvatar}>
+            <Ionicons name="person" size={20} color="#0B8A7D" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.studentBannerName}>
+              {currentUser?.student_name || currentUser?.name || 'Siswa SIPENAFS'}
+            </Text>
+            <Text style={styles.studentBannerSub}>
+              Kelas: {currentUser?.kelas || currentUser?.student_class || 'Terdaftar'} • NISN: {currentUser?.nisn || '-'}
+            </Text>
+          </View>
+          <View style={styles.studentStatusPill}>
+            <Text style={styles.studentStatusText}>Catatan Pribadi</Text>
+          </View>
+        </View>
+      )}
 
       {isAccessDenied ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
@@ -309,7 +425,7 @@ export default function BkModuleScreen() {
             Akses Dibatasi
           </Text>
           <Text style={{ fontSize: 14, color: '#64748B', textAlign: 'center', marginTop: 8, lineHeight: 20 }}>
-            Modul Bimbingan & Konseling (BK) bersifat rahasia dan hanya dapat diakses oleh Guru BK, Wali Kelas, dan Administrator Sekolah.
+            Modul Bimbingan & Konseling (BK) bersifat rahasia dan hanya dapat diakses oleh Siswa terkait, Orang Tua/Wali, Guru BK, dan Administrator Sekolah.
           </Text>
           <TouchableOpacity
             style={{ marginTop: 24, backgroundColor: Colors.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
@@ -322,214 +438,292 @@ export default function BkModuleScreen() {
         <>
           {/* KPI Stats */}
           <View style={styles.kpiContainer}>
-        <View style={[styles.kpiCard, { backgroundColor: '#FEFCE8' }]}>
-          <View style={styles.kpiIconWrapper}>
-            <Ionicons name="alert-circle" size={18} color="#CA8A04" />
-          </View>
-          <Text style={styles.kpiValue}>{violations.length} Kasus</Text>
-          <Text style={styles.kpiLabel}>Pelanggaran Terdata</Text>
-        </View>
-        <View style={[styles.kpiCard, { backgroundColor: '#ECFDF5' }]}>
-          <View style={[styles.kpiIconWrapper, { backgroundColor: '#D1FAE5' }]}>
-            <Ionicons name="trophy" size={18} color="#10B981" />
-          </View>
-          <Text style={styles.kpiValue}>{achievements.length} Prestasi</Text>
-          <Text style={styles.kpiLabel}>Reward & Penghargaan</Text>
-        </View>
-      </View>
-
-      {/* Tabs */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'pelanggaran' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('pelanggaran')}
-        >
-          <Ionicons
-            name="warning-outline"
-            size={16}
-            color={activeTab === 'pelanggaran' ? '#CA8A04' : Colors.textLight}
-          />
-          <Text style={[styles.tabText, activeTab === 'pelanggaran' && styles.tabTextActive]}>
-            Buku Kasus
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'prestasi' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('prestasi')}
-        >
-          <Ionicons
-            name="ribbon-outline"
-            size={16}
-            color={activeTab === 'prestasi' ? '#CA8A04' : Colors.textLight}
-          />
-          <Text style={[styles.tabText, activeTab === 'prestasi' && styles.tabTextActive]}>
-            Prestasi
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'konseling' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('konseling')}
-        >
-          <Ionicons
-            name="chatbubble-ellipses-outline"
-            size={16}
-            color={activeTab === 'konseling' ? '#CA8A04' : Colors.textLight}
-          />
-          <Text style={[styles.tabText, activeTab === 'konseling' && styles.tabTextActive]}>
-            Konseling
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#CA8A04" />
-          <Text style={styles.loadingText}>Memuat modul BK...</Text>
-        </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
-          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#CA8A04']} />}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* TAB 1: PELANGGARAN */}
-          {activeTab === 'pelanggaran' && (
-            <View>
-              <Text style={styles.sectionTitle}>Buku Pelanggaran & Catatan Kedisiplinan</Text>
-              <Text style={styles.sectionSubtitle}>
-                Daftar pelanggaran tata tertib sekolah beserta akumulasi bobot poin disiplin.
-              </Text>
-
-              {violations.map(v => (
-                <View key={v.id} style={styles.violationCard}>
-                  <View style={styles.cardTopRow}>
-                    <View style={styles.categoryBadge}>
-                      <Text style={styles.categoryBadgeText}>{v.category}</Text>
-                    </View>
-                    <View style={styles.pointBadge}>
-                      <Text style={styles.pointBadgeText}>+{v.points} POIN</Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.studentTitle}>{v.studentName} ({v.className})</Text>
-                  <Text style={styles.descText}>{v.description}</Text>
-
-                  <View style={styles.divider} />
-
-                  <View style={styles.sanctionBox}>
-                    <Text style={styles.sanctionLabel}>Tindakan / Sanksi:</Text>
-                    <Text style={styles.sanctionValue}>{v.sanction}</Text>
-                  </View>
-
-                  <View style={styles.footerRow}>
-                    <Text style={styles.dateText}>Tgl: {v.date}</Text>
-                    <View
-                      style={[
-                        styles.statusTag,
-                        v.status === 'Selesai' ? styles.statusDone : styles.statusProgress,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusText,
-                          v.status === 'Selesai' ? styles.statusDoneText : styles.statusProgressText,
-                        ]}
-                      >
-                        {v.status.toUpperCase()}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* TAB 2: PRESTASI */}
-          {activeTab === 'prestasi' && (
-            <View>
-              <Text style={styles.sectionTitle}>Buku Catatan Prestasi Siswa</Text>
-              <Text style={styles.sectionSubtitle}>
-                Apresiasi dan poin reward bagi siswa berprestasi di bidang akademik dan non-akademik.
-              </Text>
-
-              {achievements.map(ac => (
-                <View key={ac.id} style={styles.achievementCard}>
-                  <View style={styles.acHeader}>
-                    <View style={styles.acIcon}>
-                      <Ionicons name="trophy" size={20} color="#10B981" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.acTitle}>{ac.title}</Text>
-                      <Text style={styles.acStudent}>{ac.studentName} • {ac.className}</Text>
-                    </View>
-                    <View style={styles.acPointBadge}>
-                      <Text style={styles.acPointText}>+{ac.points} REWARD</Text>
-                    </View>
-                  </View>
-                  <View style={styles.acFooter}>
-                    <Text style={styles.acLevel}>{ac.level}</Text>
-                    <Text style={styles.acDate}>{ac.date}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* TAB 3: KONSELING */}
-          {activeTab === 'konseling' && (
-            <View>
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>Jurnal Sesi Pendampingan BK</Text>
-                <TouchableOpacity
-                  style={styles.bookSessionBtn}
-                  onPress={() => setIsBookingModalOpen(true)}
-                >
-                  <Ionicons name="calendar" size={14} color="#FFFFFF" />
-                  <Text style={styles.bookSessionBtnText}>Jadwalkan Sesi</Text>
-                </TouchableOpacity>
+            <View style={[styles.kpiCard, { backgroundColor: violations.length > 0 ? '#FEFCE8' : '#F0FDF4' }]}>
+              <View style={[styles.kpiIconWrapper, { backgroundColor: violations.length > 0 ? '#FEF08A' : '#DCFCE7' }]}>
+                <Ionicons
+                  name={violations.length > 0 ? "alert-circle" : "shield-checkmark"}
+                  size={18}
+                  color={violations.length > 0 ? "#CA8A04" : "#16A34A"}
+                />
               </View>
+              <Text style={styles.kpiValue}>{violations.length} Kasus</Text>
+              <Text style={styles.kpiLabel}>
+                {isStudentOrParent ? 'Pelanggaran Anda' : 'Pelanggaran Terdata'}
+              </Text>
+            </View>
 
-              {counselingLogs.map(log => (
-                <View key={log.id} style={styles.counselingCard}>
-                  <View style={styles.counselingHeader}>
-                    <View style={styles.counselorBox}>
-                      <Ionicons name="person-circle-outline" size={20} color="#CA8A04" />
-                      <Text style={styles.counselorName}>{log.counselorName}</Text>
-                    </View>
-                    <View
-                      style={[
-                        styles.statusTag,
-                        log.status === 'Selesai' ? styles.statusDone : styles.statusWaiting,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusText,
-                          log.status === 'Selesai' ? styles.statusDoneText : styles.statusWaitingText,
-                        ]}
-                      >
-                        {log.status.toUpperCase()}
+            <View style={[styles.kpiCard, { backgroundColor: '#ECFDF5' }]}>
+              <View style={[styles.kpiIconWrapper, { backgroundColor: '#D1FAE5' }]}>
+                <Ionicons name="trophy" size={18} color="#10B981" />
+              </View>
+              <Text style={styles.kpiValue}>{achievements.length} Prestasi</Text>
+              <Text style={styles.kpiLabel}>
+                {isStudentOrParent ? 'Reward Prestasi' : 'Reward & Prestasi'}
+              </Text>
+            </View>
+
+            {isStudentOrParent && (
+              <View style={[styles.kpiCard, { backgroundColor: '#EFF6FF' }]}>
+                <View style={[styles.kpiIconWrapper, { backgroundColor: '#DBEAFE' }]}>
+                  <Ionicons name="chatbubbles" size={18} color="#2563EB" />
+                </View>
+                <Text style={styles.kpiValue}>{counselingLogs.length} Sesi</Text>
+                <Text style={styles.kpiLabel}>Jurnal Konseling</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Tabs */}
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'pelanggaran' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('pelanggaran')}
+            >
+              <Ionicons
+                name="warning-outline"
+                size={16}
+                color={activeTab === 'pelanggaran' ? '#CA8A04' : Colors.textLight}
+              />
+              <Text style={[styles.tabText, activeTab === 'pelanggaran' && styles.tabTextActive]}>
+                {isStudentOrParent ? `Kasus (${violations.length})` : 'Buku Kasus'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'prestasi' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('prestasi')}
+            >
+              <Ionicons
+                name="ribbon-outline"
+                size={16}
+                color={activeTab === 'prestasi' ? '#CA8A04' : Colors.textLight}
+              />
+              <Text style={[styles.tabText, activeTab === 'prestasi' && styles.tabTextActive]}>
+                {isStudentOrParent ? `Prestasi (${achievements.length})` : 'Prestasi'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'konseling' && styles.tabButtonActive]}
+              onPress={() => setActiveTab('konseling')}
+            >
+              <Ionicons
+                name="chatbubble-ellipses-outline"
+                size={16}
+                color={activeTab === 'konseling' ? '#CA8A04' : Colors.textLight}
+              />
+              <Text style={[styles.tabText, activeTab === 'konseling' && styles.tabTextActive]}>
+                {isStudentOrParent ? `Konseling (${counselingLogs.length})` : 'Konseling'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#CA8A04" />
+              <Text style={styles.loadingText}>Memuat modul BK...</Text>
+            </View>
+          ) : (
+            <ScrollView
+              contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
+              refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#CA8A04']} />}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* TAB 1: PELANGGARAN */}
+              {activeTab === 'pelanggaran' && (
+                <View>
+                  <Text style={styles.sectionTitle}>
+                    {isStudentOrParent ? 'Buku Catatan Kedisiplinan Saya' : 'Buku Pelanggaran & Catatan Kedisiplinan'}
+                  </Text>
+                  <Text style={styles.sectionSubtitle}>
+                    {isStudentOrParent
+                      ? 'Catatan ketertiban dan kedisiplinan pribadi Anda di sekolah.'
+                      : 'Daftar pelanggaran tata tertib sekolah beserta akumulasi bobot poin disiplin.'}
+                  </Text>
+
+                  {violations.length === 0 ? (
+                    <View style={styles.emptyBox}>
+                      <View style={styles.emptyIconBox}>
+                        <Ionicons name="shield-checkmark" size={38} color="#10B981" />
+                      </View>
+                      <Text style={styles.emptyTitle}>Catatan Kedisiplinan Bersih</Text>
+                      <Text style={styles.emptyDesc}>
+                        {isStudentOrParent
+                          ? 'Luar biasa! Tidak ada catatan pelanggaran tata tertib sekolah yang terdata untuk Anda. Pertahankan kedisiplinan Anda!'
+                          : 'Belum ada data pelanggaran siswa yang tercatat.'}
                       </Text>
                     </View>
-                  </View>
+                  ) : (
+                    violations.map(v => (
+                      <View key={v.id} style={styles.violationCard}>
+                        <View style={styles.cardTopRow}>
+                          <View style={styles.categoryBadge}>
+                            <Text style={styles.categoryBadgeText}>{v.category}</Text>
+                          </View>
+                          <View style={styles.pointBadge}>
+                            <Text style={styles.pointBadgeText}>+{v.points} POIN</Text>
+                          </View>
+                        </View>
 
-                  <Text style={styles.counselingTopic}>{log.topic}</Text>
-                  <Text style={styles.counselingStudent}>Peserta: {log.studentName} ({log.className})</Text>
+                        <Text style={styles.studentTitle}>{v.studentName} ({v.className})</Text>
+                        <Text style={styles.descText}>{v.description}</Text>
 
-                  <View style={styles.actionBox}>
-                    <Text style={styles.actionLabel}>Rencana Aksi / Pendampingan:</Text>
-                    <Text style={styles.actionText}>{log.actionTaken}</Text>
-                  </View>
+                        <View style={styles.divider} />
 
-                  <Text style={styles.counselingDate}>Jadwal: {log.date}</Text>
+                        <View style={styles.sanctionBox}>
+                          <Text style={styles.sanctionLabel}>Tindakan / Sanksi:</Text>
+                          <Text style={styles.sanctionValue}>{v.sanction}</Text>
+                        </View>
+
+                        <View style={styles.footerRow}>
+                          <Text style={styles.dateText}>Tgl: {v.date}</Text>
+                          <View
+                            style={[
+                              styles.statusTag,
+                              v.status === 'Selesai' ? styles.statusDone : styles.statusProgress,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.statusText,
+                                v.status === 'Selesai' ? styles.statusDoneText : styles.statusProgressText,
+                              ]}
+                            >
+                              {v.status.toUpperCase()}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    ))
+                  )}
                 </View>
-              ))}
-            </View>
+              )}
+
+              {/* TAB 2: PRESTASI */}
+              {activeTab === 'prestasi' && (
+                <View>
+                  <Text style={styles.sectionTitle}>
+                    {isStudentOrParent ? 'Buku Catatan Prestasi Saya' : 'Buku Catatan Prestasi Siswa'}
+                  </Text>
+                  <Text style={styles.sectionSubtitle}>
+                    {isStudentOrParent
+                      ? 'Daftar penghargaan dan apresiasi poin reward yang telah Anda raih.'
+                      : 'Apresiasi dan poin reward bagi siswa berprestasi di bidang akademik dan non-akademik.'}
+                  </Text>
+
+                  {achievements.length === 0 ? (
+                    <View style={styles.emptyBox}>
+                      <View style={[styles.emptyIconBox, { backgroundColor: '#FEF3C7' }]}>
+                        <Ionicons name="trophy-outline" size={38} color="#D97706" />
+                      </View>
+                      <Text style={styles.emptyTitle}>Belum Ada Catatan Prestasi</Text>
+                      <Text style={styles.emptyDesc}>
+                        Torehkan prestasimu dalam bidang akademik maupun non-akademik dan dapatkan poin reward sekolah!
+                      </Text>
+                    </View>
+                  ) : (
+                    achievements.map(ac => (
+                      <View key={ac.id} style={styles.achievementCard}>
+                        <View style={styles.acHeader}>
+                          <View style={styles.acIcon}>
+                            <Ionicons name="trophy" size={20} color="#10B981" />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.acTitle}>{ac.title}</Text>
+                            <Text style={styles.acStudent}>{ac.studentName} • {ac.className}</Text>
+                          </View>
+                          <View style={styles.acPointBadge}>
+                            <Text style={styles.acPointText}>+{ac.points} REWARD</Text>
+                          </View>
+                        </View>
+                        <View style={styles.acFooter}>
+                          <Text style={styles.acLevel}>{ac.level}</Text>
+                          <Text style={styles.acDate}>{ac.date}</Text>
+                        </View>
+                      </View>
+                    ))
+                  )}
+                </View>
+              )}
+
+              {/* TAB 3: KONSELING */}
+              {activeTab === 'konseling' && (
+                <View>
+                  <View style={styles.sectionHeaderRow}>
+                    <Text style={styles.sectionTitle}>
+                      {isStudentOrParent ? 'Jurnal Konsultasi BK Saya' : 'Jurnal Sesi Pendampingan BK'}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.bookSessionBtn}
+                      onPress={() => setIsBookingModalOpen(true)}
+                    >
+                      <Ionicons name="calendar" size={14} color="#FFFFFF" />
+                      <Text style={styles.bookSessionBtnText}>
+                        {isStudentOrParent ? 'Ajukan Konseling' : 'Jadwalkan Sesi'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {counselingLogs.length === 0 ? (
+                    <View style={styles.emptyBox}>
+                      <View style={[styles.emptyIconBox, { backgroundColor: '#FEF08A' }]}>
+                        <Ionicons name="chatbubbles-outline" size={38} color="#CA8A04" />
+                      </View>
+                      <Text style={styles.emptyTitle}>Belum Ada Sesi Konseling</Text>
+                      <Text style={styles.emptyDesc}>
+                        Ada kendala belajar, penjurusan kuliah, atau butuh teman bicara? Jadwalkan konsultasi dengan Guru BK sekarang!
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.emptyBookBtn}
+                        onPress={() => setIsBookingModalOpen(true)}
+                      >
+                        <Ionicons name="calendar" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                        <Text style={styles.emptyBookBtnText}>Ajukan Konseling Sekarang</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    counselingLogs.map(log => (
+                      <View key={log.id} style={styles.counselingCard}>
+                        <View style={styles.counselingHeader}>
+                          <View style={styles.counselorBox}>
+                            <Ionicons name="person-circle-outline" size={20} color="#CA8A04" />
+                            <Text style={styles.counselorName}>{log.counselorName}</Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.statusTag,
+                              log.status === 'Selesai' ? styles.statusDone : styles.statusWaiting,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.statusText,
+                                log.status === 'Selesai' ? styles.statusDoneText : styles.statusWaitingText,
+                              ]}
+                            >
+                              {log.status.toUpperCase()}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <Text style={styles.counselingTopic}>{log.topic}</Text>
+                        <Text style={styles.counselingStudent}>
+                          {isStudentOrParent ? `Status Siswa: ${log.studentName}` : `Peserta: ${log.studentName} (${log.className})`}
+                        </Text>
+
+                        <View style={styles.actionBox}>
+                          <Text style={styles.actionLabel}>Rencana Aksi / Pendampingan:</Text>
+                          <Text style={styles.actionText}>{log.actionTaken}</Text>
+                        </View>
+
+                        <Text style={styles.counselingDate}>Jadwal: {log.date}</Text>
+                      </View>
+                    ))
+                  )}
+                </View>
+              )}
+            </ScrollView>
           )}
-        </ScrollView>
-      )}
 
       {/* Modal Jadwalkan Konseling */}
       <Modal
@@ -1038,5 +1232,95 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  studentBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 2,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  studentAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#E6F4F1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  studentBannerName: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  studentBannerSub: {
+    fontSize: 11,
+    color: Colors.textLight,
+    marginTop: 2,
+  },
+  studentStatusPill: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  studentStatusText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  emptyBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    marginVertical: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  emptyIconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#F0FDF4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: Colors.text,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  emptyDesc: {
+    fontSize: 12,
+    color: Colors.textLight,
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: 12,
+  },
+  emptyBookBtn: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#CA8A04',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  emptyBookBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
