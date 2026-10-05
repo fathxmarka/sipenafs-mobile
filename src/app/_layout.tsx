@@ -3,7 +3,8 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import { requestAppPermissions, AppPermissionsStatus } from '../utils/permissions';
 import { PermissionModal } from '../components/PermissionModal';
-
+import { checkForAppUpdate, AppUpdateInfo } from '../services/updateService';
+import { UpdateModal } from '../components/UpdateModal';
 
 export default function RootLayout() {
   const [permissions, setPermissions] = useState<AppPermissionsStatus>({
@@ -14,6 +15,8 @@ export default function RootLayout() {
     allGranted: false,
   });
   const [showPermissionModal, setShowPermissionModal] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -32,8 +35,15 @@ export default function RootLayout() {
             setShowPermissionModal(true);
           }
         }
+
+        // Check for app update in background
+        const update = await checkForAppUpdate();
+        if (isMounted && update?.hasUpdate) {
+          setUpdateInfo(update);
+          setShowUpdateModal(true);
+        }
       } catch (err) {
-        console.log('[RootLayout] Permission init error:', err);
+        console.log('[RootLayout] Init error:', err);
       }
     }
 
@@ -65,6 +75,12 @@ export default function RootLayout() {
         permissions={permissions}
         onRequestPermissions={handleRequestPermissions}
         onDismiss={() => setShowPermissionModal(false)}
+      />
+
+      <UpdateModal
+        visible={showUpdateModal}
+        updateInfo={updateInfo}
+        onDismiss={() => setShowUpdateModal(false)}
       />
     </>
   );

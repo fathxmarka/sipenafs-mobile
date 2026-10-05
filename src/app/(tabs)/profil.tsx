@@ -8,7 +8,10 @@ import { useRouter } from 'expo-router';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '../../constants/Colors';
 import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
 import { Toast, ToastType } from '../../components/ui/Toast';
+import { checkForAppUpdate, AppUpdateInfo } from '../../services/updateService';
+import { UpdateModal } from '../../components/UpdateModal';
 import { 
   checkBiometricSupport, 
   getBiometricProfile, 
@@ -51,6 +54,29 @@ export default function ProfilScreen() {
 
   const showToast = (message: string, type: ToastType = 'info') => {
     setToast({ visible: true, message, type });
+  };
+
+  // App Update state
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+
+  const handleCheckUpdate = async () => {
+    setIsCheckingUpdate(true);
+    try {
+      const res = await checkForAppUpdate();
+      if (res && res.hasUpdate) {
+        setUpdateInfo(res);
+        setShowUpdateModal(true);
+      } else {
+        const v = Constants.expoConfig?.version || '1.0.0';
+        showToast(`Aplikasi SIPENAFS sudah versi terbaru (v${v})`, 'success');
+      }
+    } catch (e) {
+      showToast('Gagal memeriksa pembaruan. Pastikan terhubung ke internet.', 'error');
+    } finally {
+      setIsCheckingUpdate(false);
+    }
   };
 
   useEffect(() => {
@@ -368,14 +394,30 @@ export default function ProfilScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={styles.actionItem}
+              onPress={handleCheckUpdate}
+              disabled={isCheckingUpdate}
+            >
+              <View style={styles.actionLeft}>
+                <Ionicons name="cloud-download-outline" size={20} color="#0D9488" />
+                <Text style={styles.actionText}>Periksa Pembaruan Aplikasi</Text>
+              </View>
+              {isCheckingUpdate ? (
+                <ActivityIndicator size="small" color="#0D9488" />
+              ) : (
+                <Ionicons name="chevron-forward" size={18} color={Colors.textLight} />
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
               style={[styles.actionItem, { borderBottomWidth: 0 }]}
-              onPress={() => showToast('SIPENAFS Mobile v2.0.0 Pro - Sistem Informasi Pendidikan Nasional Terpadu', 'info')}
+              onPress={() => showToast(`SIPENAFS Mobile v${Constants.expoConfig?.version || '1.0.0'} Pro - Sistem Informasi Pendidikan Nasional Terpadu`, 'info')}
             >
               <View style={styles.actionLeft}>
                 <Ionicons name="information-circle-outline" size={20} color="#6366F1" />
                 <Text style={styles.actionText}>Tentang Aplikasi & Versi</Text>
               </View>
-              <Text style={styles.versionText}>v2.0.0</Text>
+              <Text style={styles.versionText}>v{Constants.expoConfig?.version || '1.0.0'}</Text>
             </TouchableOpacity>
           </View>
 
@@ -495,6 +537,13 @@ export default function ProfilScreen() {
         message={toast.message}
         type={toast.type}
         onDismiss={() => setToast(prev => ({ ...prev, visible: false }))}
+      />
+
+      {/* Auto Update Modal */}
+      <UpdateModal
+        visible={showUpdateModal}
+        updateInfo={updateInfo}
+        onDismiss={() => setShowUpdateModal(false)}
       />
     </View>
   );
