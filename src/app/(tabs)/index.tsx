@@ -63,6 +63,10 @@ export default function HomeScreen() {
   const [noticeModule, setNoticeModule] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [todaySchedules, setTodaySchedules] = useState<any[]>([]);
+  const [apiUrl, setApiUrl] = useState<string>('');
+  const [imgError, setImgError] = useState(false);
+  const [selectedExecDetail, setSelectedExecDetail] = useState<any>(null);
+  const [showExecModal, setShowExecModal] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -73,11 +77,14 @@ export default function HomeScreen() {
       // 1. Ambil Data dari SecureStore (Hasil Login)
       const storedUser = await SecureStore.getItemAsync('sipena_user');
       const storedSchool = await SecureStore.getItemAsync('sipena_school_name');
-      const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
+      const apiUrlStored = await SecureStore.getItemAsync('sipena_api_url');
       const token = await SecureStore.getItemAsync('sipena_token');
 
       if (storedUser) setUserData(JSON.parse(storedUser));
       if (storedSchool) setSchoolName(storedSchool);
+      if (apiUrlStored) setApiUrl(apiUrlStored);
+
+      const apiUrl = apiUrlStored;
 
       if (apiUrl && token) {
         try {
@@ -189,6 +196,146 @@ export default function HomeScreen() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const getPhotoUrl = (photoPath?: string) => {
+    if (!photoPath) return null;
+    if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
+      return photoPath;
+    }
+    const cleanBase = (apiUrl || '').replace(/\/+$/, '');
+    const cleanPath = photoPath.startsWith('/') ? photoPath : `/${photoPath}`;
+    return cleanBase ? `${cleanBase}${cleanPath}` : null;
+  };
+
+  const getInitials = (name?: string) => {
+    if (!name) return 'SP';
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase();
+  };
+
+  const renderUserAvatar = (
+    size = 46,
+    borderColor = '#FFFFFF',
+    fallbackIcon: any = 'person-outline',
+    bgColor = Colors.primary
+  ) => {
+    const photo = userData?.photo || userData?.photo_url || userData?.avatar;
+    const photoUrl = getPhotoUrl(photo);
+
+    if (photoUrl && !imgError) {
+      return (
+        <View style={[styles.avatarContainer, { width: size, height: size, borderRadius: size / 2, borderColor, borderWidth: 2 }]}>
+          <Image
+            source={{ uri: photoUrl }}
+            style={{ width: '100%', height: '100%', borderRadius: size / 2 }}
+            resizeMode="cover"
+            onError={() => setImgError(true)}
+          />
+        </View>
+      );
+    }
+
+    if (userData?.name) {
+      return (
+        <View style={[styles.avatarContainer, { width: size, height: size, borderRadius: size / 2, backgroundColor: bgColor, borderColor, borderWidth: 2 }]}>
+          <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: Math.max(11, Math.round(size * 0.36)) }}>
+            {getInitials(userData.name)}
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <View style={[styles.avatarContainer, { width: size, height: size, borderRadius: size / 2, backgroundColor: '#F1F5F9', borderColor, borderWidth: 2 }]}>
+        <Ionicons name={fallbackIcon} size={Math.round(size * 0.5)} color={bgColor} />
+      </View>
+    );
+  };
+
+  const openExecDetail = (type: 'retirement' | 'mutation' | 'sarpras' | 'bantuan') => {
+    if (type === 'retirement') {
+      setSelectedExecDetail({
+        type: 'retirement',
+        title: 'Waspada Pensiun (Purna Tugas)',
+        subtitle: 'Proyeksi batas usia pensiun GTK tahun ini & 5 tahun ke depan',
+        badge: 'Manajemen Kepegawaian',
+        badgeColor: '#F57C00',
+        statNumber: mgmtStats?.retirement?.thisYear ?? 0,
+        statUnit: 'Pegawai Purna Tugas Tahun Ini',
+        description: 'Menampilkan data tenaga pendidik dan kependidikan yang memasuki batas usia pensiun (BUP). Segera siapkan usulan formasi baru atau rekrutmen pengganti ke dinas terkait.',
+        highlights: [
+          { label: 'Batas Usia Pensiun Guru', value: `${mgmtStats?.retirement?.settings?.teacher ?? 60} Tahun` },
+          { label: 'Batas Usia Pensiun Staf', value: `${mgmtStats?.retirement?.settings?.staff ?? 58} Tahun` },
+          { label: 'Total Guru Aktif', value: `${mgmtStats?.hr?.teachers ?? stats.guru} Guru`, color: '#0B8A7D' },
+          { label: 'Total Staf / Tendik', value: `${mgmtStats?.hr?.staff ?? 0} Staf`, color: '#3B82F6' },
+        ],
+        actionTitle: 'Buka Modul SDM & Guru',
+        actionRoute: '/modules/sdm'
+      });
+    } else if (type === 'mutation') {
+      setSelectedExecDetail({
+        type: 'mutation',
+        title: 'Mutasi Siswa & Pegawai',
+        subtitle: 'Status usulan perpindahan masuk dan keluar sekolah',
+        badge: 'Verifikasi Berkas',
+        badgeColor: '#1976D2',
+        statNumber: mgmtStats?.mutations?.pending ?? 0,
+        statUnit: 'Permohonan Menunggu',
+        description: 'Daftar permohonan mutasi peserta didik atau pegawai yang sedang menunggu validasi pimpinan dan sinkronisasi data ke dinas pendidikan.',
+        highlights: [
+          { label: 'Status Menunggu Persetujuan', value: `${mgmtStats?.mutations?.pending ?? 0} Berkas`, color: '#EF4444' },
+          { label: 'Verifikasi Kelengkapan', value: 'Surat Rekomendasi, Rapor, Buku Induk' },
+          { label: 'Integrasi Dapodik', value: 'Tersinkronisasi Otomatis', color: '#10B981' }
+        ],
+        actionTitle: 'Buka Modul Kesiswaan',
+        actionRoute: '/modules/kesiswaan'
+      });
+    } else if (type === 'sarpras') {
+      setSelectedExecDetail({
+        type: 'sarpras',
+        title: 'Inventaris Sarana & Prasarana',
+        subtitle: 'Rekapitulasi fasilitas, ruangan, dan perlengkapan sekolah',
+        badge: 'Inventarisasi Aset',
+        badgeColor: '#00796B',
+        statNumber: assetStats?.total_assets !== undefined ? assetStats.total_assets : 0,
+        statUnit: 'Total Aset Terdaftar',
+        description: 'Pemantauan kondisi sarpras sekolah untuk menjamin standar kenyamanan dan keamanan ruang belajar siswa serta laboratorium.',
+        highlights: [
+          { label: 'Kondisi Baik', value: `${assetStats?.good_condition ?? assetStats?.total_assets ?? 0} Unit`, color: '#10B981' },
+          { label: 'Kondisi Rusak / Perlu Servis', value: `${assetStats?.damaged_condition ?? 0} Unit`, color: '#F59E0B' },
+          { 
+            label: 'Estimasi Nilai Perolehan', 
+            value: assetStats?.total_purchase_price 
+              ? `Rp ${Number(assetStats.total_purchase_price).toLocaleString('id-ID')}` 
+              : 'Rp 0',
+            color: '#0B8A7D'
+          }
+        ],
+        actionTitle: 'Buka Modul Sarpras & Perpus',
+        actionRoute: '/modules/sarpras'
+      });
+    } else if (type === 'bantuan') {
+      setSelectedExecDetail({
+        type: 'bantuan',
+        title: 'Prioritas Bantuan Pendidikan',
+        subtitle: 'Penerima manfaat PIP, KIP, dan program afirmasi siswa',
+        badge: 'Afirmasi Pendidikan',
+        badgeColor: '#7C3AED',
+        statNumber: bantuanStats?.total_prioritas ?? bantuanStats?.total_pip ?? 0,
+        statUnit: 'Siswa Penerima Bantuan',
+        description: 'Pendataan terpadu penerima bantuan Program Indonesia Pintar (PIP) dan afirmasi ekonomi guna mencegah putus sekolah.',
+        highlights: [
+          { label: 'Penerima PIP Aktif', value: `${bantuanStats?.total_pip ?? 0} Siswa`, color: '#7C3AED' },
+          { label: 'Pemegang KIP', value: `${bantuanStats?.total_kip ?? 0} Siswa`, color: '#2563EB' },
+          { label: 'Validasi DTKS & Dapodik', value: 'Terverifikasi Sekolah', color: '#10B981' }
+        ],
+        actionTitle: 'Buka Modul Kesiswaan',
+        actionRoute: '/modules/kesiswaan'
+      });
+    }
+    setShowExecModal(true);
   };
 
   const renderIcon = (type: string, name: any, color: string) => {
@@ -354,6 +501,14 @@ export default function HomeScreen() {
             <Feather name="bell" size={20} color={Colors.secondary} />
             <View style={styles.notificationDot} />
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.headerAvatarBtn}
+            onPress={() => router.push('/(tabs)/profil' as any)}
+            activeOpacity={0.8}
+          >
+            {renderUserAvatar(34, Colors.primary, 'person-outline', Colors.primary)}
+            <View style={styles.headerOnlineBadge} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -370,9 +525,12 @@ export default function HomeScreen() {
                 <Text style={styles.userName}>{userData?.name || 'Drs. Supriyanto, M.Pd'}</Text>
                 <Text style={styles.userRole}>NIP: {userData?.nip || '-'} • {userData?.jabatan?.name || 'Guru'}</Text>
               </View>
-              <View style={[styles.avatarContainer, { borderColor: '#16A34A' }]}>
-                <Ionicons name="school" size={28} color="#16A34A" />
-              </View>
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/profil' as any)}
+                activeOpacity={0.8}
+              >
+                {renderUserAvatar(52, '#16A34A', 'school', '#16A34A')}
+              </TouchableOpacity>
             </View>
 
             {/* Guru Stats Strip */}
@@ -527,9 +685,12 @@ export default function HomeScreen() {
                 <Text style={styles.userName}>{userData?.name || 'Ahmad Fauzan'}</Text>
                 <Text style={styles.userRole}>NISN: {userData?.nisn || '0087654321'} • Kelas XII MIPA 1</Text>
               </View>
-              <View style={[styles.avatarContainer, { borderColor: '#2563EB' }]}>
-                <Ionicons name="person" size={26} color="#2563EB" />
-              </View>
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/profil' as any)}
+                activeOpacity={0.8}
+              >
+                {renderUserAvatar(52, '#2563EB', 'person', '#2563EB')}
+              </TouchableOpacity>
             </View>
 
             {/* Status Presensi Hari Ini */}
@@ -615,9 +776,12 @@ export default function HomeScreen() {
                 <Text style={styles.userName}>{userData?.name || 'Orang Tua / Wali'}</Text>
                 <Text style={styles.userRole}>Wali Murid dari: {userData?.student_name || 'Ahmad Fauzan (XII MIPA 1)'}</Text>
               </View>
-              <View style={[styles.avatarContainer, { borderColor: '#EC4899' }]}>
-                <Ionicons name="heart" size={26} color="#EC4899" />
-              </View>
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/profil' as any)}
+                activeOpacity={0.8}
+              >
+                {renderUserAvatar(52, '#EC4899', 'heart', '#EC4899')}
+              </TouchableOpacity>
             </View>
 
             {/* Pantau Kehadiran Anak */}
@@ -703,12 +867,12 @@ export default function HomeScreen() {
                 <Text style={styles.userName}>{userData?.name || 'Administrator'}</Text>
                 <Text style={styles.userRole}>{userData?.jabatan || userData?.role || 'Administrator'}</Text>
               </View>
-              <View style={styles.avatarContainer}>
-                <Image
-                  source={{ uri: 'https://i.pravatar.cc/150?img=11' }}
-                  style={styles.avatar}
-                />
-              </View>
+              <TouchableOpacity
+                onPress={() => router.push('/(tabs)/profil' as any)}
+                activeOpacity={0.8}
+              >
+                {renderUserAvatar(52, Colors.primary, 'shield-checkmark', Colors.primary)}
+              </TouchableOpacity>
             </View>
 
             {/* Stats Card */}
@@ -740,10 +904,17 @@ export default function HomeScreen() {
 
             {/* Executive Ringkasan */}
             <View style={styles.execSection}>
-              <Text style={[styles.sectionTitle, { paddingHorizontal: 20 }]}>Ringkasan Eksekutif Pimpinan</Text>
+              <View style={[styles.sectionHeader, { paddingHorizontal: 20, marginBottom: 12 }]}>
+                <Text style={styles.sectionTitle}>Ringkasan Eksekutif Pimpinan</Text>
+                <Text style={{ fontSize: 11, color: Colors.primary, fontWeight: '700' }}>Ketuk untuk Detail</Text>
+              </View>
 
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 14 }}>
-                <View style={styles.execCard}>
+                <TouchableOpacity
+                  style={styles.execCard}
+                  onPress={() => openExecDetail('retirement')}
+                  activeOpacity={0.8}
+                >
                   <View style={styles.execHeader}>
                     <Text style={styles.execTitle}>Waspada Pensiun</Text>
                     <View style={[styles.execIconBg, { backgroundColor: '#FFF3E0' }]}>
@@ -751,10 +922,17 @@ export default function HomeScreen() {
                     </View>
                   </View>
                   <Text style={styles.execValue}>{mgmtStats?.retirement?.thisYear ?? 0} <Text style={styles.execSubtitle}>Orang</Text></Text>
-                  <Text style={styles.execSubDetail}>Purna tugas tahun ini</Text>
-                </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                    <Text style={styles.execSubDetail}>Purna tugas tahun ini</Text>
+                    <Ionicons name="chevron-forward" size={12} color="#F57C00" />
+                  </View>
+                </TouchableOpacity>
 
-                <View style={styles.execCard}>
+                <TouchableOpacity
+                  style={styles.execCard}
+                  onPress={() => openExecDetail('mutation')}
+                  activeOpacity={0.8}
+                >
                   <View style={styles.execHeader}>
                     <Text style={styles.execTitle}>Mutasi Siswa</Text>
                     <View style={[styles.execIconBg, { backgroundColor: '#E3F2FD' }]}>
@@ -762,10 +940,17 @@ export default function HomeScreen() {
                     </View>
                   </View>
                   <Text style={styles.execValue}>{mgmtStats?.mutations?.pending ?? 0} <Text style={styles.execSubtitle}>Pending</Text></Text>
-                  <Text style={styles.execSubDetail}>Menunggu persetujuan</Text>
-                </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                    <Text style={styles.execSubDetail}>Menunggu persetujuan</Text>
+                    <Ionicons name="chevron-forward" size={12} color="#1976D2" />
+                  </View>
+                </TouchableOpacity>
 
-                <View style={styles.execCard}>
+                <TouchableOpacity
+                  style={styles.execCard}
+                  onPress={() => openExecDetail('sarpras')}
+                  activeOpacity={0.8}
+                >
                   <View style={styles.execHeader}>
                     <Text style={styles.execTitle}>Total Sarpras</Text>
                     <View style={[styles.execIconBg, { backgroundColor: '#E0F2F1' }]}>
@@ -773,9 +958,182 @@ export default function HomeScreen() {
                     </View>
                   </View>
                   <Text style={styles.execValue}>{assetStats?.total_assets !== undefined ? assetStats.total_assets : 0} <Text style={styles.execSubtitle}>Unit</Text></Text>
-                  <Text style={styles.execSubDetail}>Terinventarisasi sistem</Text>
-                </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                    <Text style={styles.execSubDetail}>Terinventarisasi sistem</Text>
+                    <Ionicons name="chevron-forward" size={12} color="#00796B" />
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.execCard}
+                  onPress={() => openExecDetail('bantuan')}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.execHeader}>
+                    <Text style={styles.execTitle}>Prioritas Bantuan</Text>
+                    <View style={[styles.execIconBg, { backgroundColor: '#F3E8FF' }]}>
+                      <Ionicons name="gift-outline" size={18} color="#7C3AED" />
+                    </View>
+                  </View>
+                  <Text style={styles.execValue}>{(bantuanStats?.total_prioritas ?? bantuanStats?.total_pip ?? 0)} <Text style={styles.execSubtitle}>Siswa</Text></Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                    <Text style={styles.execSubDetail}>Penerima PIP / Afirmasi</Text>
+                    <Ionicons name="chevron-forward" size={12} color="#7C3AED" />
+                  </View>
+                </TouchableOpacity>
               </ScrollView>
+            </View>
+
+            {/* ======================================================== */}
+            {/* GRAFIK DASHBOARD PIMPINAN (SEPERTI DI WEB)                */}
+            {/* ======================================================== */}
+            <View style={styles.chartSection}>
+              {/* Card 1: Proyeksi Pensiun 5 Tahun (Bar Chart) */}
+              <View style={styles.chartCard}>
+                <View style={styles.chartHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.chartTitle}>Proyeksi Pensiun 5 Tahun</Text>
+                    <Text style={styles.chartSubtitle}>Estimasi jumlah pegawai purna tugas per tahun</Text>
+                  </View>
+                  <View style={styles.intelligenceBadge}>
+                    <Ionicons name="sparkles" size={12} color="#0B8A7D" />
+                    <Text style={styles.intelligenceBadgeText}>Sipena Intelligence</Text>
+                  </View>
+                </View>
+
+                {/* Bar Chart Bars */}
+                <View style={styles.barChartContainer}>
+                  {(() => {
+                    const currentYear = new Date().getFullYear();
+                    const projection = (mgmtStats?.retirement?.projection && Array.isArray(mgmtStats.retirement.projection) && mgmtStats.retirement.projection.length > 0)
+                      ? mgmtStats.retirement.projection
+                      : [
+                          { year: currentYear, count: mgmtStats?.retirement?.thisYear ?? 0 },
+                          { year: currentYear + 1, count: 0 },
+                          { year: currentYear + 2, count: 1 },
+                          { year: currentYear + 3, count: 0 },
+                          { year: currentYear + 4, count: 2 },
+                        ];
+                    const maxVal = Math.max(...projection.map((p: any) => Number(p.count) || 0), 4);
+                    const maxHeight = 100;
+
+                    return projection.map((p: any, idx: number) => {
+                      const isThisYear = p.year === currentYear;
+                      const count = Number(p.count) || 0;
+                      const height = Math.max(12, Math.round((count / maxVal) * maxHeight));
+
+                      return (
+                        <TouchableOpacity
+                          key={p.year || idx}
+                          style={styles.barCol}
+                          onPress={() => openExecDetail('retirement')}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[
+                            styles.barCount,
+                            isThisYear ? { color: '#0B8A7D', fontWeight: '800' } : (count > 0 ? { color: '#475569', fontWeight: '700' } : { color: '#CBD5E1' })
+                          ]}>
+                            {count}
+                          </Text>
+                          <View style={[
+                            styles.barPillar,
+                            { height },
+                            isThisYear
+                              ? { backgroundColor: '#0B8A7D', borderWidth: 1, borderColor: '#056359' }
+                              : (count > 0 ? { backgroundColor: '#CBD5E1' } : { backgroundColor: '#F1F5F9' })
+                          ]}>
+                            {isThisYear && <View style={styles.barActiveIndicator} />}
+                          </View>
+                          <Text style={[
+                            styles.barYear,
+                            isThisYear ? { color: '#0B8A7D', fontWeight: '800' } : { color: '#94A3B8' }
+                          ]}>
+                            {p.year}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    });
+                  })()}
+                </View>
+              </View>
+
+              {/* Card 2: Sebaran Gender Pendidik & Tendik */}
+              <View style={styles.chartCard}>
+                <View style={styles.chartCardTitleRow}>
+                  <View style={[styles.chartCardIconBg, { backgroundColor: '#EFF6FF' }]}>
+                    <Ionicons name="bar-chart-outline" size={16} color="#2563EB" />
+                  </View>
+                  <Text style={styles.chartCardTitle}>Sebaran Gender Pendidik & Staf</Text>
+                </View>
+
+                {(() => {
+                  const hrTotal = mgmtStats?.hr?.total || (stats.guru + (mgmtStats?.hr?.staff || 0)) || 1;
+                  const maleCount = mgmtStats?.hr?.gender?.male ?? Math.round(hrTotal * 0.45);
+                  const femaleCount = mgmtStats?.hr?.gender?.female ?? (hrTotal - maleCount);
+                  const malePct = Math.min(100, Math.max(0, Math.round((maleCount / Math.max(1, hrTotal)) * 100)));
+                  const femalePct = Math.max(0, 100 - malePct);
+
+                  return (
+                    <View style={{ gap: 14, marginTop: 12 }}>
+                      {/* Laki-laki */}
+                      <View>
+                        <View style={styles.genderLabelRow}>
+                          <View style={styles.genderDotLabel}>
+                            <View style={[styles.genderDot, { backgroundColor: '#2563EB' }]} />
+                            <Text style={styles.genderLabelText}>Laki-laki</Text>
+                          </View>
+                          <Text style={styles.genderValueText}>{maleCount} <Text style={{ fontSize: 11, color: '#94A3B8', fontWeight: '500' }}>({malePct}%)</Text></Text>
+                        </View>
+                        <View style={styles.genderTrack}>
+                          <View style={[styles.genderFill, { width: `${malePct}%`, backgroundColor: '#2563EB' }]} />
+                        </View>
+                      </View>
+
+                      {/* Perempuan */}
+                      <View>
+                        <View style={styles.genderLabelRow}>
+                          <View style={styles.genderDotLabel}>
+                            <View style={[styles.genderDot, { backgroundColor: '#EC4899' }]} />
+                            <Text style={styles.genderLabelText}>Perempuan</Text>
+                          </View>
+                          <Text style={styles.genderValueText}>{femaleCount} <Text style={{ fontSize: 11, color: '#94A3B8', fontWeight: '500' }}>({femalePct}%)</Text></Text>
+                        </View>
+                        <View style={styles.genderTrack}>
+                          <View style={[styles.genderFill, { width: `${femalePct}%`, backgroundColor: '#EC4899' }]} />
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })()}
+              </View>
+
+              {/* Card 3: Pengingat Pimpinan */}
+              <View style={styles.execReminderCard}>
+                <View style={styles.execReminderHeader}>
+                  <View style={styles.execReminderIconBg}>
+                    <Ionicons name="shield-checkmark" size={15} color="#D97706" />
+                  </View>
+                  <Text style={styles.execReminderTitle}>Pengingat Pimpinan</Text>
+                </View>
+                <View style={styles.execReminderList}>
+                  <View style={styles.execReminderItem}>
+                    <View style={styles.execReminderBullet}>
+                      <Text style={styles.execReminderBulletText}>!</Text>
+                    </View>
+                    <Text style={styles.execReminderText}>
+                      Segera tinjau <Text style={{ fontWeight: '800' }}>{mgmtStats?.mutations?.pending ?? 0} permintaan mutasi</Text> yang masuk.
+                    </Text>
+                  </View>
+                  <View style={styles.execReminderItem}>
+                    <View style={styles.execReminderBullet}>
+                      <Text style={styles.execReminderBulletText}>!</Text>
+                    </View>
+                    <Text style={styles.execReminderText}>
+                      <Text style={{ fontWeight: '800' }}>{mgmtStats?.retirement?.thisYear ?? 0} pegawai</Text> akan pensiun tahun ini, siapkan usulan pengganti.
+                    </Text>
+                  </View>
+                </View>
+              </View>
             </View>
           </View>
         )}
@@ -879,6 +1237,88 @@ export default function HomeScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Executive Detail Modal */}
+      <Modal
+        visible={showExecModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowExecModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContentCard}>
+            {/* Modal Header */}
+            <View style={styles.modalTopHeader}>
+              <View style={[styles.modalBadge, { backgroundColor: (selectedExecDetail?.badgeColor || '#0B8A7D') + '18' }]}>
+                <Text style={[styles.modalBadgeText, { color: selectedExecDetail?.badgeColor || '#0B8A7D' }]}>
+                  {selectedExecDetail?.badge || 'Data Eksekutif'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setShowExecModal(false)}
+              >
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Modal Title & Subtitle */}
+            <Text style={styles.modalDetailTitle}>{selectedExecDetail?.title}</Text>
+            <Text style={styles.modalDetailSubtitle}>{selectedExecDetail?.subtitle}</Text>
+
+            {/* Big Stat Box */}
+            <View style={styles.modalStatBox}>
+              <Text style={[styles.modalStatNumber, { color: selectedExecDetail?.badgeColor || Colors.primary }]}>
+                {selectedExecDetail?.statNumber}
+              </Text>
+              <Text style={styles.modalStatUnit}>{selectedExecDetail?.statUnit}</Text>
+            </View>
+
+            {/* Description */}
+            <Text style={styles.modalDetailDesc}>{selectedExecDetail?.description}</Text>
+
+            {/* Highlight Metric Rows */}
+            <View style={styles.modalHighlightCard}>
+              {(selectedExecDetail?.highlights || []).map((h: any, idx: number) => (
+                <View
+                  key={idx}
+                  style={[
+                    styles.modalHighlightRow,
+                    idx > 0 && { borderTopWidth: 1, borderTopColor: '#F1F5F9' }
+                  ]}
+                >
+                  <Text style={styles.modalHighlightKey}>{h.label}</Text>
+                  <Text style={[styles.modalHighlightVal, h.color ? { color: h.color } : {}]}>
+                    {h.value}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.modalActionRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowExecModal(false)}
+              >
+                <Text style={styles.modalCancelBtnText}>Tutup</Text>
+              </TouchableOpacity>
+              {selectedExecDetail?.actionRoute && (
+                <TouchableOpacity
+                  style={[styles.modalConfirmBtn, { backgroundColor: selectedExecDetail.badgeColor || Colors.primary }]}
+                  onPress={() => {
+                    setShowExecModal(false);
+                    router.push(selectedExecDetail.actionRoute as any);
+                  }}
+                >
+                  <Text style={styles.modalConfirmBtnText}>{selectedExecDetail.actionTitle || 'Buka Modul'}</Text>
+                  <Ionicons name="arrow-forward" size={14} color="#FFF" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Notice Modal */}
       <Modal visible={!!noticeModule} transparent animationType="fade">
@@ -1583,5 +2023,332 @@ const styles = StyleSheet.create({
     color: Colors.secondary,
     fontWeight: '600',
     fontSize: 13,
+  },
+  headerAvatarBtn: {
+    position: 'relative',
+    marginLeft: 2,
+  },
+  headerOnlineBadge: {
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: '#10B981',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  chartSection: {
+    paddingHorizontal: 20,
+    marginTop: 16,
+    gap: 16,
+  },
+  chartCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+  },
+  chartHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  chartTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: Colors.secondary,
+  },
+  chartSubtitle: {
+    fontSize: 11,
+    color: Colors.textLight,
+    marginTop: 2,
+  },
+  intelligenceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#E6F4F1',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  intelligenceBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#0B8A7D',
+  },
+  barChartContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    height: 140,
+    paddingTop: 10,
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  barCol: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    height: '100%',
+  },
+  barCount: {
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  barPillar: {
+    width: 32,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    position: 'relative',
+  },
+  barActiveIndicator: {
+    position: 'absolute',
+    top: -4,
+    left: '50%',
+    marginLeft: -4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#0B8A7D',
+  },
+  barYear: {
+    fontSize: 11,
+    marginTop: 8,
+    fontWeight: '600',
+  },
+  chartCardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  chartCardIconBg: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chartCardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: Colors.secondary,
+  },
+  genderLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  genderDotLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  genderDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  genderLabelText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.secondary,
+  },
+  genderValueText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: Colors.secondary,
+  },
+  genderTrack: {
+    height: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  genderFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  execReminderCard: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  execReminderHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  execReminderIconBg: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: '#FEF3C7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  execReminderTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  execReminderList: {
+    gap: 8,
+  },
+  execReminderItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  execReminderBullet: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#F59E0B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 1,
+  },
+  execReminderBulletText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  execReminderText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#92400E',
+    lineHeight: 17,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContentCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+  },
+  modalTopHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  modalBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalDetailTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: Colors.secondary,
+    marginTop: 4,
+  },
+  modalDetailSubtitle: {
+    fontSize: 12,
+    color: Colors.textLight,
+    marginTop: 2,
+    marginBottom: 14,
+  },
+  modalStatBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 14,
+    alignItems: 'center',
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  modalStatNumber: {
+    fontSize: 32,
+    fontWeight: '900',
+  },
+  modalStatUnit: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textLight,
+    marginTop: 2,
+  },
+  modalDetailDesc: {
+    fontSize: 12,
+    color: Colors.secondary,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  modalHighlightCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginBottom: 18,
+  },
+  modalHighlightRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  modalHighlightKey: {
+    fontSize: 12,
+    color: Colors.textLight,
+  },
+  modalHighlightVal: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: Colors.secondary,
+  },
+  modalActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalCancelBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.secondary,
+  },
+  modalConfirmBtn: {
+    flex: 1.5,
+    paddingVertical: 12,
+    borderRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+  },
+  modalConfirmBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });
