@@ -81,12 +81,20 @@ export async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
     // Cari file APK di daftar assets rilis GitHub
     let apkDownloadUrl = '';
     if (Array.isArray(data.assets) && data.assets.length > 0) {
-      const apkAsset = data.assets.find((asset: any) =>
+      const universalAsset = data.assets.find((asset: any) =>
+        asset.name && asset.name.toLowerCase().includes('universal') && asset.name.toLowerCase().endsWith('.apk')
+      );
+      const arm64Asset = data.assets.find((asset: any) =>
+        asset.name && asset.name.toLowerCase().includes('arm64') && asset.name.toLowerCase().endsWith('.apk')
+      );
+      const anyApkAsset = data.assets.find((asset: any) =>
         asset.name && asset.name.toLowerCase().endsWith('.apk')
       );
-      if (apkAsset && apkAsset.browser_download_url) {
-        apkDownloadUrl = apkAsset.browser_download_url;
-      } else if (data.assets[0].browser_download_url) {
+
+      const chosenAsset = universalAsset || arm64Asset || anyApkAsset;
+      if (chosenAsset && chosenAsset.browser_download_url) {
+        apkDownloadUrl = chosenAsset.browser_download_url;
+      } else if (data.assets[0]?.browser_download_url) {
         apkDownloadUrl = data.assets[0].browser_download_url;
       }
     }
