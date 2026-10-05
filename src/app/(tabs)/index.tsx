@@ -48,6 +48,7 @@ export default function HomeScreen() {
 
   const [userData, setUserData] = useState<any>(null);
   const [schoolName, setSchoolName] = useState<string>('Memuat Sekolah...');
+  const currentYear = new Date().getFullYear();
 
   const [stats, setStats] = useState({
     siswa: 0,
@@ -254,16 +255,17 @@ export default function HomeScreen() {
     );
   };
 
-  const openExecDetail = (type: 'retirement' | 'mutation' | 'sarpras' | 'bantuan') => {
+  const openExecDetail = async (type: 'retirement' | 'mutation' | 'sarpras' | 'bantuan') => {
     if (type === 'retirement') {
+      const existingRetirees = mgmtStats?.retirement?.retirees || null;
       setSelectedExecDetail({
         type: 'retirement',
         title: 'Waspada Pensiun (Purna Tugas)',
-        subtitle: 'Proyeksi batas usia pensiun GTK tahun ini & 5 tahun ke depan',
+        subtitle: `Proyeksi batas usia pensiun GTK tahun ${currentYear} & 5 tahun ke depan`,
         badge: 'Manajemen Kepegawaian',
         badgeColor: '#F57C00',
         statNumber: mgmtStats?.retirement?.thisYear ?? 0,
-        statUnit: 'Pegawai Purna Tugas Tahun Ini',
+        statUnit: `Pegawai Purna Tugas Tahun ${currentYear}`,
         description: 'Menampilkan data tenaga pendidik dan kependidikan yang memasuki batas usia pensiun (BUP). Segera siapkan usulan formasi baru atau rekrutmen pengganti ke dinas terkait.',
         highlights: [
           { label: 'Batas Usia Pensiun Guru', value: `${mgmtStats?.retirement?.settings?.teacher ?? 60} Tahun` },
@@ -271,9 +273,53 @@ export default function HomeScreen() {
           { label: 'Total Guru Aktif', value: `${mgmtStats?.hr?.teachers ?? stats.guru} Guru`, color: '#0B8A7D' },
           { label: 'Total Staf / Tendik', value: `${mgmtStats?.hr?.staff ?? 0} Staf`, color: '#3B82F6' },
         ],
-        actionTitle: 'Buka Modul SDM & Guru',
-        actionRoute: '/modules/sdm'
+        retirees: existingRetirees,
+        loadingRetirees: !existingRetirees,
+        actionTitle: 'Buka Modul SDM & Pensiun',
+        actionRoute: '/modules/sdm?tab=retirement'
       });
+      setShowExecModal(true);
+
+      // Pastikan daftar nama pegawai yang akan pensiun dimuat lengkap
+      try {
+        const storedApiUrl = await SecureStore.getItemAsync('sipena_api_url') || apiUrl;
+        const storedToken = await SecureStore.getItemAsync('sipena_token');
+        if (storedApiUrl && storedToken) {
+          const res = await axios.get(`${storedApiUrl}/api/retirement?year=${currentYear}`, {
+            headers: { Authorization: `Bearer ${storedToken}` }
+          });
+          if (res.data?.details) {
+            const list = res.data.details;
+            setSelectedExecDetail((prev: any) => {
+              if (!prev || prev.type !== 'retirement') return prev;
+              return {
+                ...prev,
+                retirees: list,
+                loadingRetirees: false,
+                statNumber: list.length !== undefined ? list.length : prev.statNumber,
+              };
+            });
+            setMgmtStats((prev: any) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                retirement: {
+                  ...prev.retirement,
+                  retirees: list,
+                  thisYear: list.length !== undefined ? list.length : prev.retirement?.thisYear
+                }
+              };
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Gagal memuat detail nama pensiun:', err);
+        setSelectedExecDetail((prev: any) => {
+          if (!prev || prev.type !== 'retirement') return prev;
+          return { ...prev, loadingRetirees: false };
+        });
+      }
+      return;
     } else if (type === 'mutation') {
       setSelectedExecDetail({
         type: 'mutation',
@@ -1266,34 +1312,118 @@ export default function HomeScreen() {
             <Text style={styles.modalDetailTitle}>{selectedExecDetail?.title}</Text>
             <Text style={styles.modalDetailSubtitle}>{selectedExecDetail?.subtitle}</Text>
 
-            {/* Big Stat Box */}
-            <View style={styles.modalStatBox}>
-              <Text style={[styles.modalStatNumber, { color: selectedExecDetail?.badgeColor || Colors.primary }]}>
-                {selectedExecDetail?.statNumber}
-              </Text>
-              <Text style={styles.modalStatUnit}>{selectedExecDetail?.statUnit}</Text>
-            </View>
+            <ScrollView style={{ maxHeight: 440 }} showsVerticalScrollIndicator={false}>
+              {/* Big Stat Box */}
+              <View style={styles.modalStatBox}>
+                <Text style={[styles.modalStatNumber, { color: selectedExecDetail?.badgeColor || Colors.primary }]}>
+                  {selectedExecDetail?.statNumber}
+                </Text>
+                <Text style={styles.modalStatUnit}>{selectedExecDetail?.statUnit}</Text>
+              </View>
 
-            {/* Description */}
-            <Text style={styles.modalDetailDesc}>{selectedExecDetail?.description}</Text>
+              {/* DAFTAR NAMA PEGAWAI YANG AKAN PENSIUN (WASPADA PENSIUN) */}
+              {selectedExecDetail?.type === 'retirement' && (
+                <View style={styles.retireModalSection}>
+                  <View style={styles.retireModalSectionHeader}>
+                    <Ionicons name="people" size={16} color="#C2410C" />
+                    <Text style={styles.retireModalSectionTitle}>
+                      Daftar Pegawai Pensiun ({currentYear})
+                    </Text>
+                    {selectedExecDetail.retirees && selectedExecDetail.retirees.length > 0 && (
+                      <View style={styles.retireCountBadge}>
+                        <Text style={styles.retireCountBadgeText}>
+                          {selectedExecDetail.retirees.length} Orang
+                        </Text>
+                      </View>
+                    )}
+                  </View>
 
-            {/* Highlight Metric Rows */}
-            <View style={styles.modalHighlightCard}>
-              {(selectedExecDetail?.highlights || []).map((h: any, idx: number) => (
-                <View
-                  key={idx}
-                  style={[
-                    styles.modalHighlightRow,
-                    idx > 0 && { borderTopWidth: 1, borderTopColor: '#F1F5F9' }
-                  ]}
-                >
-                  <Text style={styles.modalHighlightKey}>{h.label}</Text>
-                  <Text style={[styles.modalHighlightVal, h.color ? { color: h.color } : {}]}>
-                    {h.value}
-                  </Text>
+                  {selectedExecDetail.loadingRetirees ? (
+                    <View style={styles.retireLoadingBox}>
+                      <ActivityIndicator size="small" color="#EA580C" />
+                      <Text style={styles.retireLoadingText}>Memuat nama pegawai yang akan pensiun...</Text>
+                    </View>
+                  ) : selectedExecDetail.retirees && selectedExecDetail.retirees.length > 0 ? (
+                    <View style={styles.retireListContainer}>
+                      {selectedExecDetail.retirees.map((ret: any, rIdx: number) => {
+                        const birthFormatted = ret.birth_date
+                          ? new Date(ret.birth_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+                          : '-';
+                        const retireFormatted = ret.retire_date
+                          ? new Date(ret.retire_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+                          : '-';
+
+                        return (
+                          <View key={ret.id || rIdx} style={styles.retirePersonCard}>
+                            <View style={styles.retirePersonHeader}>
+                              <View style={styles.retirePersonAvatar}>
+                                <Text style={styles.retirePersonAvatarText}>
+                                  {(ret.name || 'P').charAt(0).toUpperCase()}
+                                </Text>
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.retirePersonName} numberOfLines={1}>
+                                  {ret.name}
+                                </Text>
+                                <Text style={styles.retirePersonNip}>
+                                  NIP: {ret.nip || '-'}
+                                </Text>
+                              </View>
+                              <View style={styles.retireJabatanBadge}>
+                                <Text style={styles.retireJabatanBadgeText}>{ret.jabatan || 'Guru'}</Text>
+                              </View>
+                            </View>
+
+                            <View style={styles.retirePersonDetailsGrid}>
+                              <View style={styles.retireDetailItem}>
+                                <Text style={styles.retireDetailLabel}>Tgl Lahir</Text>
+                                <Text style={styles.retireDetailVal}>{birthFormatted}</Text>
+                              </View>
+                              <View style={styles.retireDetailItem}>
+                                <Text style={styles.retireDetailLabel}>BUP</Text>
+                                <Text style={styles.retireDetailVal}>{ret.retire_age || 60} Thn</Text>
+                              </View>
+                              <View style={[styles.retireDetailItem, { flex: 1.4 }]}>
+                                <Text style={styles.retireDetailLabel}>TMT Pensiun</Text>
+                                <Text style={[styles.retireDetailVal, { color: '#DC2626', fontWeight: '800' }]}>
+                                  {retireFormatted}
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <View style={styles.retireEmptyBox}>
+                      <Ionicons name="checkmark-circle-outline" size={22} color="#059669" />
+                      <Text style={styles.retireEmptyText}>Tidak ada pegawai yang memasuki BUP pada tahun {currentYear}.</Text>
+                    </View>
+                  )}
                 </View>
-              ))}
-            </View>
+              )}
+
+              {/* Description */}
+              <Text style={styles.modalDetailDesc}>{selectedExecDetail?.description}</Text>
+
+              {/* Highlight Metric Rows */}
+              <View style={styles.modalHighlightCard}>
+                {(selectedExecDetail?.highlights || []).map((h: any, idx: number) => (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.modalHighlightRow,
+                      idx > 0 && { borderTopWidth: 1, borderTopColor: '#F1F5F9' }
+                    ]}
+                  >
+                    <Text style={styles.modalHighlightKey}>{h.label}</Text>
+                    <Text style={[styles.modalHighlightVal, h.color ? { color: h.color } : {}]}>
+                      {h.value}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
 
             {/* Action Buttons */}
             <View style={styles.modalActionRow}>
@@ -2350,5 +2480,142 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  retireModalSection: {
+    backgroundColor: '#FFF7ED',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    padding: 12,
+    marginBottom: 14,
+  },
+  retireModalSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#FFEDD5',
+  },
+  retireModalSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#C2410C',
+    flex: 1,
+    marginLeft: 6,
+  },
+  retireCountBadge: {
+    backgroundColor: '#EA580C',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  retireCountBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  retireLoadingBox: {
+    paddingVertical: 18,
+    alignItems: 'center',
+    gap: 8,
+  },
+  retireLoadingText: {
+    fontSize: 12,
+    color: '#9A3412',
+    fontWeight: '600',
+  },
+  retireListContainer: {
+    gap: 8,
+  },
+  retirePersonCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#FDBA74',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  retirePersonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  retirePersonAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFEDD5',
+    borderWidth: 1.5,
+    borderColor: '#F97316',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  retirePersonAvatarText: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#EA580C',
+  },
+  retirePersonName: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  retirePersonNip: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  retireJabatanBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  retireJabatanBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  retirePersonDetailsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  retireDetailItem: {
+    flex: 1,
+  },
+  retireDetailLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#94A3B8',
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  retireDetailVal: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  retireEmptyBox: {
+    paddingVertical: 14,
+    alignItems: 'center',
+    gap: 4,
+  },
+  retireEmptyText: {
+    fontSize: 12,
+    color: '#059669',
+    fontWeight: '600',
   },
 });

@@ -4,7 +4,7 @@ import {
   ActivityIndicator, RefreshControl, Image, TextInput, Platform, Modal, FlatList 
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '../../constants/Colors';
 import * as SecureStore from 'expo-secure-store';
@@ -18,8 +18,9 @@ const avatarFemale = require('../../../assets/images/avatar_female.png');
 export default function SdmScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string; year?: string }>();
 
-  const [activeTab, setActiveTab] = useState<TabType>('teachers');
+  const [activeTab, setActiveTab] = useState<TabType>(params.tab === 'retirement' ? 'retirement' : 'teachers');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -46,6 +47,16 @@ export default function SdmScreen() {
   useEffect(() => {
     fetchAllData();
   }, []);
+
+  useEffect(() => {
+    if (params.tab === 'retirement') {
+      setActiveTab('retirement');
+      if (params.year) {
+        const y = parseInt(params.year, 10);
+        if (!isNaN(y)) setSelectedYear(y);
+      }
+    }
+  }, [params.tab, params.year]);
 
   useEffect(() => {
     if (activeTab === 'retirement') {
