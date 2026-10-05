@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { requestAppPermissions, AppPermissionsStatus } from '../utils/permissions';
 import { PermissionModal } from '../components/PermissionModal';
 
-SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [permissions, setPermissions] = useState<AppPermissionsStatus>({
@@ -21,7 +20,7 @@ export default function RootLayout() {
 
     async function initApp() {
       try {
-        // Hide splash screen first so that permission dialogs and UI are clearly visible to user
+        // Automatically hide splash screen when app initializes
         await SplashScreen.hideAsync().catch(() => {});
 
         // Automatically request essential permissions (GPS, Camera, Audio, Media) when app opens
@@ -56,6 +55,7 @@ export default function RootLayout() {
   return (
     <>
       <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
         <Stack.Screen name="login" />
         <Stack.Screen name="(tabs)" />
       </Stack>
@@ -69,3 +69,5 @@ export default function RootLayout() {
     </>
   );
 }
+
+

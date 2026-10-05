@@ -26,6 +26,7 @@ export default function SdmScreen() {
   // Teachers State
   const [teachersList, setTeachersList] = useState<any[]>([]);
   const [totalTeachers, setTotalTeachers] = useState<number>(0);
+  const [isAccessDenied, setIsAccessDenied] = useState<boolean>(false);
 
   // Retirement State
   const currentYear = new Date().getFullYear();
@@ -54,6 +55,28 @@ export default function SdmScreen() {
 
   const fetchAllData = async () => {
     try {
+      const userRaw = await SecureStore.getItemAsync('sipena_user');
+      const user = userRaw ? JSON.parse(userRaw) : null;
+      const roleStr = (user?.role || '').toLowerCase();
+      const jabStr = (user?.jabatan || '').toLowerCase();
+      const caps: string[] = Array.isArray(user?.capabilities) ? user.capabilities.map((c: any) => String(c).toLowerCase()) : [];
+
+      const isAllowed = 
+        roleStr.includes('admin') || 
+        roleStr.includes('operator') || 
+        roleStr.includes('kepala') || 
+        jabStr.includes('kepala sekolah') || 
+        jabStr.includes('wakil') || 
+        jabStr.includes('sdm') || 
+        jabStr.includes('tata usaha') ||
+        caps.includes('sdm');
+
+      if (!isAllowed) {
+        setIsAccessDenied(true);
+        setIsLoading(false);
+        return;
+      }
+
       const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
       const token = await SecureStore.getItemAsync('sipena_token');
 
@@ -306,7 +329,26 @@ export default function SdmScreen() {
       </View>
 
       {/* Main Content */}
-      {isLoading ? (
+      {isAccessDenied ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 28, marginTop: 40 }}>
+          <View style={{ width: 68, height: 68, borderRadius: 34, backgroundColor: '#FEE2E2', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+            <Ionicons name="lock-closed" size={32} color="#EF4444" />
+          </View>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 8, textAlign: 'center' }}>
+            Akses Dibatasi
+          </Text>
+          <Text style={{ fontSize: 13, color: Colors.textLight, textAlign: 'center', lineHeight: 20, marginBottom: 24, paddingHorizontal: 16 }}>
+            Modul Manajemen SDM & Kepegawaian hanya dapat diakses oleh Administrator, Pimpinan Sekolah, dan Tata Usaha.
+          </Text>
+          <TouchableOpacity
+            style={{ backgroundColor: Colors.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 }}
+            onPress={() => router.back()}
+            activeOpacity={0.8}
+          >
+            <Text style={{ color: '#FFF', fontWeight: '600', fontSize: 14 }}>Kembali ke Beranda</Text>
+          </TouchableOpacity>
+        </View>
+      ) : isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
           <Text style={styles.loadingText}>Memuat direktori SDM & Guru...</Text>

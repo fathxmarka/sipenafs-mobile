@@ -93,7 +93,22 @@ export default function BkModuleScreen() {
       if (storedUser) {
         const u = JSON.parse(storedUser);
         const r = (u.role || '').toLowerCase();
-        if (r.includes('siswa') || r.includes('student') || r.includes('orang tua') || r.includes('parent') || r.includes('wali') || r.includes('ortu')) {
+        const j = (u.jabatan || '').toLowerCase();
+        const caps: string[] = Array.isArray(u.capabilities) ? u.capabilities.map((c: any) => String(c).toLowerCase()) : [];
+
+        // HANYA Admin, Kepala Sekolah / Pimpinan, dan Guru BK yang berhak mengakses catatan konseling siswa
+        const isAllowed = 
+          r.includes('admin') || 
+          r.includes('operator') || 
+          r.includes('kepala') || 
+          j.includes('kepala sekolah') || 
+          j.includes('pimpinan') || 
+          Boolean(u.is_bk) || 
+          j.includes('bk') || 
+          j.includes('konseling') || 
+          caps.includes('bk');
+
+        if (!isAllowed) {
           setIsAccessDenied(true);
           setIsLoading(false);
           return;

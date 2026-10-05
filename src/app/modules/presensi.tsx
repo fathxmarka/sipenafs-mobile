@@ -46,6 +46,8 @@ export default function PresensiScreen() {
 
   // Toast / Feedback Modal
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error' | 'info'; title: string; desc: string } | null>(null);
+  
+  const [userData, setUserData] = useState<any>(null);
 
   // ================= TAB 1: KBM & KELAS STATES =================
   const [classes, setClasses] = useState<any[]>([]);
@@ -133,6 +135,11 @@ export default function PresensiScreen() {
       setIsLoading(true);
       const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
       const token = await SecureStore.getItemAsync('sipena_token');
+      const userStr = await SecureStore.getItemAsync('sipena_user');
+
+      if (userStr) {
+        setUserData(JSON.parse(userStr));
+      }
 
       if (!apiUrl || !token) {
         setToastMessage({
@@ -536,35 +543,39 @@ export default function PresensiScreen() {
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabBtn, activeTab === 'guru' && styles.tabBtnActive]}
-          onPress={() => setActiveTab('guru')}
-          activeOpacity={0.8}
-        >
-          <Ionicons 
-            name="finger-print-outline" 
-            size={17} 
-            color={activeTab === 'guru' ? '#EA580C' : '#64748B'} 
-          />
-          <Text style={[styles.tabBtnText, activeTab === 'guru' && styles.tabBtnTextActive]}>
-            Guru & Staf
-          </Text>
-        </TouchableOpacity>
+        {(!userData || (userData?.role?.toLowerCase() !== 'guru' || (userData?.jabatan?.name && userData?.jabatan?.name?.toLowerCase() !== 'guru'))) && (
+          <>
+            <TouchableOpacity
+              style={[styles.tabBtn, activeTab === 'guru' && styles.tabBtnActive]}
+              onPress={() => setActiveTab('guru')}
+              activeOpacity={0.8}
+            >
+              <Ionicons 
+                name="finger-print-outline" 
+                size={17} 
+                color={activeTab === 'guru' ? '#EA580C' : '#64748B'} 
+              />
+              <Text style={[styles.tabBtnText, activeTab === 'guru' && styles.tabBtnTextActive]}>
+                Guru & Staf
+              </Text>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabBtn, activeTab === 'disiplin' && styles.tabBtnActive]}
-          onPress={() => setActiveTab('disiplin')}
-          activeOpacity={0.8}
-        >
-          <MaterialCommunityIcons 
-            name="shield-alert-outline" 
-            size={17} 
-            color={activeTab === 'disiplin' ? '#EA580C' : '#64748B'} 
-          />
-          <Text style={[styles.tabBtnText, activeTab === 'disiplin' && styles.tabBtnTextActive]}>
-            Buku Kasus
-          </Text>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tabBtn, activeTab === 'disiplin' && styles.tabBtnActive]}
+              onPress={() => setActiveTab('disiplin')}
+              activeOpacity={0.8}
+            >
+              <MaterialCommunityIcons 
+                name="shield-alert-outline" 
+                size={17} 
+                color={activeTab === 'disiplin' ? '#EA580C' : '#64748B'} 
+              />
+              <Text style={[styles.tabBtnText, activeTab === 'disiplin' && styles.tabBtnTextActive]}>
+                Buku Kasus
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
       {/* Main Body */}

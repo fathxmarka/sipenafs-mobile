@@ -554,16 +554,30 @@ export default function KurikulumScreen() {
             </View>
           </View>
 
-          {/* Direct Isi Jurnal Action Button (Only for Teachers and Admins) */}
+          {/* Action Buttons (Only for Teachers and Admins) */}
           {(isTeacher || isAdmin) && (
-            <TouchableOpacity 
-              style={styles.cardJournalActionBtn}
-              onPress={() => handleOpenJournalForm(item)}
-              activeOpacity={0.8}
-            >
-              <Feather name="edit-3" size={14} color="#D97706" />
-              <Text style={styles.cardJournalActionText}>Jurnal</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+              <TouchableOpacity 
+                style={styles.cardJournalActionBtn}
+                onPress={() => handleOpenJournalForm(item)}
+                activeOpacity={0.8}
+              >
+                <Feather name="edit-3" size={14} color="#D97706" />
+                <Text style={styles.cardJournalActionText}>Jurnal</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.cardJournalActionBtn, { backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' }]}
+                onPress={() => router.push({
+                  pathname: '/modules/perangkat-ai',
+                  params: { mapel: subjectName }
+                } as any)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="sparkles" size={12} color="#0EA5E9" />
+                <Text style={[styles.cardJournalActionText, { color: '#0EA5E9' }]}>Bahan Ajar</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </TouchableOpacity>
       </View>

@@ -37,6 +37,8 @@ type School = {
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+
   
   // State
   const [loginType, setLoginType] = useState<'civitas' | 'parent'>('civitas');
@@ -148,7 +150,8 @@ export default function LoginScreen() {
     if (auth.success) {
       try {
         setIsLoadingLogin(true);
-        await SecureStore.setItemAsync('sipena_api_url', biometricProfile.school.api_url);
+        const bioApiUrl = (biometricProfile.school.api_url || '').trim().replace(/\/+$/, '');
+        await SecureStore.setItemAsync('sipena_api_url', bioApiUrl);
         await SecureStore.setItemAsync('sipena_school_name', biometricProfile.school.name);
         await SecureStore.setItemAsync('sipena_token', biometricProfile.token);
         await SecureStore.setItemAsync('sipena_user', JSON.stringify(biometricProfile.user));
@@ -256,7 +259,11 @@ export default function LoginScreen() {
     try {
       const response = await axios.get('https://api.sipena.biz.id/api/schools');
       if (response.data && Array.isArray(response.data)) {
-        setSchools(response.data);
+        const sanitized = response.data.map((item: any) => ({
+          ...item,
+          api_url: (item.api_url || '').trim().replace(/\/+$/, '')
+        }));
+        setSchools(sanitized);
       }
     } catch (error) {
       console.error("Gagal mengambil daftar sekolah:", error);
@@ -288,6 +295,8 @@ export default function LoginScreen() {
       return;
     }
 
+    const schoolApiUrl = (selectedSchool.api_url || '').trim().replace(/\/+$/, '');
+
     try {
       setIsLoadingLogin(true);
       let loginSuccess = false;
@@ -297,7 +306,7 @@ export default function LoginScreen() {
       if (loginType === 'civitas') {
         // Coba login sebagai Guru/Admin dulu
         try {
-          const res = await axios.post(`${selectedSchool.api_url}/api/auth/login`, { username, password });
+          const res = await axios.post(`${schoolApiUrl}/api/auth/login`, { username, password });
           if (res.data && res.data.success) {
             loginSuccess = true;
             userData = res.data.user;
@@ -305,29 +314,42 @@ export default function LoginScreen() {
           }
         } catch (e: any) {
           // Jika gagal, coba login sebagai Siswa
-          if (e.response && e.response.status === 401) {
+          if (e.response && (e.response.status === 401 || e.response.status === 404)) {
             try {
-              const resStudent = await axios.post(`${selectedSchool.api_url}/api/auth/student/login`, { username, password });
+              const resStudent = await axios.post(`${schoolApiUrl}/api/auth/student/login`, { username, password });
               if (resStudent.data && resStudent.data.success) {
                 loginSuccess = true;
                 userData = resStudent.data.user;
                 token = resStudent.data.token;
               }
-            } catch (errStudent) {
-              throw new Error("Username atau Password salah");
+            } catch (errStudent: any) {
+              throw new Error(errStudent.response?.data?.message || "Username atau Password salah");
             }
           } else {
-            throw new Error("Gagal terhubung ke server sekolah");
+            throw new Error(e.response?.data?.message || "Gagal terhubung ke server sekolah");
           }
         }
       } else {
-        // Login Orang Tua / Wali Siswa
+        // Login Orang Tua / Wali Siswa (Mendukung /parent/login dan /parents/login)
         try {
-          const resParent = await axios.post(`${selectedSchool.api_url}/api/parent/login`, {
-            username: username.trim(),
-            pin: password.trim()
-          });
-          if (resParent.data && resParent.data.success) {
+          let resParent: any = null;
+          try {
+            resParent = await axios.post(`${schoolApiUrl}/api/parent/login`, {
+              username: username.trim(),
+              pin: password.trim()
+            });
+          } catch (errP: any) {
+            if (errP.response?.status === 404) {
+              resParent = await axios.post(`${schoolApiUrl}/api/parents/login`, {
+                username: username.trim(),
+                pin: password.trim()
+              });
+            } else {
+              throw errP;
+            }
+          }
+
+          if (resParent && resParent.data && resParent.data.success) {
             loginSuccess = true;
             token = resParent.data.token;
             userData = {
@@ -340,16 +362,16 @@ export default function LoginScreen() {
               nis: resParent.data.data?.nis,
             };
           } else {
-            throw new Error(resParent.data?.message || "PIN Wali atau NISN tidak valid");
+            throw new Error(resParent?.data?.message || "PIN Wali atau NISN tidak valid");
           }
         } catch (errParent: any) {
-          throw new Error(errParent.response?.data?.message || "NISN/NIS atau PIN Wali salah.");
+          throw new Error(errParent.response?.data?.message || errParent.message || "NISN/NIS atau PIN Wali salah.");
         }
       }
 
       if (loginSuccess && userData && token) {
         // Simpan data sesi ke SecureStore
-        await SecureStore.setItemAsync('sipena_api_url', selectedSchool.api_url);
+        await SecureStore.setItemAsync('sipena_api_url', schoolApiUrl);
         await SecureStore.setItemAsync('sipena_school_name', selectedSchool.name);
         await SecureStore.setItemAsync('sipena_token', token);
         await SecureStore.setItemAsync('sipena_user', JSON.stringify(userData));
@@ -357,7 +379,7 @@ export default function LoginScreen() {
         // Kebijakan Biometrik: HANYA untuk non-admin (Guru, Siswa, Orang Tua)
         if (isRoleAllowedForBiometric(userData.role)) {
           if (biometricSupport?.available && biometricSupport?.enrolled) {
-            await saveBiometricProfile(userData, selectedSchool, token);
+            await saveBiometricProfile(userData, { ...selectedSchool, api_url: schoolApiUrl }, token);
           }
         } else {
           // Akun Administrator WAJIB login manual dan tidak boleh disimpan biometriknya
@@ -639,7 +661,11 @@ export default function LoginScreen() {
                   <TouchableOpacity 
                     style={styles.schoolItem}
                     onPress={() => {
-                      setSelectedSchool(item);
+                      const cleanItem = {
+                        ...item,
+                        api_url: (item.api_url || '').trim().replace(/\/+$/, '')
+                      };
+                      setSelectedSchool(cleanItem);
                       setIsSchoolModalVisible(false);
                     }}
                   >

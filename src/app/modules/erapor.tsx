@@ -66,6 +66,7 @@ export default function ERaporScreen() {
   const [apiBaseUrl, setApiBaseUrl] = useState('');
   const [token, setToken] = useState('');
   const [schoolName, setSchoolName] = useState('SIPENA School');
+  const [isAccessDenied, setIsAccessDenied] = useState(false);
 
   // Filter States
   const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
@@ -135,6 +136,31 @@ export default function ERaporScreen() {
   const initData = async () => {
     try {
       setIsLoading(true);
+
+      const userRaw = await SecureStore.getItemAsync('sipena_user');
+      const user = userRaw ? JSON.parse(userRaw) : null;
+      const roleStr = (user?.role || '').toLowerCase();
+      const jabStr = (user?.jabatan || '').toLowerCase();
+      const caps: string[] = Array.isArray(user?.capabilities) ? user.capabilities.map((c: any) => String(c).toLowerCase()) : [];
+
+      const isAllowed = 
+        roleStr.includes('admin') || 
+        roleStr.includes('operator') || 
+        roleStr.includes('kepala') || 
+        jabStr.includes('kepala sekolah') || 
+        jabStr.includes('pimpinan') || 
+        jabStr.includes('kurikulum') || 
+        jabStr.includes('wali kelas') || 
+        Boolean(user?.is_walikelas) ||
+        caps.includes('walikelas') ||
+        caps.includes('kurikulum');
+
+      if (!isAllowed) {
+        setIsAccessDenied(true);
+        setIsLoading(false);
+        return;
+      }
+
       const url = await SecureStore.getItemAsync('sipena_api_url');
       const tok = await SecureStore.getItemAsync('sipena_token');
       const scName = await SecureStore.getItemAsync('sipena_school_name');
@@ -568,7 +594,26 @@ export default function ERaporScreen() {
       </View>
 
       {/* Main Content Area */}
-      {isLoading ? (
+      {isAccessDenied ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 28, marginTop: 40 }}>
+          <View style={{ width: 68, height: 68, borderRadius: 34, backgroundColor: '#FEE2E2', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+            <Ionicons name="lock-closed" size={32} color="#EF4444" />
+          </View>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 8, textAlign: 'center' }}>
+            Akses Dibatasi
+          </Text>
+          <Text style={{ fontSize: 13, color: Colors.textLight, textAlign: 'center', lineHeight: 20, marginBottom: 24, paddingHorizontal: 16 }}>
+            Modul E-Rapor hanya dapat diakses oleh Administrator, Pimpinan Sekolah, Tim Kurikulum, dan Wali Kelas.
+          </Text>
+          <TouchableOpacity
+            style={{ backgroundColor: '#0284C7', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 }}
+            onPress={() => router.back()}
+            activeOpacity={0.8}
+          >
+            <Text style={{ color: '#FFF', fontWeight: '600', fontSize: 14 }}>Kembali ke Beranda</Text>
+          </TouchableOpacity>
+        </View>
+      ) : isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#0284C7" />
           <Text style={styles.loadingText}>Memuat modul E-Rapor & Penilaian...</Text>
