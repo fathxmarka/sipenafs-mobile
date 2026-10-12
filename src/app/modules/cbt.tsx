@@ -58,6 +58,13 @@ interface Exam {
   }>;
 }
 
+interface AcademicYear {
+  id: number;
+  name: string;
+  semester: string;
+  is_active: boolean;
+}
+
 interface Question {
   id: string;
   exam_id: string;
@@ -67,6 +74,9 @@ interface Question {
   answer: string;
   score_weight: number;
   passage_id?: string | null;
+  academic_year?: string | null;
+  semester?: string | null;
+  term?: { id: number; name: string; semester: string } | null;
   passage?: {
     id: string;
     title: string;
@@ -142,6 +152,8 @@ export default function CbtScreen() {
     proctor_tab_lock: true,
     proctor_max_warnings: '5',
     proctor_face_tolerance: '10',
+    auto_random_bank: false,
+    random_question_count: '40',
   });
 
   // Question Management Modal
@@ -150,6 +162,13 @@ export default function CbtScreen() {
   const [examQuestions, setExamQuestions] = useState<Question[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [questionTab, setQuestionTab] = useState<'list' | 'create_pg' | 'create_passage' | 'bank'>('list');
+
+  // Swap Question Modal
+  const [isSwapModalOpen, setIsSwapModalOpen] = useState(false);
+  const [swapTargetQuestion, setSwapTargetQuestion] = useState<Question | null>(null);
+  const [swapSearchKeyword, setSwapSearchKeyword] = useState('');
+  const [swapSemesterFilter, setSwapSemesterFilter] = useState<string>('ALL');
+  const [isSwapping, setIsSwapping] = useState(false);
 
   // Form New Question (PG)
   const [questionForm, setQuestionForm] = useState({
@@ -176,6 +195,7 @@ export default function CbtScreen() {
   const [bankQuestions, setBankQuestions] = useState<any[]>([]);
   const [selectedBankIds, setSelectedBankIds] = useState<string[]>([]);
   const [loadingBank, setLoadingBank] = useState(false);
+  const [examBankSemesterFilter, setExamBankSemesterFilter] = useState<string>('ALL');
 
   // -------------------------------------------------------------
   // STANDALONE BANK SOAL STATES (Kelola Bank Soal Kapan Saja)
@@ -184,10 +204,14 @@ export default function CbtScreen() {
   const [standaloneBankTab, setStandaloneBankTab] = useState<'list' | 'create_pg' | 'create_passage' | 'ai'>('list');
   const [bankSubjectFilter, setBankSubjectFilter] = useState<number | 'ALL'>('ALL');
   const [bankLevelFilter, setBankLevelFilter] = useState<string>('ALL');
+  const [bankAcademicYearFilter, setBankAcademicYearFilter] = useState<string>('ALL');
+  const [bankSemesterFilter, setBankSemesterFilter] = useState<string>('ALL');
   const [bankSearchKeyword, setBankSearchKeyword] = useState<string>('');
   const [bankItems, setBankItems] = useState<any[]>([]);
   const [loadingBankItems, setLoadingBankItems] = useState<boolean>(false);
   const [editingBankQuestionId, setEditingBankQuestionId] = useState<string | null>(null);
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
+  const [activeAcademicYear, setActiveAcademicYear] = useState<AcademicYear | null>(null);
 
   // Form Bank Question (PG)
   const [bankQuestionForm, setBankQuestionForm] = useState({
@@ -204,6 +228,8 @@ export default function CbtScreen() {
     answer: 'A',
     score_weight: '1',
     passage_id: '',
+    academic_year: '',
+    semester: 'Ganjil',
   });
 
   // Form Bank Passage (Wacana / Cerita)
@@ -221,7 +247,21 @@ export default function CbtScreen() {
     topic: '',
     count: '5',
     passage_id: '',
+    academic_year: '',
+    semester: 'Ganjil',
   });
+
+  const getAcademicYearList = () => {
+    const fromApi = (academicYears || []).map((ay) => ay.name);
+    const currentYear = new Date().getFullYear();
+    const defaults = [
+      `${currentYear + 1}/${currentYear + 2}`,
+      `${currentYear}/${currentYear + 1}`,
+      `${currentYear - 1}/${currentYear}`,
+      `${currentYear - 2}/${currentYear - 1}`,
+    ];
+    return Array.from(new Set([...fromApi, ...defaults])).filter(Boolean);
+  };
   const [generatingBankAi, setGeneratingBankAi] = useState(false);
   const [aiPreviewMode, setAiPreviewMode] = useState(false);
   const [aiGeneratedQuestions, setAiGeneratedQuestions] = useState<any[]>([]);
@@ -307,11 +347,31 @@ export default function CbtScreen() {
   // -------------------------------------------------------------
   const fetchTeacherMasterData = async (url: string, jwt: string, userObj: any) => {
     try {
-      const [resSubjects, resClasses, resSchedules] = await Promise.allSettled([
+      const [resSubjects, resClasses, resSchedules, resAcademicYears] = await Promise.allSettled([
         axios.get(`${url}/api/subjects`, { headers: { Authorization: `Bearer ${jwt}` } }),
         axios.get(`${url}/api/classes`, { headers: { Authorization: `Bearer ${jwt}` } }),
         axios.get(`${url}/api/schedules`, { headers: { Authorization: `Bearer ${jwt}` } }),
+        axios.get(`${url}/api/academic-years?perPage=all`, { headers: { Authorization: `Bearer ${jwt}` } }),
       ]);
+
+      if (resAcademicYears.status === 'fulfilled' && resAcademicYears.value.data?.data) {
+        const ayList: AcademicYear[] = resAcademicYears.value.data.data;
+        setAcademicYears(ayList);
+        const activeAy = ayList.find((ay) => ay.is_active);
+        if (activeAy) {
+          setActiveAcademicYear(activeAy);
+          setBankQuestionForm((prev) => ({
+            ...prev,
+            academic_year: prev.academic_year || activeAy.name,
+            semester: prev.semester || activeAy.semester || 'Ganjil',
+          }));
+          setBankAiForm((prev) => ({
+            ...prev,
+            academic_year: prev.academic_year || activeAy.name,
+            semester: prev.semester || activeAy.semester || 'Ganjil',
+          }));
+        }
+      }
 
       let allSubj: Array<{ id: number; name: string }> = [];
       if (resSubjects.status === 'fulfilled' && resSubjects.value.data?.data) {
@@ -423,6 +483,8 @@ export default function CbtScreen() {
       proctor_tab_lock: true,
       proctor_max_warnings: '5',
       proctor_face_tolerance: '10',
+      auto_random_bank: false,
+      random_question_count: '40',
     });
     setIsExamModalOpen(true);
   };
@@ -444,6 +506,8 @@ export default function CbtScreen() {
       proctor_tab_lock: exam.proctor_tab_lock !== false,
       proctor_max_warnings: String(exam.proctor_max_warnings || 5),
       proctor_face_tolerance: String(exam.proctor_face_tolerance || 10),
+      auto_random_bank: false,
+      random_question_count: '40',
     });
     setIsExamModalOpen(true);
   };
@@ -459,7 +523,7 @@ export default function CbtScreen() {
     }
 
     try {
-      const payload = {
+      const payload: any = {
         title: examForm.title.trim(),
         type: examForm.type,
         subject_id: Number(examForm.subject_id),
@@ -475,6 +539,11 @@ export default function CbtScreen() {
         proctor_max_warnings: Number(examForm.proctor_max_warnings) || 5,
         proctor_face_tolerance: Number(examForm.proctor_face_tolerance) || 10,
       };
+
+      if (!editingExamId && examForm.auto_random_bank) {
+        payload.auto_random_bank = true;
+        payload.random_question_count = Number(examForm.random_question_count) || 40;
+      }
 
       if (editingExamId) {
         await axios.put(`${apiUrl}/api/exams/${editingExamId}`, payload, {
@@ -703,6 +772,85 @@ export default function CbtScreen() {
     }
   };
 
+  const handleRandomBankIntoExam = async () => {
+    if (!selectedExamForQuestions?.id) return;
+    Alert.alert(
+      'Acak Soal dari Bank',
+      'Sistem akan otomatis mengacak 40 butir soal seimbang (50% Semester Ganjil & 50% Semester Genap) dari Bank Soal ke dalam ujian ini.',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Acak 40 Soal',
+          onPress: async () => {
+            setLoadingBank(true);
+            try {
+              const res = await axios.post(
+                `${apiUrl}/api/exams/${selectedExamForQuestions.id}/random-bank`,
+                { count: 40, balance_semester: true, replace_existing: false },
+                { headers: { Authorization: `Bearer ${token}` } }
+              );
+              showToast(res.data?.message || 'Soal berhasil diacak!', 'success');
+              setQuestionTab('list');
+              if (selectedExamForQuestions) {
+                fetchExamQuestionsAndPassages(selectedExamForQuestions.id, selectedExamForQuestions.subject_id);
+              }
+            } catch (e: any) {
+              showToast(e.response?.data?.message || e.message, 'error');
+            } finally {
+              setLoadingBank(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleOpenSwapModal = async (targetQuestion: Question) => {
+    setSwapTargetQuestion(targetQuestion);
+    setSwapSearchKeyword('');
+    setSwapSemesterFilter('ALL');
+    setIsSwapModalOpen(true);
+
+    if (selectedExamForQuestions?.subject_id) {
+      setLoadingBank(true);
+      try {
+        const res = await axios.get(
+          `${apiUrl}/api/question-bank?subject_id=${selectedExamForQuestions.subject_id}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (res.data?.data) {
+          setBankQuestions(res.data.data);
+        }
+      } catch (e) {
+        console.error('Fetch bank questions error for swap:', e);
+      } finally {
+        setLoadingBank(false);
+      }
+    }
+  };
+
+  const handleExecuteSwap = async (bankQuestionId: string) => {
+    if (!swapTargetQuestion) return;
+    setIsSwapping(true);
+    try {
+      const res = await axios.put(
+        `${apiUrl}/api/exams/questions/${swapTargetQuestion.id}/swap-bank`,
+        { bank_id: bankQuestionId, bank_question_id: bankQuestionId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      showToast(res.data?.message || 'Soal berhasil diganti dari Bank Soal!', 'success');
+      setIsSwapModalOpen(false);
+      setSwapTargetQuestion(null);
+      if (selectedExamForQuestions) {
+        fetchExamQuestionsAndPassages(selectedExamForQuestions.id, selectedExamForQuestions.subject_id);
+      }
+    } catch (e: any) {
+      showToast('Gagal mengganti soal: ' + (e.response?.data?.message || e.message), 'error');
+    } finally {
+      setIsSwapping(false);
+    }
+  };
+
   // -------------------------------------------------------------
   // TEACHER: STANDALONE BANK SOAL MANAGEMENT (KAPAN SAJA)
   // -------------------------------------------------------------
@@ -717,17 +865,36 @@ export default function CbtScreen() {
     const defaultSubjId = teacherSubjects.length > 0 ? teacherSubjects[0].id : (subjects.length > 0 ? subjects[0].id : '');
     const initialSubj = bankSubjectFilter === 'ALL' && defaultSubjId ? defaultSubjId : bankSubjectFilter;
 
+    const defaultAy = activeAcademicYear?.name || (academicYears.length > 0 ? academicYears[0].name : '2026/2027');
+    const defaultSem = activeAcademicYear?.semester || 'Ganjil';
+
     if (defaultSubjId) {
-      setBankQuestionForm((prev) => ({ ...prev, subject_id: String(defaultSubjId) }));
+      setBankQuestionForm((prev) => ({
+        ...prev,
+        subject_id: String(defaultSubjId),
+        academic_year: prev.academic_year || defaultAy,
+        semester: prev.semester || defaultSem,
+      }));
       setBankPassageForm((prev) => ({ ...prev, subject_id: String(defaultSubjId) }));
-      setBankAiForm((prev) => ({ ...prev, subject_id: String(defaultSubjId) }));
+      setBankAiForm((prev) => ({
+        ...prev,
+        subject_id: String(defaultSubjId),
+        academic_year: prev.academic_year || defaultAy,
+        semester: prev.semester || defaultSem,
+      }));
       fetchBankPassages(Number(defaultSubjId));
     }
 
-    fetchBankQuestionsList(initialSubj, bankLevelFilter, bankSearchKeyword);
+    fetchBankQuestionsList(initialSubj, bankLevelFilter, bankSearchKeyword, bankAcademicYearFilter, bankSemesterFilter);
   };
 
-  const fetchBankQuestionsList = async (subjId?: number | 'ALL', level?: string, search?: string) => {
+  const fetchBankQuestionsList = async (
+    subjId?: number | 'ALL',
+    level?: string,
+    search?: string,
+    academicYear?: string,
+    semester?: string
+  ) => {
     setLoadingBankItems(true);
     try {
       const params = new URLSearchParams();
@@ -735,6 +902,10 @@ export default function CbtScreen() {
       if (targetSubj && targetSubj !== 'ALL') params.append('subject_id', String(targetSubj));
       const targetLevel = level !== undefined ? level : bankLevelFilter;
       if (targetLevel && targetLevel !== 'ALL') params.append('level', targetLevel);
+      const targetAy = academicYear !== undefined ? academicYear : bankAcademicYearFilter;
+      if (targetAy && targetAy !== 'ALL') params.append('academic_year', targetAy);
+      const targetSem = semester !== undefined ? semester : bankSemesterFilter;
+      if (targetSem && targetSem !== 'ALL') params.append('semester', targetSem);
       const targetSearch = search !== undefined ? search : bankSearchKeyword;
       if (targetSearch.trim()) params.append('search', targetSearch.trim());
 
@@ -784,6 +955,8 @@ export default function CbtScreen() {
       answer: item.answer || 'A',
       score_weight: String(item.score_weight || 1),
       passage_id: item.passage_id ? String(item.passage_id) : '',
+      academic_year: item.academic_year || item.term?.name || activeAcademicYear?.name || '',
+      semester: item.semester || item.term?.semester || activeAcademicYear?.semester || 'Ganjil',
     });
     fetchBankPassages(Number(item.subject_id));
     setStandaloneBankTab('create_pg');
@@ -823,6 +996,8 @@ export default function CbtScreen() {
         answer: bankQuestionForm.answer,
         score_weight: Number(bankQuestionForm.score_weight) || 1,
         passage_id: bankQuestionForm.passage_id ? bankQuestionForm.passage_id : null,
+        academic_year: bankQuestionForm.academic_year || undefined,
+        semester: bankQuestionForm.semester || undefined,
       };
 
       await axios.post(`${apiUrl}/api/question-bank`, payload, {
@@ -1082,6 +1257,8 @@ Format JSON array murni tanpa pembuka/penutup markdown:
         level: bankAiForm.level,
         topic: bankAiForm.topic.trim(),
         passage_id: bankAiForm.passage_id ? Number(bankAiForm.passage_id) : null,
+        academic_year: bankAiForm.academic_year || undefined,
+        semester: bankAiForm.semester || undefined,
       }));
 
     setIsSavingAiBatch(true);
@@ -1093,6 +1270,8 @@ Format JSON array murni tanpa pembuka/penutup markdown:
           level: bankAiForm.level,
           topic: bankAiForm.topic.trim(),
           passage_id: bankAiForm.passage_id ? Number(bankAiForm.passage_id) : null,
+          academic_year: bankAiForm.academic_year || undefined,
+          semester: bankAiForm.semester || undefined,
           questions: questionsToSave,
         },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -1738,31 +1917,33 @@ Format JSON array murni tanpa pembuka/penutup markdown:
               </View>
 
               {/* Tipe Ujian & Durasi */}
-              <View style={styles.rowTwoCols}>
-                <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-                  <Text style={styles.inputLabel}>2. TIPE UJIAN</Text>
-                  <View style={styles.selectTypeContainer}>
-                    {['UH', 'PTS', 'PAS', 'CBT'].map((t) => (
-                      <TouchableOpacity
-                        key={t}
-                        style={[styles.typeOptionChip, examForm.type === t && styles.typeOptionChipActive]}
-                        onPress={() => setExamForm({ ...examForm, type: t })}
-                      >
-                        <Text style={[styles.typeOptionText, examForm.type === t && styles.typeOptionTextActive]}>{t}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>2. TIPE UJIAN</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row', gap: 6 }}>
+                  {['UH', 'PTS', 'PAS', 'Try Out', 'CBT'].map((t) => (
+                    <TouchableOpacity
+                      key={t}
+                      style={[
+                        styles.typeOptionChip,
+                        { paddingHorizontal: 16, flex: undefined },
+                        examForm.type === t && styles.typeOptionChipActive,
+                      ]}
+                      onPress={() => setExamForm({ ...examForm, type: t })}
+                    >
+                      <Text style={[styles.typeOptionText, examForm.type === t && styles.typeOptionTextActive]}>{t}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
 
-                <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-                  <Text style={styles.inputLabel}>3. DURASI (MENIT) <Text style={styles.req}>*</Text></Text>
-                  <TextInput
-                    style={styles.inputBox}
-                    keyboardType="number-pad"
-                    value={examForm.duration}
-                    onChangeText={(val) => setExamForm({ ...examForm, duration: val })}
-                  />
-                </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>3. DURASI (MENIT) <Text style={styles.req}>*</Text></Text>
+                <TextInput
+                  style={styles.inputBox}
+                  keyboardType="number-pad"
+                  value={examForm.duration}
+                  onChangeText={(val) => setExamForm({ ...examForm, duration: val })}
+                />
               </View>
 
               {/* Mata Pelajaran Guru */}
@@ -1826,6 +2007,91 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   onChangeText={(val) => setExamForm({ ...examForm, token: val.toUpperCase() })}
                 />
               </View>
+
+              {/* Opsi Otomatis Acak Soal Bank (Khusus Try Out baru) */}
+              {examForm.type === 'Try Out' && !editingExamId && (
+                <View
+                  style={{
+                    backgroundColor: '#F5F3FF',
+                    borderColor: '#DDD6FE',
+                    borderWidth: 1.5,
+                    borderRadius: 14,
+                    padding: 14,
+                    marginBottom: 16,
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: examForm.auto_random_bank ? 12 : 0,
+                    }}
+                  >
+                    <View style={{ flex: 1, paddingRight: 10 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name="shuffle" size={18} color="#7C3AED" />
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#6D28D9' }}>
+                          Otomatis Acak Soal dari Bank Soal
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 11, color: '#6B7280', marginTop: 3, lineHeight: 16 }}>
+                        Otomatis ambil & acak soal seimbang 50% Ganjil & 50% Genap dari Bank Soal saat ujian dibuat.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={examForm.auto_random_bank}
+                      onValueChange={(val) => setExamForm({ ...examForm, auto_random_bank: val })}
+                      trackColor={{ false: '#CBD5E1', true: '#C4B5FD' }}
+                      thumbColor={examForm.auto_random_bank ? '#7C3AED' : '#F1F5F9'}
+                    />
+                  </View>
+
+                  {examForm.auto_random_bank && (
+                    <View style={{ paddingTop: 12, borderTopWidth: 1, borderTopColor: '#EDE9FE' }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#5B21B6', marginBottom: 6 }}>
+                        JUMLAH BUTIR SOAL
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <TextInput
+                          style={[styles.inputBox, { flex: 1, backgroundColor: '#FFFFFF', height: 42 }]}
+                          keyboardType="number-pad"
+                          placeholder="40"
+                          value={examForm.random_question_count}
+                          onChangeText={(val) => setExamForm({ ...examForm, random_question_count: val })}
+                        />
+                        <View style={{ flexDirection: 'row', gap: 4 }}>
+                          {['20', '30', '40', '50'].map((cnt) => (
+                            <TouchableOpacity
+                              key={cnt}
+                              onPress={() => setExamForm({ ...examForm, random_question_count: cnt })}
+                              style={{
+                                paddingHorizontal: 10,
+                                paddingVertical: 10,
+                                borderRadius: 8,
+                                backgroundColor: examForm.random_question_count === cnt ? '#7C3AED' : '#EDE9FE',
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: '700',
+                                  color: examForm.random_question_count === cnt ? '#FFFFFF' : '#6D28D9',
+                                }}
+                              >
+                                {cnt}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                      <Text style={{ fontSize: 10.5, color: '#7C3AED', marginTop: 6, fontStyle: 'italic' }}>
+                        * Sistem akan menyeimbangkan butir soal dari semester Ganjil dan Genap.
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
 
               {/* =================================================== */}
               {/* SETTINGAN PENGAWASAN KAMERA (AI PROCTORING)         */}
@@ -1977,6 +2243,22 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                           <Text style={styles.answerKeyBadgeText}>Kunci: {item.answer}</Text>
                         </View>
                         <View style={{ flex: 1 }} />
+                        <TouchableOpacity
+                          onPress={() => handleOpenSwapModal(item)}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            backgroundColor: '#F5F3FF',
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                            borderRadius: 6,
+                            marginRight: 10,
+                            gap: 4,
+                          }}
+                        >
+                          <Ionicons name="repeat-outline" size={15} color="#7C3AED" />
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#7C3AED' }}>Ganti Soal</Text>
+                        </TouchableOpacity>
                         <TouchableOpacity onPress={() => handleDeleteQuestion(item.id)}>
                           <Ionicons name="trash-outline" size={18} color="#EF4444" />
                         </TouchableOpacity>
@@ -2117,6 +2399,52 @@ Format JSON array murni tanpa pembuka/penutup markdown:
             ) : (
               // BANK SOAL TAB
               <View style={{ flex: 1, padding: 16 }}>
+                {/* Random Button & Semester Filter Chips */}
+                <View style={{ marginBottom: 12, gap: 8 }}>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: '#16A34A',
+                      paddingVertical: 10,
+                      paddingHorizontal: 14,
+                      borderRadius: 8,
+                      gap: 6,
+                    }}
+                    onPress={handleRandomBankIntoExam}
+                    disabled={loadingBank}
+                  >
+                    <Ionicons name="shuffle" size={18} color="#FFFFFF" />
+                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>
+                      Acak 40 Soal dari Bank (Ganjil & Genap)
+                    </Text>
+                  </TouchableOpacity>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748B' }}>Semester:</Text>
+                    {['ALL', 'Ganjil', 'Genap'].map((sem) => (
+                      <TouchableOpacity
+                        key={sem}
+                        style={[
+                          styles.levelChipSmall,
+                          examBankSemesterFilter === sem && styles.levelChipSmallActive,
+                        ]}
+                        onPress={() => setExamBankSemesterFilter(sem)}
+                      >
+                        <Text
+                          style={[
+                            styles.levelChipSmallText,
+                            examBankSemesterFilter === sem && styles.levelChipSmallTextActive,
+                          ]}
+                        >
+                          {sem === 'ALL' ? 'Semua' : sem}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
                 {loadingBank ? (
                   <View style={styles.loadingCenter}>
                     <ActivityIndicator size="small" color="#0EA5E9" />
@@ -2124,7 +2452,11 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   </View>
                 ) : (
                   <FlatList
-                    data={bankQuestions}
+                    data={bankQuestions.filter(
+                      (q) =>
+                        examBankSemesterFilter === 'ALL' ||
+                        (q.semester || q.term?.semester) === examBankSemesterFilter
+                    )}
                     keyExtractor={(item) => String(item.id)}
                     ListEmptyComponent={
                       <View style={styles.emptyCard}>
@@ -2154,7 +2486,11 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                             <Text style={styles.bankItemText} numberOfLines={2}>
                               {item.text}
                             </Text>
-                            <Text style={styles.bankItemMeta}>Kunci: {item.answer} • Bobot: {item.score_weight || 1}</Text>
+                            <Text style={styles.bankItemMeta}>
+                              Kunci: {item.answer} • Bobot: {item.score_weight || 1}
+                              {item.academic_year || item.term?.name ? ` • 📅 ${item.academic_year || item.term?.name}` : ''}
+                              {item.semester || item.term?.semester ? ` • Sem: ${item.semester || item.term?.semester}` : ''}
+                            </Text>
                           </View>
                         </TouchableOpacity>
                       );
@@ -2169,6 +2505,208 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   </TouchableOpacity>
                 )}
               </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ======================================================== */}
+      {/* MODAL: TUKAR / GANTI SOAL DARI BANK SOAL                */}
+      {/* ======================================================== */}
+      <Modal
+        visible={isSwapModalOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          if (!isSwapping) setIsSwapModalOpen(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { height: '88%', paddingBottom: Math.max(insets.bottom, 16) }]}>
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="repeat" size={20} color="#7C3AED" />
+                  <Text style={styles.modalTitle}>Ganti Soal dari Bank</Text>
+                </View>
+                <Text style={styles.modalSubTitle}>
+                  Pilih soal baru dari Bank Soal untuk menggantikan soal ujian ini
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsSwapModalOpen(false)}
+                disabled={isSwapping}
+              >
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Target Question Info */}
+            {swapTargetQuestion && (
+              <View
+                style={{
+                  marginHorizontal: 16,
+                  marginTop: 10,
+                  marginBottom: 8,
+                  padding: 10,
+                  backgroundColor: '#FEF2F2',
+                  borderRadius: 10,
+                  borderLeftWidth: 4,
+                  borderLeftColor: '#EF4444',
+                }}
+              >
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#B91C1C', marginBottom: 2 }}>
+                  SOAL YANG AKAN DIGANTI:
+                </Text>
+                <Text style={{ fontSize: 12, color: '#334155' }} numberOfLines={2}>
+                  {swapTargetQuestion.text}
+                </Text>
+                <Text style={{ fontSize: 11, color: '#64748B', marginTop: 4 }}>
+                  Kunci: <Text style={{ fontWeight: '700' }}>{swapTargetQuestion.answer}</Text> • Bobot: {swapTargetQuestion.score_weight || 1}
+                </Text>
+              </View>
+            )}
+
+            {/* Search and Filter */}
+            <View style={{ paddingHorizontal: 16, marginBottom: 8 }}>
+              {/* Search input */}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#F1F5F9',
+                  borderRadius: 8,
+                  paddingHorizontal: 10,
+                  height: 38,
+                  marginBottom: 8,
+                }}
+              >
+                <Ionicons name="search" size={16} color="#64748B" />
+                <TextInput
+                  style={{ flex: 1, marginLeft: 8, fontSize: 13, color: '#1E293B', paddingVertical: 0 }}
+                  placeholder="Cari teks soal di Bank Soal..."
+                  placeholderTextColor="#94A3B8"
+                  value={swapSearchKeyword}
+                  onChangeText={setSwapSearchKeyword}
+                />
+                {swapSearchKeyword ? (
+                  <TouchableOpacity onPress={() => setSwapSearchKeyword('')}>
+                    <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              {/* Semester Filter */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748B' }}>Semester:</Text>
+                {['ALL', 'Ganjil', 'Genap'].map((sem) => (
+                  <TouchableOpacity
+                    key={sem}
+                    style={[
+                      styles.levelChipSmall,
+                      swapSemesterFilter === sem && { backgroundColor: '#7C3AED', borderColor: '#7C3AED' },
+                    ]}
+                    onPress={() => setSwapSemesterFilter(sem)}
+                  >
+                    <Text
+                      style={[
+                        styles.levelChipSmallText,
+                        swapSemesterFilter === sem && { color: '#FFFFFF' },
+                      ]}
+                    >
+                      {sem === 'ALL' ? 'Semua' : sem}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* List Bank Questions */}
+            {loadingBank || isSwapping ? (
+              <View style={styles.loadingCenter}>
+                <ActivityIndicator size="small" color="#7C3AED" />
+                <Text style={styles.loadingText}>
+                  {isSwapping ? 'Mengganti soal...' : 'Memuat bank soal...'}
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={bankQuestions.filter((q) => {
+                  const matchSem =
+                    swapSemesterFilter === 'ALL' ||
+                    (q.semester || q.term?.semester) === swapSemesterFilter;
+                  const matchKw =
+                    !swapSearchKeyword.trim() ||
+                    (q.text && q.text.toLowerCase().includes(swapSearchKeyword.toLowerCase()));
+                  const notSelf = String(q.id) !== String(swapTargetQuestion?.id);
+                  return matchSem && matchKw && notSelf;
+                })}
+                keyExtractor={(item) => String(item.id)}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16 }}
+                ListEmptyComponent={
+                  <View style={styles.emptyCard}>
+                    <Ionicons name="file-tray-outline" size={40} color="#94A3B8" />
+                    <Text style={styles.emptyTitle}>Tidak Ada Soal Pengganti</Text>
+                    <Text style={styles.emptySubtitle}>
+                      Tidak ada butir soal lain di Bank Soal yang sesuai dengan filter.
+                    </Text>
+                  </View>
+                }
+                renderItem={({ item }) => (
+                  <View
+                    style={{
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: '#E2E8F0',
+                      padding: 12,
+                      marginBottom: 10,
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, color: '#1E293B', lineHeight: 18 }} numberOfLines={3}>
+                      {item.text}
+                    </Text>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginTop: 8,
+                        paddingTop: 8,
+                        borderTopWidth: 1,
+                        borderTopColor: '#F1F5F9',
+                      }}
+                    >
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <Text style={{ fontSize: 11, color: '#64748B' }}>
+                          Kunci: <Text style={{ fontWeight: '700' }}>{item.answer}</Text> • Bobot: {item.score_weight || 1}
+                        </Text>
+                        <Text style={{ fontSize: 10.5, color: '#8B5CF6', marginTop: 2 }}>
+                          {item.semester || item.term?.semester ? `Sem. ${item.semester || item.term?.semester}` : ''}
+                          {item.academic_year || item.term?.name ? ` • ${item.academic_year || item.term?.name}` : ''}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={{
+                          backgroundColor: '#7C3AED',
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 8,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}
+                        onPress={() => handleExecuteSwap(String(item.id))}
+                        disabled={isSwapping}
+                      >
+                        <Ionicons name="swap-horizontal" size={14} color="#FFFFFF" />
+                        <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>Pilih</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              />
             )}
           </View>
         </View>
@@ -2310,11 +2848,58 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                         style={[styles.levelChip, bankLevelFilter === lvl && styles.levelChipActive]}
                         onPress={() => {
                           setBankLevelFilter(lvl);
-                          fetchBankQuestionsList(bankSubjectFilter, lvl, bankSearchKeyword);
+                          fetchBankQuestionsList(bankSubjectFilter, lvl, bankSearchKeyword, bankAcademicYearFilter, bankSemesterFilter);
                         }}
                       >
                         <Text style={[styles.levelChipText, bankLevelFilter === lvl && styles.levelChipTextActive]}>
                           {lvl === 'ALL' ? 'Semua Tingkat' : `Kelas ${lvl}`}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Academic Year Pills */}
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.bankPillsRow, { paddingVertical: 4 }]}>
+                    <TouchableOpacity
+                      style={[styles.levelChip, bankAcademicYearFilter === 'ALL' && styles.levelChipActive]}
+                      onPress={() => {
+                        setBankAcademicYearFilter('ALL');
+                        fetchBankQuestionsList(bankSubjectFilter, bankLevelFilter, bankSearchKeyword, 'ALL', bankSemesterFilter);
+                      }}
+                    >
+                      <Text style={[styles.levelChipText, bankAcademicYearFilter === 'ALL' && styles.levelChipTextActive]}>
+                        Semua TA
+                      </Text>
+                    </TouchableOpacity>
+                    {getAcademicYearList().map((ay) => (
+                      <TouchableOpacity
+                        key={ay}
+                        style={[styles.levelChip, bankAcademicYearFilter === ay && styles.levelChipActive]}
+                        onPress={() => {
+                          setBankAcademicYearFilter(ay);
+                          fetchBankQuestionsList(bankSubjectFilter, bankLevelFilter, bankSearchKeyword, ay, bankSemesterFilter);
+                        }}
+                      >
+                        <Text style={[styles.levelChipText, bankAcademicYearFilter === ay && styles.levelChipTextActive]}>
+                          {ay}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+
+                  {/* Semester Pills */}
+                  <View style={[styles.bankLevelRow, { marginTop: 4 }]}>
+                    {['ALL', 'Ganjil', 'Genap'].map((sem) => (
+                      <TouchableOpacity
+                        key={sem}
+                        style={[styles.levelChip, bankSemesterFilter === sem && styles.levelChipActive]}
+                        onPress={() => {
+                          setBankSemesterFilter(sem);
+                          fetchBankQuestionsList(bankSubjectFilter, bankLevelFilter, bankSearchKeyword, bankAcademicYearFilter, sem);
+                        }}
+                      >
+                        <Text style={[styles.levelChipText, bankSemesterFilter === sem && styles.levelChipTextActive]}>
+                          {sem === 'ALL' ? 'Semua Semester' : `Sem: ${sem}`}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -2379,6 +2964,16 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                           {/* Top Badges & Actions */}
                           <View style={styles.bankItemTopRow}>
                             <View style={styles.badgeGroup}>
+                              {(item.academic_year || item.term?.name) && (
+                                <View style={styles.ayMiniBadge}>
+                                  <Text style={styles.ayMiniBadgeText}>📅 {item.academic_year || item.term?.name}</Text>
+                                </View>
+                              )}
+                              {(item.semester || item.term?.semester) && (
+                                <View style={styles.semMiniBadge}>
+                                  <Text style={styles.semMiniBadgeText}>Sem: {item.semester || item.term?.semester}</Text>
+                                </View>
+                              )}
                               <View style={styles.subjectMiniBadge}>
                                 <Text style={styles.subjectMiniBadgeText} numberOfLines={1}>
                                   {item.subject?.name || 'Mapel'}
@@ -2508,6 +3103,8 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                           answer: 'A',
                           score_weight: '1',
                           passage_id: '',
+                          academic_year: activeAcademicYear?.name || (academicYears.length > 0 ? academicYears[0].name : '2026/2027'),
+                          semester: activeAcademicYear?.semester || 'Ganjil',
                         });
                         setStandaloneBankTab('list');
                       }}
@@ -2546,6 +3143,60 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
+                </View>
+
+                {/* Tahun Ajaran & Semester */}
+                <View style={styles.rowTwoCols}>
+                  <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                    <Text style={styles.inputLabel}>TAHUN AJARAN: <Text style={styles.req}>*</Text></Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.bankPillsRow, { paddingVertical: 4 }]}>
+                      {getAcademicYearList().map((ay) => (
+                        <TouchableOpacity
+                          key={ay}
+                          style={[
+                            styles.levelChipSmall,
+                            bankQuestionForm.academic_year === ay && styles.levelChipSmallActive,
+                          ]}
+                          onPress={() => setBankQuestionForm({ ...bankQuestionForm, academic_year: ay })}
+                        >
+                          <Text
+                            style={[
+                              styles.levelChipSmallText,
+                              bankQuestionForm.academic_year === ay && styles.levelChipSmallTextActive,
+                            ]}
+                          >
+                            {ay}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>SEMESTER: <Text style={styles.req}>*</Text></Text>
+                    <View style={{ flexDirection: 'row', gap: 6, paddingTop: 4 }}>
+                      {['Ganjil', 'Genap'].map((sem) => (
+                        <TouchableOpacity
+                          key={sem}
+                          style={[
+                            styles.levelChipSmall,
+                            { flex: 1, alignItems: 'center' },
+                            bankQuestionForm.semester === sem && styles.levelChipSmallActive,
+                          ]}
+                          onPress={() => setBankQuestionForm({ ...bankQuestionForm, semester: sem })}
+                        >
+                          <Text
+                            style={[
+                              styles.levelChipSmallText,
+                              bankQuestionForm.semester === sem && styles.levelChipSmallTextActive,
+                            ]}
+                          >
+                            {sem}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
                 </View>
 
                 {/* 2. Tingkat & Topik */}
@@ -3087,6 +3738,60 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                       </TouchableOpacity>
                     ))}
                   </ScrollView>
+                </View>
+
+                {/* Tahun Ajaran & Semester AI */}
+                <View style={styles.rowTwoCols}>
+                  <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                    <Text style={styles.inputLabel}>TAHUN AJARAN:</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.bankPillsRow, { paddingVertical: 4 }]}>
+                      {getAcademicYearList().map((ay) => (
+                        <TouchableOpacity
+                          key={ay}
+                          style={[
+                            styles.levelChipSmall,
+                            bankAiForm.academic_year === ay && styles.levelChipSmallActive,
+                          ]}
+                          onPress={() => setBankAiForm({ ...bankAiForm, academic_year: ay })}
+                        >
+                          <Text
+                            style={[
+                              styles.levelChipSmallText,
+                              bankAiForm.academic_year === ay && styles.levelChipSmallTextActive,
+                            ]}
+                          >
+                            {ay}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+
+                  <View style={[styles.inputGroup, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>SEMESTER:</Text>
+                    <View style={{ flexDirection: 'row', gap: 6, paddingTop: 4 }}>
+                      {['Ganjil', 'Genap'].map((sem) => (
+                        <TouchableOpacity
+                          key={sem}
+                          style={[
+                            styles.levelChipSmall,
+                            { flex: 1, alignItems: 'center' },
+                            bankAiForm.semester === sem && styles.levelChipSmallActive,
+                          ]}
+                          onPress={() => setBankAiForm({ ...bankAiForm, semester: sem })}
+                        >
+                          <Text
+                            style={[
+                              styles.levelChipSmallText,
+                              bankAiForm.semester === sem && styles.levelChipSmallTextActive,
+                            ]}
+                          >
+                            {sem}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
                 </View>
 
                 {/* 2. Tingkat Kelas */}
@@ -5248,6 +5953,32 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     color: '#B45309',
+  },
+  ayMiniBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  ayMiniBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  semMiniBadge: {
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+  },
+  semMiniBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#5B21B6',
   },
   aiDiffBadge: {
     flexDirection: 'row',

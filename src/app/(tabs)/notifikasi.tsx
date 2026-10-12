@@ -10,15 +10,16 @@ import Colors from '../../constants/Colors';
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
 
-type FilterType = 'all' | 'presensi' | 'nilai' | 'spp' | 'pengumuman';
+type FilterType = 'all' | 'presensi' | 'nilai' | 'spp' | 'pengumuman' | 'maintenance';
 
 interface NotificationItem {
   id: string;
-  type: 'presensi' | 'nilai' | 'spp' | 'pengumuman';
+  type: 'presensi' | 'nilai' | 'spp' | 'pengumuman' | 'maintenance';
   title: string;
   body: string;
   time: string;
   isRead: boolean;
+  path?: string;
 }
 
 export default function NotifikasiScreen() {
@@ -42,20 +43,43 @@ export default function NotifikasiScreen() {
       if (apiUrl && token) {
         const headers = { Authorization: `Bearer ${token}` };
         try {
-          const res = await axios.get(`${apiUrl}/api/announcements`, { headers });
-          if (res.data && res.data.success && Array.isArray(res.data.data)) {
-            const items = res.data.data.map((item: any, idx: number) => ({
-              id: item.id?.toString() || idx.toString(),
+          const [resAnnouncements, resNotifications] = await Promise.allSettled([
+            axios.get(`${apiUrl}/api/announcements`, { headers }),
+            axios.get(`${apiUrl}/api/notifications`, { headers }),
+          ]);
+
+          const allItems: NotificationItem[] = [];
+
+          if (resNotifications.status === 'fulfilled' && resNotifications.value.data?.success && Array.isArray(resNotifications.value.data.data)) {
+            const notifItems = resNotifications.value.data.data.map((item: any, idx: number) => {
+              const isMaint = item.type?.toUpperCase() === 'MAINTENANCE';
+              return {
+                id: item.id?.toString() || `notif-${idx}`,
+                type: (isMaint ? 'maintenance' : 'pengumuman') as any,
+                title: item.title || (isMaint ? 'Pengingat Maintenance' : 'Pemberitahuan'),
+                body: item.message || item.body || '',
+                time: item.created_at ? new Date(item.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) : 'Hari ini',
+                isRead: Boolean(item.is_read),
+                path: item.path || '',
+              };
+            });
+            allItems.push(...notifItems);
+          }
+
+          if (resAnnouncements.status === 'fulfilled' && resAnnouncements.value.data?.success && Array.isArray(resAnnouncements.value.data.data)) {
+            const annItems = resAnnouncements.value.data.data.map((item: any, idx: number) => ({
+              id: `ann-${item.id?.toString() || idx}`,
               type: 'pengumuman' as const,
               title: item.title || 'Pengumuman Sekolah',
               body: item.content || item.description || '',
-              time: item.created_at || 'Hari ini',
+              time: item.created_at ? new Date(item.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) : 'Hari ini',
               isRead: false,
+              path: '',
             }));
-            setNotifications(items);
-          } else {
-            setNotifications([]);
+            allItems.push(...annItems);
           }
+
+          setNotifications(allItems);
         } catch (_) {
           setNotifications([]);
         }
@@ -78,9 +102,14 @@ export default function NotifikasiScreen() {
   };
 
   const handlePressItem = (id: string) => {
+    const item = notifications.find(n => n.id === id);
     setNotifications(prev =>
       prev.map(n => (n.id === id ? { ...n, isRead: true } : n))
     );
+
+    if (item?.type === 'maintenance' || item?.path?.includes('assets')) {
+      router.push('/modules/sarpras');
+    }
   };
 
   const filteredList = notifications.filter(n => {
@@ -99,6 +128,8 @@ export default function NotifikasiScreen() {
       case 'spp':
       case 'keuangan':
         return { icon: 'card' as const, color: '#EF4444', bg: '#FEF2F2' };
+      case 'maintenance':
+        return { icon: 'construct' as const, color: '#EA580C', bg: '#FFF7ED' };
       default:
         return { icon: 'megaphone' as const, color: '#F59E0B', bg: '#FFFBEB' };
     }
@@ -138,6 +169,7 @@ export default function NotifikasiScreen() {
             { id: 'nilai', label: 'Nilai & Tugas' },
             { id: 'spp', label: 'SPP / Keuangan' },
             { id: 'pengumuman', label: 'Pengumuman' },
+            { id: 'maintenance', label: 'Pemeliharaan' },
           ].map(tab => (
             <TouchableOpacity
               key={tab.id}
