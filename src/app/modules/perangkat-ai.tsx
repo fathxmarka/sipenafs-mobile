@@ -31,6 +31,48 @@ const TOOL_MAP: Record<string, string> = {
   'Ringkasan Teks': 'ringkasan'
 };
 
+const normalizeSchoolLevel = (rawLevel?: string, name?: string): 'SD' | 'SMP' | 'SMA' => {
+  const lvl = String(rawLevel || '').toUpperCase().trim();
+  if (lvl === '3' || lvl === 'SD' || lvl === 'MI') return 'SD';
+  if (lvl === '4' || lvl === 'SMP' || lvl === 'MTS') return 'SMP';
+  if (lvl === '5' || lvl === '6' || lvl === 'SMA' || lvl === 'SMK' || lvl === 'MA' || lvl === 'SMA/SMK') return 'SMA';
+
+  const scName = String(name || '').toUpperCase();
+  if (/\b(SD|MI|SEKOLAH DASAR)\b/.test(scName)) return 'SD';
+  if (/\b(SMP|MTS|SEKOLAH MENENGAH PERTAMA)\b/.test(scName)) return 'SMP';
+  if (/\b(SMA|SMK|MA|ALIYAH|SEKOLAH MENENGAH ATAS|SEKOLAH MENENGAH KEJURUAN)\b/.test(scName)) return 'SMA';
+
+  return 'SMA';
+};
+
+const getTingkatOptionsByLevel = (normalizedLevel: 'SD' | 'SMP' | 'SMA') => {
+  if (normalizedLevel === 'SD') {
+    return [
+      { label: '-- Semua Tingkat / Reguler --', value: '' },
+      { label: 'Kelas 1 (Fase A)', value: '1', levelNum: 1 },
+      { label: 'Kelas 2 (Fase A)', value: '2', levelNum: 2 },
+      { label: 'Kelas 3 (Fase B)', value: '3', levelNum: 3 },
+      { label: 'Kelas 4 (Fase B)', value: '4', levelNum: 4 },
+      { label: 'Kelas 5 (Fase C)', value: '5', levelNum: 5 },
+      { label: 'Kelas 6 (Fase C)', value: '6', levelNum: 6 },
+    ];
+  }
+  if (normalizedLevel === 'SMP') {
+    return [
+      { label: '-- Semua Tingkat / Reguler --', value: '' },
+      { label: 'Kelas 7 (Fase D)', value: '7', levelNum: 7 },
+      { label: 'Kelas 8 (Fase D)', value: '8', levelNum: 8 },
+      { label: 'Kelas 9 (Fase D)', value: '9', levelNum: 9 },
+    ];
+  }
+  return [
+    { label: '-- Semua Tingkat / Reguler --', value: '' },
+    { label: 'Kelas 10 (Fase E)', value: '10', levelNum: 10 },
+    { label: 'Kelas 11 (Fase F)', value: '11', levelNum: 11 },
+    { label: 'Kelas 12 (Fase F)', value: '12', levelNum: 12 },
+  ];
+};
+
 export default function PerangkatAjarAIScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -38,7 +80,11 @@ export default function PerangkatAjarAIScreen() {
 
   const [activeTool, setActiveTool] = useState<string>('Modul Ajar / RPP');
   const [selectedMapel, setSelectedMapel] = useState<string>(params.mapel || '');
-  const [selectedTingkat, setSelectedTingkat] = useState<string>('Kelas X (Fase E)');
+  const [schoolLevel, setSchoolLevel] = useState<'SD' | 'SMP' | 'SMA'>('SMA');
+  const [selectedTingkat, setSelectedTingkat] = useState<string>('');
+  const [selectedTingkatValue, setSelectedTingkatValue] = useState<string>('');
+  const [classOptions, setClassOptions] = useState<Array<{ label: string; value: string; levelNum?: number }>>(getTingkatOptionsByLevel('SMA'));
+  const [isSelectTingkatOpen, setIsSelectTingkatOpen] = useState(false);
   const [selectedSemester, setSelectedSemester] = useState<string>('Ganjil');
   const [selectedTopic, setSelectedTopic] = useState<string>('');
   const [additionalNotes, setAdditionalNotes] = useState<string>('');
@@ -61,16 +107,57 @@ export default function PerangkatAjarAIScreen() {
       const storedUser = await SecureStore.getItemAsync('sipena_user');
       const token = await SecureStore.getItemAsync('sipena_token');
       const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
+      const storedSchoolLevel = await SecureStore.getItemAsync('sipena_school_level');
+      const storedSchoolName = await SecureStore.getItemAsync('sipena_school_name');
       
       if (storedUser && token && apiUrl) {
         const user = JSON.parse(storedUser);
         const roleStr = (user.role || '').toLowerCase();
         
-        // Fetch both master subjects and schedules
-        const [resSubjects, resSchedules] = await Promise.allSettled([
-          axios.get(`${apiUrl}/api/subjects`, { headers: { Authorization: `Bearer ${token}` } }),
-          axios.get(`${apiUrl}/api/schedules`, { headers: { Authorization: `Bearer ${token}` } })
+        // Fetch subjects, schedules, school profile, and classes in parallel
+        const [resSubjects, resSchedules, resSchool, resClasses] = await Promise.allSettled([
+          axios.get(`${apiUrl}/api/subjects?perPage=all`, { headers: { Authorization: `Bearer ${token}` } }),
+          axios.get(`${apiUrl}/api/schedules`, { headers: { Authorization: `Bearer ${token}` } }),
+          axios.get(`${apiUrl}/api/school`, { headers: { Authorization: `Bearer ${token}` } }),
+          axios.get(`${apiUrl}/api/classes?perPage=all`, { headers: { Authorization: `Bearer ${token}` } })
         ]);
+
+        // Resolve School Level dynamically from API or SecureStore
+        let apiSchoolLevel = '';
+        let apiSchoolName = '';
+        if (resSchool.status === 'fulfilled' && resSchool.value.data) {
+          const scData = resSchool.value.data.data || resSchool.value.data;
+          apiSchoolLevel = scData?.level || '';
+          apiSchoolName = scData?.name || '';
+        }
+
+        let classLevels: number[] = [];
+        if (resClasses.status === 'fulfilled' && resClasses.value.data) {
+          const rawClasses = resClasses.value.data.data || resClasses.value.data;
+          if (Array.isArray(rawClasses)) {
+            classLevels = rawClasses.map((c: any) => Number(c.level)).filter(n => !isNaN(n) && n > 0);
+          }
+        }
+
+        let rawLevel = apiSchoolLevel || storedSchoolLevel || '';
+        if (!rawLevel && classLevels.length > 0) {
+          const maxLevel = Math.max(...classLevels);
+          if (maxLevel <= 6) rawLevel = 'SD';
+          else if (maxLevel <= 9) rawLevel = 'SMP';
+          else rawLevel = 'SMA';
+        }
+
+        const determinedLevel = normalizeSchoolLevel(rawLevel || undefined, (apiSchoolName || storedSchoolName) || undefined);
+        setSchoolLevel(determinedLevel);
+        const dynamicOptions = getTingkatOptionsByLevel(determinedLevel);
+        setClassOptions(dynamicOptions);
+
+        // Set initial selected grade based on school level
+        const defaultOption = dynamicOptions.find(o => o.value !== '');
+        if (defaultOption) {
+          setSelectedTingkat(defaultOption.label);
+          setSelectedTingkatValue(defaultOption.value);
+        }
 
         let masterSubjs: Array<{ id: number; name: string }> = [];
         if (resSubjects.status === 'fulfilled' && resSubjects.value.data?.data) {
@@ -94,7 +181,11 @@ export default function PerangkatAjarAIScreen() {
         let finalSubjects = (roleStr.includes('guru') && teacherSubjects.length > 0) ? teacherSubjects : masterSubjs.map(s => s.name);
         
         if (finalSubjects.length === 0) {
-           finalSubjects = ['Bahasa Indonesia', 'Matematika Peminatan', 'Fisika Terapan & Gelombang', 'Pendidikan Agama Islam'];
+           finalSubjects = determinedLevel === 'SD' 
+             ? ['Bahasa Indonesia', 'Matematika', 'IPAS (Ilmu Pengetahuan Alam & Sosial)', 'Pendidikan Pancasila', 'Pendidikan Agama Islam']
+             : (determinedLevel === 'SMP'
+               ? ['Bahasa Indonesia', 'Matematika', 'Ilmu Pengetahuan Alam (IPA)', 'Ilmu Pengetahuan Sosial (IPS)', 'Bahasa Inggris', 'Informatika']
+               : ['Bahasa Indonesia', 'Matematika Tingkat Lanjut', 'Fisika Terapan', 'Informatika', 'Pendidikan Pancasila']);
         }
 
         setMySubjects(finalSubjects);
@@ -108,7 +199,7 @@ export default function PerangkatAjarAIScreen() {
         }
       }
     } catch (e) {
-      console.warn('Gagal memuat mata pelajaran guru:', e);
+      console.warn('Gagal memuat profil sekolah dan mata pelajaran guru:', e);
     }
   };
 
@@ -136,7 +227,14 @@ export default function PerangkatAjarAIScreen() {
       const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
 
       const matchedSubj = subjectObjects.find(s => s.name === selectedMapel);
-      const levelNumber = selectedTingkat.includes('10') || selectedTingkat.includes('X') ? 10 : (selectedTingkat.includes('11') || selectedTingkat.includes('XI') ? 11 : (selectedTingkat.includes('12') || selectedTingkat.includes('XII') ? 12 : undefined));
+      let levelNumber: number | undefined = undefined;
+      if (selectedTingkatValue && selectedTingkatValue !== '') {
+        const parsed = parseInt(selectedTingkatValue, 10);
+        if (!isNaN(parsed) && parsed > 0) levelNumber = parsed;
+      } else if (selectedTingkat) {
+        const match = selectedTingkat.match(/\b([1-9]|1[0-2])\b/);
+        if (match) levelNumber = parseInt(match[1], 10);
+      }
 
       const payload = {
         tool_type: TOOL_MAP[activeTool] || 'rpp',
@@ -309,8 +407,8 @@ export default function PerangkatAjarAIScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>2. TINGKAT / KELAS (JENJANG SMA)</Text>
-            <TouchableOpacity style={styles.selectBox} onPress={() => setSelectedTingkat(selectedTingkat ? '' : 'Kelas X (Fase E)')}>
+            <Text style={styles.inputLabel}>2. TINGKAT / KELAS (JENJANG {schoolLevel})</Text>
+            <TouchableOpacity style={styles.selectBox} onPress={() => setIsSelectTingkatOpen(true)}>
               <Text style={selectedTingkat ? styles.selectTextActive : styles.selectTextPlaceholder}>
                 {selectedTingkat || '-- Semua Tingkat / Reguler --'}
               </Text>
@@ -524,6 +622,54 @@ export default function PerangkatAjarAIScreen() {
                   )}
                 />
               )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Pilih Tingkat / Kelas */}
+      <Modal
+        visible={isSelectTingkatOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsSelectTingkatOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Pilih Tingkat / Kelas</Text>
+                <Text style={styles.modalSubtitle}>Jenjang {schoolLevel} (Kurikulum Merdeka)</Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsSelectTingkatOpen(false)} style={styles.closeModalBtn}>
+                <Ionicons name="close" size={24} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalBody}>
+              <FlatList
+                data={classOptions}
+                keyExtractor={(item, index) => String(index)}
+                renderItem={({ item }) => {
+                  const isSelected = selectedTingkat === item.label || (selectedTingkat === '' && item.value === '');
+                  return (
+                    <TouchableOpacity
+                      style={styles.mapelListItem}
+                      onPress={() => {
+                        setSelectedTingkat(item.value ? item.label : '');
+                        setSelectedTingkatValue(item.value);
+                        setIsSelectTingkatOpen(false);
+                      }}
+                    >
+                      <View style={[styles.radioCircle, isSelected && styles.radioCircleActive]}>
+                        {isSelected && <View style={styles.radioInner} />}
+                      </View>
+                      <Text style={[styles.mapelListText, isSelected && styles.mapelListTextActive]}>
+                        {item.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                }}
+              />
             </View>
           </View>
         </View>
@@ -881,6 +1027,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+    fontWeight: '500',
   },
   closeModalBtn: {
     padding: 4,

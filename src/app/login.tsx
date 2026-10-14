@@ -153,6 +153,9 @@ export default function LoginScreen() {
         const bioApiUrl = (biometricProfile.school.api_url || '').trim().replace(/\/+$/, '');
         await SecureStore.setItemAsync('sipena_api_url', bioApiUrl);
         await SecureStore.setItemAsync('sipena_school_name', biometricProfile.school.name);
+        if ((biometricProfile.school as any)?.level) {
+          await SecureStore.setItemAsync('sipena_school_level', (biometricProfile.school as any).level);
+        }
         await SecureStore.setItemAsync('sipena_token', biometricProfile.token);
         await SecureStore.setItemAsync('sipena_user', JSON.stringify(biometricProfile.user));
 
@@ -233,6 +236,7 @@ export default function LoginScreen() {
     try {
       await SecureStore.setItemAsync('sipena_api_url', 'https://apidev.sipena.biz.id');
       await SecureStore.setItemAsync('sipena_school_name', 'SMA SIPENA');
+      await SecureStore.setItemAsync('sipena_school_level', 'SMA');
       await SecureStore.setItemAsync('sipena_token', 'demo-token-' + role);
       await SecureStore.setItemAsync('sipena_user', JSON.stringify(demoUser));
 
@@ -373,6 +377,9 @@ export default function LoginScreen() {
         // Simpan data sesi ke SecureStore
         await SecureStore.setItemAsync('sipena_api_url', schoolApiUrl);
         await SecureStore.setItemAsync('sipena_school_name', selectedSchool.name);
+        if (selectedSchool.level) {
+          await SecureStore.setItemAsync('sipena_school_level', selectedSchool.level);
+        }
         await SecureStore.setItemAsync('sipena_token', token);
         await SecureStore.setItemAsync('sipena_user', JSON.stringify(userData));
 
