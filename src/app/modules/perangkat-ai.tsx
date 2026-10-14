@@ -230,8 +230,11 @@ const renderMarkdownDocument = (content: string) => {
     if (tableRows.length === 0) return;
     const currentRows = [...tableRows];
     tableRows = [];
-    elements.push(
-      <View key={`table-${keyPrefix}`} style={styles.mdTableContainer}>
+    const maxCols = Math.max(...currentRows.map(r => r.length), 1);
+    const isWideTable = maxCols > 2;
+
+    const tableContent = (
+      <View style={[styles.mdTableContainer, isWideTable && { minWidth: maxCols * 130 }]}>
         {currentRows.map((row, rIdx) => {
           const isHeader = rIdx === 0;
           return (
@@ -244,7 +247,14 @@ const renderMarkdownDocument = (content: string) => {
               ]}
             >
               {row.map((cell, cIdx) => (
-                <View key={cIdx} style={[styles.mdTableCell, cIdx === 0 && row.length > 1 && { width: '40%' }]}>
+                <View 
+                  key={cIdx} 
+                  style={[
+                    styles.mdTableCell, 
+                    !isWideTable && cIdx === 0 && row.length === 2 && { width: '38%', flex: 0 },
+                    isWideTable && { width: 130 }
+                  ]}
+                >
                   {renderFormattedInlineText(cell.trim(), isHeader ? styles.mdTableHeaderText : styles.mdTableCellText)}
                 </View>
               ))}
@@ -253,26 +263,50 @@ const renderMarkdownDocument = (content: string) => {
         })}
       </View>
     );
+
+    elements.push(
+      isWideTable ? (
+        <ScrollView 
+          key={`table-scroll-${keyPrefix}`} 
+          horizontal 
+          showsHorizontalScrollIndicator={true} 
+          nestedScrollEnabled 
+          style={{ marginVertical: 6 }}
+        >
+          {tableContent}
+        </ScrollView>
+      ) : (
+        <View key={`table-${keyPrefix}`}>
+          {tableContent}
+        </View>
+      )
+    );
   };
 
   lines.forEach((line, index) => {
     const trimmed = line.trim();
 
-    // Check if table row: starts and ends with '|' or contains multiple '|'
-    if (trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 2) {
-      if (/^\|[\s\-:|]+\|$/.test(trimmed)) {
-        return;
-      }
-      const cells = trimmed
-        .slice(1, -1)
-        .split('|')
-        .map(c => c.trim());
-      tableRows.push(cells);
+    // Check table separator and table row detection
+    const isSep = trimmed.includes('|') && /^[\s|:\-]+$/.test(trimmed) && trimmed.includes('-');
+    const nextLine = index + 1 < lines.length ? lines[index + 1].trim() : '';
+    const nextIsSep = nextLine.includes('|') && /^[\s|:\-]+$/.test(nextLine) && nextLine.includes('-');
+    const isPipeLine = trimmed.includes('|') && !trimmed.startsWith('#');
+
+    if (isSep) {
       return;
-    } else {
-      if (tableRows.length > 0) {
-        flushTable(index);
-      }
+    }
+
+    if (nextIsSep || (isPipeLine && (tableRows.length > 0 || trimmed.startsWith('|')))) {
+      let cells = trimmed;
+      if (cells.startsWith('|')) cells = cells.substring(1);
+      if (cells.endsWith('|')) cells = cells.substring(0, cells.length - 1);
+      const parsedCells = cells.split('|').map(c => c.trim());
+      tableRows.push(parsedCells);
+      return;
+    }
+
+    if (tableRows.length > 0) {
+      flushTable(index);
     }
 
     // Empty line
@@ -735,7 +769,7 @@ Aturan Penulisan:
         return_url: true
       }, { 
         headers: { Authorization: token ? `Bearer ${token}` : '' },
-        timeout: 15000
+        timeout: 45000
       });
 
       if (res.data?.download_url) {
@@ -746,25 +780,12 @@ Aturan Penulisan:
         await Linking.openURL(fullDownloadUrl);
         showToast('Berkas Word (.docx) berhasil diproses & mulai diunduh!', 'success');
       } else {
-        // Fallback: share complete document so user never loses file
-        await Share.share({
-          title: `${activeTool} - ${selectedMapel || 'Bahan Ajar'}`,
-          message: generatedResult
-        });
-        showToast('Dokumen siap disimpan / dibagikan ke penyimpanan perangkat!', 'success');
+        showToast('Gagal memproses tautan unduhan dari server.', 'error');
       }
     } catch (e: any) {
       console.warn('Export DOCX error:', e?.message);
-      // Fallback: open system share sheet to guarantee save/download capability
-      try {
-        await Share.share({
-          title: `${activeTool} - ${selectedMapel || 'Bahan Ajar'}`,
-          message: generatedResult
-        });
-        showToast('Dokumen dibuka di opsi penyimpanan/berbagi perangkat!', 'info');
-      } catch (shareErr: any) {
-        showToast('Gagal memproses dokumen: ' + (e?.message || 'Koneksi bermasalah'), 'error');
-      }
+      const errMsg = e?.response?.data?.error || e?.message || 'Koneksi ke server bermasalah';
+      showToast(`Gagal mengunduh berkas Word: ${errMsg}`, 'error');
     } finally {
       setIsDownloadingWord(false);
     }
@@ -1024,16 +1045,7 @@ Aturan Penulisan:
                 {/* Header Actions */}
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, gap: 8 }}>
                   <TouchableOpacity 
-                    style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, gap: 6 }}
-                    onPress={handleCopy}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="copy-outline" size={15} color="#334155" />
-                    <Text style={{ fontSize: 11.5, color: '#334155', fontWeight: '700' }}>Salin / Bagikan</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#0F766E', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, gap: 6 }, isDownloadingWord && { opacity: 0.7 }]}
+                    style={[{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#0F766E', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 8, gap: 6 }, isDownloadingWord && { opacity: 0.7 }]}
                     onPress={handleDownloadWord}
                     disabled={isDownloadingWord}
                     activeOpacity={0.8}

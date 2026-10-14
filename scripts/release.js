@@ -42,10 +42,9 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **Penyempurnaan Download Word (.docx) & Simpan Master Silabus:** Penanganan ekspor berkas DOCX multi-tier (online server API + cadangan penyimpanan dokumen native perangkat), menjamin berkas selalu dapat diunduh dan disimpan tanpa kendala token/koneksi.
-- **Penyimpanan Lokal Anti-Hilang (AsyncStorage Drafts):** Setiap kali guru menyimpan ke Master Silabus, seluruh struktur capaian dan rancangan dokumen otomatis diamankan ke draft lokal perangkat serta disinkronkan ke server sekolah.
-- **Dukungan Jenjang Lengkap (SD, SMP, SMA):** Resolusi tingkat kelas dinamis untuk SD (Kelas 1-6), SMP (Kelas 7-9), dan SMA (Kelas 10-12) dengan validasi foreign key yang aman.
-- **Indikator Loading & Feedback Interaktif:** Tombol unduh dan simpan kini dilengkapi indikator proses (spinner) dan status nonaktif saat sedang memproses.`;
+- **Penyempurnaan Download Word (.docx) & Tabel Markdown:** Perbaikan menyeluruh hasil unduhan perangkat ajar (RPP, Silabus, LKPD) menjadi tabel formal Microsoft Word yang rapi, bergaris tepi proporsional, serta pemformatan sel otomatis.
+- **Penyempurnaan Tampilan Preview Mobile:** Pratinjau tabel kini mendukung scroll horizontal adaptif untuk tabel multi-kolom agar tidak terpotong di layar ponsel.
+- **Antarmuka Bersih & Efisien:** Menghilangkan tombol salin yang redundan agar proses pengunduhan langsung ke berkas resmi Word berjalan lebih cepat dan nyaman.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
