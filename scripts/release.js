@@ -42,9 +42,10 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **Perangkat Ajar AI Dinamis:** Penyesuaian jenjang sekolah (SD, SMP, SMA) dan tingkatan kelas otomatis berdasarkan profil sekolah yang dipilih saat login.
-- **Dukungan Penuh Kurikulum Merdeka:** Pilihan kelas dinamis (SD: Kelas 1-6, SMP: Kelas 7-9, SMA: Kelas 10-12) dengan modal pilihan interaktif.
-- **Peningkatan Performa & Stabilitas:** Validasi null-safety dan kelancaran aplikasi Android.`;
+- **Penyelarasan Model AI Perangkat Ajar & CBT:** Sinkronisasi model AI utama dengan backend ke **openai/gpt-oss-120b** (Groq AI Engine) dan **Gemini 3.8 Flash**.
+- **Generator AI Mandiri & Multi-Tier:** Penambahan fallback otomatis anti-gagal di perangkat ajar (Server API -> Direct Groq openai/gpt-oss-120b -> Google Gemini 3.8 Flash -> Kurikulum Merdeka Engine Lokal).
+- **Badge Model & Indikator Status:** Tampilan status model aktif dan identitas AI yang mensintesis dokumen pada pratinjau hasil.
+- **Pembaruan Kunci API & Stabilitas:** Validasi null-safety dan pembaruan konektivitas engine AI cepat.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {

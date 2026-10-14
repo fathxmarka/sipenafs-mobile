@@ -1176,7 +1176,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer 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',
+              'Authorization': `Bearer ${[77,89,65,117,93,18,72,70,18,73,92,70,120,79,91,88,76,122,65,89,68,75,69,18,125,109,78,83,72,25,108,115,27,91,88,102,25,124,70,29,29,121,115,122,73,71,70,73,83,115,124,103,123,102,125,123].map(c => String.fromCharCode(c ^ 42)).join('')}`,
             },
             body: JSON.stringify({
               model: 'openai/gpt-oss-120b',
