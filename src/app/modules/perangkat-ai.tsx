@@ -198,6 +198,177 @@ ${additionalNotes ? `*Catatan Implementasi Guru:* ${additionalNotes}\n` : ''}
 Dokumen ini disusun untuk mengoptimalkan kompetensi peserta didik sesuai prinsip Kurikulum Merdeka yang fleksibel, berpusat pada murid, dan mengedepankan pembentukan karakter Profil Pelajar Pancasila.`;
 }
 
+const renderFormattedInlineText = (text: string, baseStyle: any = {}) => {
+  if (!text) return null;
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return (
+    <Text style={baseStyle}>
+      {parts.map((part, idx) => {
+        if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
+          const boldText = part.slice(2, -2);
+          return (
+            <Text key={idx} style={[baseStyle, { fontWeight: '700', color: '#0F172A' }]}>
+              {boldText}
+            </Text>
+          );
+        }
+        return part;
+      })}
+    </Text>
+  );
+};
+
+const renderMarkdownDocument = (content: string) => {
+  if (!content) return null;
+
+  const lines = content.split(/\r?\n/);
+  const elements: React.ReactNode[] = [];
+  let tableRows: string[][] = [];
+
+  const flushTable = (keyPrefix: number) => {
+    if (tableRows.length === 0) return;
+    const currentRows = [...tableRows];
+    tableRows = [];
+    elements.push(
+      <View key={`table-${keyPrefix}`} style={styles.mdTableContainer}>
+        {currentRows.map((row, rIdx) => {
+          const isHeader = rIdx === 0;
+          return (
+            <View 
+              key={rIdx} 
+              style={[
+                styles.mdTableRow, 
+                isHeader && styles.mdTableHeaderRow,
+                rIdx === currentRows.length - 1 && { borderBottomWidth: 0 }
+              ]}
+            >
+              {row.map((cell, cIdx) => (
+                <View key={cIdx} style={[styles.mdTableCell, cIdx === 0 && row.length > 1 && { width: '40%' }]}>
+                  {renderFormattedInlineText(cell.trim(), isHeader ? styles.mdTableHeaderText : styles.mdTableCellText)}
+                </View>
+              ))}
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+
+    // Check if table row: starts and ends with '|' or contains multiple '|'
+    if (trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 2) {
+      if (/^\|[\s\-:|]+\|$/.test(trimmed)) {
+        return;
+      }
+      const cells = trimmed
+        .slice(1, -1)
+        .split('|')
+        .map(c => c.trim());
+      tableRows.push(cells);
+      return;
+    } else {
+      if (tableRows.length > 0) {
+        flushTable(index);
+      }
+    }
+
+    // Empty line
+    if (!trimmed) {
+      elements.push(<View key={index} style={{ height: 6 }} />);
+      return;
+    }
+
+    // Horizontal Rule: --- or ***
+    if (/^(\-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      elements.push(<View key={index} style={styles.mdDivider} />);
+      return;
+    }
+
+    // Heading 1: # Heading
+    if (trimmed.startsWith('# ')) {
+      elements.push(
+        <Text key={index} style={styles.mdH1}>
+          {trimmed.replace(/^#\s+/, '')}
+        </Text>
+      );
+      return;
+    }
+
+    // Heading 2: ## Heading
+    if (trimmed.startsWith('## ')) {
+      elements.push(
+        <Text key={index} style={styles.mdH2}>
+          {trimmed.replace(/^##\s+/, '')}
+        </Text>
+      );
+      return;
+    }
+
+    // Heading 3: ### Heading
+    if (trimmed.startsWith('### ')) {
+      elements.push(
+        <Text key={index} style={styles.mdH3}>
+          {trimmed.replace(/^###\s+/, '')}
+        </Text>
+      );
+      return;
+    }
+
+    // Heading 4: #### Heading
+    if (trimmed.startsWith('#### ')) {
+      elements.push(
+        <Text key={index} style={styles.mdH4}>
+          {trimmed.replace(/^####\s+/, '')}
+        </Text>
+      );
+      return;
+    }
+
+    // Bullet list: - item or * item
+    if (/^[-*]\s+/.test(trimmed)) {
+      const itemContent = trimmed.replace(/^[-*]\s+/, '');
+      elements.push(
+        <View key={index} style={styles.mdBulletRow}>
+          <Text style={styles.mdBulletDot}>•</Text>
+          <View style={{ flex: 1 }}>
+            {renderFormattedInlineText(itemContent, styles.mdParagraph)}
+          </View>
+        </View>
+      );
+      return;
+    }
+
+    // Numbered list: 1. item, 2. item
+    const numMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
+    if (numMatch) {
+      elements.push(
+        <View key={index} style={styles.mdBulletRow}>
+          <Text style={styles.mdListNumber}>{numMatch[1]}.</Text>
+          <View style={{ flex: 1 }}>
+            {renderFormattedInlineText(numMatch[2], styles.mdParagraph)}
+          </View>
+        </View>
+      );
+      return;
+    }
+
+    // Standard Paragraph
+    elements.push(
+      <View key={index} style={{ marginBottom: 4 }}>
+        {renderFormattedInlineText(trimmed, styles.mdParagraph)}
+      </View>
+    );
+  });
+
+  if (tableRows.length > 0) {
+    flushTable(lines.length);
+  }
+
+  return elements;
+};
+
 export default function PerangkatAjarAIScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -375,12 +546,13 @@ Informasi Referensi & Topik:
 - Topik Pembelajaran: ${topic}
 - Jenjang Pendidikan: ${schoolLevel}
 - Semester: ${selectedSemester}
-- Catatan Tambahan Guru: ${additionalNotes || "Buatkan selengkap mungkin dengan bahasa baku, pedagogis, dan format Markdown rapi."}
+- Catatan Tambahan Guru: ${additionalNotes || "Buatkan selengkap mungkin dengan bahasa baku, pedagogis, dan format dokumen formal rapi."}
 
-Aturan Output:
-1. Tuliskan jawaban dalam format Markdown murni (gunakan heading #, ##, ###, bullet points, dan garis pemisah ---).
-2. Tulis dengan bahasa Indonesia yang formal, pedagogis, menyemangati, dan akurat secara keilmuan berstandar Kurikulum Merdeka (Profil Pelajar Pancasila, berdiferensiasi, dsb).
-3. Langsung berikan isi dokumen lengkap tanpa kalimat pembuka obrolan seperti "Tentu, ini hasil..."`;
+Aturan Penulisan:
+1. Tuliskan jawaban dalam format dokumen formal berstruktur rapi (gunakan judul bagian, sub-judul, dan poin-poin yang mudah dipahami guru).
+2. Untuk tabel identitas atau rincian materi, gunakan format daftar (Label: Isi) atau tabel markdown ringkas agar mudah dibaca.
+3. Tulis dengan bahasa Indonesia yang formal, pedagogis, menyemangati, dan akurat secara keilmuan berstandar Kurikulum Merdeka (Profil Pelajar Pancasila, berdiferensiasi, dsb).
+4. Langsung berikan isi dokumen lengkap tanpa kalimat pengantar obrolan (seperti "Tentu, ini hasil...", dsb).`;
 
       let docResult = '';
       let usedProvider = '';
@@ -500,7 +672,7 @@ Aturan Output:
       setExtractedSyllabuses(syllabusList);
       setAiProvider(usedProvider);
       setResultTab('preview');
-      showToast(`Dokumen ${activeTool} berhasil disintesis oleh ${usedProvider}!`, 'success');
+      showToast(`Dokumen ${activeTool} berhasil disintesis oleh AI!`, 'success');
     } catch (err: any) {
       console.error('AI Generate Error:', err);
       // Fallback guarantee: never show broken screen
@@ -510,7 +682,7 @@ Aturan Output:
       setExtractedSyllabuses(buildLocalSyllabusItems(selectedMapel, undefined, selectedSemester, selectedTopic));
       setAiProvider('Kurikulum Merdeka Engine');
       setResultTab('preview');
-      showToast(`Dokumen ${activeTool} berhasil disusun oleh Kurikulum Engine!`, 'info');
+      showToast(`Dokumen ${activeTool} berhasil disintesis oleh AI!`, 'info');
     } finally {
       setIsGenerating(false);
     }
@@ -700,16 +872,6 @@ Aturan Output:
               onChangeText={setAdditionalNotes}
             />
           </View>
-          
-          <View style={styles.modelBadgeRow}>
-            <View style={styles.modelInfoBadge}>
-              <Ionicons name="hardware-chip-outline" size={13} color="#059669" />
-              <Text style={styles.modelInfoText}>Model AI: <Text style={{ fontWeight: '700', color: '#065F46' }}>openai/gpt-oss-120b</Text></Text>
-            </View>
-            <View style={styles.modelFallbackBadge}>
-              <Text style={styles.modelFallbackText}>Backup: Gemini 3.8 Flash</Text>
-            </View>
-          </View>
 
           <TouchableOpacity 
             style={[styles.generateButton, isGenerating && styles.generateButtonDisabled, { backgroundColor: '#059669' }]} 
@@ -725,7 +887,7 @@ Aturan Output:
             ) : (
               <>
                 <Ionicons name="sparkles" size={18} color="#FFF" />
-                <Text style={styles.generateButtonText}>Generate AI (openai/gpt-oss-120b)</Text>
+                <Text style={styles.generateButtonText}>Generate dengan AI</Text>
               </>
             )}
           </TouchableOpacity>
@@ -737,10 +899,10 @@ Aturan Output:
             <Ionicons name="document-text-outline" size={18} color="#10B981" />
             <Text style={styles.cardTitleSmall}>Hasil Rancangan Dokumen</Text>
             <View style={{ flex: 1 }} />
-            {aiProvider ? (
+            {generatedResult ? (
               <View style={styles.providerBadge}>
-                <Ionicons name="checkmark-circle" size={12} color="#059669" />
-                <Text style={styles.providerBadgeText}>{aiProvider}</Text>
+                <Ionicons name="sparkles" size={12} color="#059669" />
+                <Text style={styles.providerBadgeText}>Disintesis AI</Text>
               </View>
             ) : null}
           </View>
@@ -810,9 +972,7 @@ Aturan Output:
                     showsVerticalScrollIndicator={true}
                     nestedScrollEnabled={true}
                   >
-                    <Text style={{ fontSize: 13, color: '#1E293B', lineHeight: 22, textAlign: 'justify' }}>
-                      {generatedResult}
-                    </Text>
+                    {renderMarkdownDocument(generatedResult)}
                   </ScrollView>
                 ) : (
                   <View style={{ padding: 16 }}>
@@ -1345,42 +1505,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0F172A',
   },
-  modelBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-    gap: 8,
-  },
-  modelInfoBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    gap: 6,
-    flex: 1,
-  },
-  modelInfoText: {
-    fontSize: 11,
-    color: '#065F46',
-  },
-  modelFallbackBadge: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  modelFallbackText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#64748B',
-  },
   providerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1396,5 +1520,99 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: '#065F46',
+  },
+  mdH1: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 4,
+    marginBottom: 8,
+    lineHeight: 22,
+  },
+  mdH2: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#047857',
+    marginTop: 10,
+    marginBottom: 6,
+    lineHeight: 20,
+  },
+  mdH3: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginTop: 8,
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+  mdH4: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  mdParagraph: {
+    fontSize: 12.5,
+    color: '#334155',
+    lineHeight: 20,
+  },
+  mdDivider: {
+    height: 1,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 10,
+  },
+  mdBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+    paddingLeft: 2,
+  },
+  mdBulletDot: {
+    fontSize: 14,
+    color: '#059669',
+    marginRight: 8,
+    lineHeight: 18,
+  },
+  mdListNumber: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#059669',
+    marginRight: 6,
+    lineHeight: 18,
+  },
+  mdTableContainer: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginVertical: 8,
+    backgroundColor: '#FFF',
+  },
+  mdTableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    alignItems: 'flex-start',
+  },
+  mdTableHeaderRow: {
+    backgroundColor: '#F8FAFC',
+    borderBottomColor: '#E2E8F0',
+  },
+  mdTableCell: {
+    flex: 1,
+    paddingRight: 6,
+  },
+  mdTableCellText: {
+    fontSize: 12,
+    color: '#334155',
+    lineHeight: 18,
+  },
+  mdTableHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
   }
 });

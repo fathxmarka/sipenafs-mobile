@@ -42,10 +42,10 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **Penyelarasan Model AI Perangkat Ajar & CBT:** Sinkronisasi model AI utama dengan backend ke **openai/gpt-oss-120b** (Groq AI Engine) dan **Gemini 3.8 Flash**.
-- **Generator AI Mandiri & Multi-Tier:** Penambahan fallback otomatis anti-gagal di perangkat ajar (Server API -> Direct Groq openai/gpt-oss-120b -> Google Gemini 3.8 Flash -> Kurikulum Merdeka Engine Lokal).
-- **Badge Model & Indikator Status:** Tampilan status model aktif dan identitas AI yang mensintesis dokumen pada pratinjau hasil.
-- **Pembaruan Kunci API & Stabilitas:** Validasi null-safety dan pembaruan konektivitas engine AI cepat.`;
+- **Rich Markdown Document Rendering:** Teks rancangan perangkat ajar kini otomatis di-render menjadi tipografi dokumen yang rapi dan elegan (heading bersarang, font tebal tanpa simbol bintang, divider, dan tabel terformat) tanpa menampilkan simbol raw Markdown seperti \`##\` atau \`**\`.
+- **Penyederhanaan Tampilan Antarmuka AI:** Menghapus label model teknis dari UI, digantikan dengan penamaan yang bersih dan ramah pengguna ("Generate dengan AI" & "Disintesis AI").
+- **Optimasi Hasil Sintesis AI:** Format prompt disempurnakan untuk menghasilkan dokumen kurikulum resmi yang siap cetak dan mudah dibaca.
+- **Peningkatan Stabilitas & Null-Safety:** Pembaruan penanganan error dan fallback multi-tier tanpa gangguan.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
