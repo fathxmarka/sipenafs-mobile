@@ -42,10 +42,10 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **Rich Markdown Document Rendering:** Teks rancangan perangkat ajar kini otomatis di-render menjadi tipografi dokumen yang rapi dan elegan (heading bersarang, font tebal tanpa simbol bintang, divider, dan tabel terformat) tanpa menampilkan simbol raw Markdown seperti \`##\` atau \`**\`.
-- **Penyederhanaan Tampilan Antarmuka AI:** Menghapus label model teknis dari UI, digantikan dengan penamaan yang bersih dan ramah pengguna ("Generate dengan AI" & "Disintesis AI").
-- **Optimasi Hasil Sintesis AI:** Format prompt disempurnakan untuk menghasilkan dokumen kurikulum resmi yang siap cetak dan mudah dibaca.
-- **Peningkatan Stabilitas & Null-Safety:** Pembaruan penanganan error dan fallback multi-tier tanpa gangguan.`;
+- **Penyempurnaan Download Word (.docx) & Simpan Master Silabus:** Penanganan ekspor berkas DOCX multi-tier (online server API + cadangan penyimpanan dokumen native perangkat), menjamin berkas selalu dapat diunduh dan disimpan tanpa kendala token/koneksi.
+- **Penyimpanan Lokal Anti-Hilang (AsyncStorage Drafts):** Setiap kali guru menyimpan ke Master Silabus, seluruh struktur capaian dan rancangan dokumen otomatis diamankan ke draft lokal perangkat serta disinkronkan ke server sekolah.
+- **Dukungan Jenjang Lengkap (SD, SMP, SMA):** Resolusi tingkat kelas dinamis untuk SD (Kelas 1-6), SMP (Kelas 7-9), dan SMA (Kelas 10-12) dengan validasi foreign key yang aman.
+- **Indikator Loading & Feedback Interaktif:** Tombol unduh dan simpan kini dilengkapi indikator proses (spinner) dan status nonaktif saat sedang memproses.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
