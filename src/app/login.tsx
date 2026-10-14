@@ -237,12 +237,13 @@ export default function LoginScreen() {
       await SecureStore.setItemAsync('sipena_api_url', 'https://apidev.sipena.biz.id');
       await SecureStore.setItemAsync('sipena_school_name', 'SMA SIPENA');
       await SecureStore.setItemAsync('sipena_school_level', 'SMA');
-      await SecureStore.setItemAsync('sipena_token', 'demo-token-' + role);
+      const DEMO_JWT_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTAxLCJuYW1lIjoiQnVkaSBTYW50b3NvLCBNLlBkIiwicm9sZSI6Imd1cnUiLCJpc19kZW1vIjp0cnVlLCJpYXQiOjE3OTE5NTY2MDksImV4cCI6NDk0NzcxNjYwOX0.E_z4KQZh5XEn5U__GcGB5acUE6yGXLAy8PItobWGrio';
+      await SecureStore.setItemAsync('sipena_token', DEMO_JWT_TOKEN);
       await SecureStore.setItemAsync('sipena_user', JSON.stringify(demoUser));
 
       // Biometric policy: Strictly prohibited for Admin
       if (isRoleAllowedForBiometric(role)) {
-        await saveBiometricProfile(demoUser, { name: 'SMA SIPENA', api_url: 'https://apidev.sipena.biz.id' }, 'demo-token-' + role);
+        await saveBiometricProfile(demoUser, { name: 'SMA SIPENA', api_url: 'https://apidev.sipena.biz.id' }, DEMO_JWT_TOKEN);
       } else {
         await clearBiometricProfile();
       }

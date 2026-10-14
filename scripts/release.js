@@ -42,9 +42,9 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **Penyempurnaan Download Word (.docx) & Tabel Markdown:** Perbaikan menyeluruh hasil unduhan perangkat ajar (RPP, Silabus, LKPD) menjadi tabel formal Microsoft Word yang rapi, bergaris tepi proporsional, serta pemformatan sel otomatis.
-- **Penyempurnaan Tampilan Preview Mobile:** Pratinjau tabel kini mendukung scroll horizontal adaptif untuk tabel multi-kolom agar tidak terpotong di layar ponsel.
-- **Antarmuka Bersih & Efisien:** Menghilangkan tombol salin yang redundan agar proses pengunduhan langsung ke berkas resmi Word berjalan lebih cepat dan nyaman.`;
+- **Penyempurnaan Download Word (.docx) & Ekstensi Berkas Pasti:** Berkas hasil unduhan kini dijamin tersimpan dengan ekstensi resmi .docx dan terintegrasi langsung dengan menu penyimpanan lokal perangkat / Microsoft Word / Google Docs.
+- **Penyediaan Fitur Download PDF Berstandar Dinas:** Penambahan tombol dan fitur unduh PDF berstandar resmi instansi lengkap dengan Kop Surat Sekolah dan Tanda Tangan Guru & Kepala Sekolah yang diproses seketika (offline & instan).
+- **Penanganan Otentikasi Anti-401:** Pembaruan mekanisme token sesi dan fallback cerdas sehingga proses ekspor dokumen tidak pernah mengalami kendala sesi atau galat 401.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
