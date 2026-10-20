@@ -68,6 +68,9 @@ export default function HomeScreen() {
   const [imgError, setImgError] = useState(false);
   const [selectedExecDetail, setSelectedExecDetail] = useState<any>(null);
   const [showExecModal, setShowExecModal] = useState(false);
+  const [studentAttStatus, setStudentAttStatus] = useState<any>(null);
+  const [isStudentPjj, setIsStudentPjj] = useState(false);
+  const [studentClassName, setStudentClassName] = useState<string>('');
 
   useEffect(() => {
     loadData();
@@ -189,6 +192,17 @@ export default function HomeScreen() {
             }
           } catch (e) {
             console.warn('Fetch teacher stats error:', e);
+          }
+        } else if (roleStr.includes('siswa') || roleStr.includes('student')) {
+          try {
+            const resAtt = await axios.get(`${apiUrl}/api/student-attendance/status`, { headers });
+            if (resAtt.data && resAtt.data.success) {
+              setStudentAttStatus(resAtt.data.data || null);
+              setIsStudentPjj(Boolean(resAtt.data.is_pjj));
+              if (resAtt.data.class_name) setStudentClassName(resAtt.data.class_name);
+            }
+          } catch (e: any) {
+            console.warn('Fetch student attendance error:', e.message);
           }
         }
       }
@@ -739,19 +753,51 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Banner Mode PJJ Siswa */}
+            {isStudentPjj && (
+              <View style={{ marginHorizontal: 16, marginTop: 12, padding: 14, backgroundColor: '#ECFDF5', borderRadius: 16, borderWidth: 1.5, borderColor: '#A7F3D0' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Ionicons name="home" size={16} color="#059669" />
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: '#059669', letterSpacing: 0.5 }}>
+                    MODE PJJ AKTIF (BEBAS RADIUS)
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#065F46', marginBottom: 2 }}>
+                  Kelas {studentClassName || userData?.class_name || 'Anda'} Hari Ini Pembelajaran Jarak Jauh
+                </Text>
+                <Text style={{ fontSize: 12, color: '#047857', lineHeight: 17 }}>
+                  Anda dapat melakukan absensi mandiri dari rumah dengan verifikasi wajah tanpa batas jarak radius sekolah.
+                </Text>
+              </View>
+            )}
+
             {/* Status Presensi Hari Ini */}
             <View style={styles.cardSection}>
-              <View style={styles.studentAttendanceCard}>
-                <View style={styles.attIconWrapper}>
-                  <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+              <View style={[styles.studentAttendanceCard, isStudentPjj && { borderColor: '#A7F3D0', backgroundColor: '#F0FDF4' }]}>
+                <View style={[styles.attIconWrapper, isStudentPjj && { backgroundColor: '#DCFCE7' }]}>
+                  <Ionicons 
+                    name={studentAttStatus?.check_in_time ? "checkmark-circle" : "time-outline"} 
+                    size={24} 
+                    color={studentAttStatus?.check_in_time ? "#10B981" : (isStudentPjj ? "#EA580C" : "#64748B")} 
+                  />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.attStatusTitle}>Presensi Masuk Tercatat</Text>
-                  <Text style={styles.attStatusTime}>Tap-in Kiosk Gerbang Utama • 06:42 WIB</Text>
-                  <Text style={styles.attStatusNote}>Status: Hadir Tepat Waktu</Text>
+                  <Text style={styles.attStatusTitle}>
+                    {studentAttStatus?.check_in_time 
+                      ? (isStudentPjj ? 'Presensi Masuk PJJ Tercatat' : 'Presensi Masuk Tercatat')
+                      : (isStudentPjj ? 'Belum Absen Masuk PJJ' : 'Belum Absen Masuk')}
+                  </Text>
+                  <Text style={styles.attStatusTime}>
+                    {studentAttStatus?.check_in_time 
+                      ? `${isStudentPjj ? 'Absen Mandiri di Rumah' : 'Presensi Sekolah'} • ${new Date(studentAttStatus.check_in_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB`
+                      : (isStudentPjj ? 'Buka web untuk absen wajah dari rumah' : 'Silakan absen di lingkungan sekolah')}
+                  </Text>
+                  <Text style={[styles.attStatusNote, !studentAttStatus?.check_in_time && { color: '#DC2626' }]}>
+                    Status: {studentAttStatus?.check_in_time ? (studentAttStatus.status || 'Hadir Tepat Waktu') : 'Belum Presensi'}
+                  </Text>
                 </View>
                 <TouchableOpacity
-                  style={styles.attActionBtn}
+                  style={[styles.attActionBtn, isStudentPjj && { backgroundColor: '#059669' }]}
                   onPress={() => router.push('/modules/presensi' as any)}
                 >
                   <Text style={styles.attActionBtnText}>Detail</Text>

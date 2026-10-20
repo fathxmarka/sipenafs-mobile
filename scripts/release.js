@@ -42,9 +42,9 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **Penyempurnaan Download Word (.docx) & Ekstensi Berkas Pasti:** Berkas hasil unduhan kini dijamin tersimpan dengan ekstensi resmi .docx dan terintegrasi langsung dengan menu penyimpanan lokal perangkat / Microsoft Word / Google Docs.
-- **Penyediaan Fitur Download PDF Berstandar Dinas:** Penambahan tombol dan fitur unduh PDF berstandar resmi instansi lengkap dengan Kop Surat Sekolah dan Tanda Tangan Guru & Kepala Sekolah yang diproses seketika (offline & instan).
-- **Penanganan Otentikasi Anti-401:** Pembaruan mekanisme token sesi dan fallback cerdas sehingga proses ekspor dokumen tidak pernah mengalami kendala sesi atau galat 401.`;
+- **Integrasi Mode Pembelajaran Jarak Jauh (PJJ):** Siswa kini dapat memantau status PJJ rombel secara langsung dari dashboard mobile.
+- **Pemberitahuan Status Presensi Siswa:** Tampilan kartu kehadiran siswa otomatis mendeteksi status KBM harian (Tatap Muka atau PJJ Bebas Radius).
+- **Peningkatan Stabilitas & Sinkronisasi Kehadiran:** Penyesuaian endpoint status presensi siswa yang lebih responsif dan aman.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
