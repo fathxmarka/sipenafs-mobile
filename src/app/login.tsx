@@ -34,6 +34,57 @@ type School = {
   level: string;
 };
 
+const FALLBACK_SCHOOLS: School[] = [
+  {
+    school_id: "SCH-SMP-001",
+    npsn: "20260001",
+    name: "SMA SIPENA",
+    api_url: "https://apidev.sipena.biz.id",
+    logo_url: "https://apidev.sipena.biz.id/public/uploads/logos/logo-1790695581339-975391108.png",
+    level: "SMA"
+  },
+  {
+    school_id: "SCH-1790911148020",
+    npsn: "20222165",
+    name: "SMAN 2 CIREBON",
+    api_url: "https://sman2kotacirebon.sipena.biz.id",
+    logo_url: "https://sman2kotacirebon.sipena.biz.id/public/uploads/logos/logo-1790911008106-19374943.png",
+    level: "SMA"
+  },
+  {
+    school_id: "SCH-1791163558626",
+    npsn: "20222166",
+    name: "SMAN 4 KOTA CIREBON",
+    api_url: "https://sman4kotacirebon.sipena.biz.id",
+    logo_url: "https://sman4kotacirebon.sipena.biz.id/public/uploads/logos/logo-1791163507261-452292815.png",
+    level: "SMA"
+  },
+  {
+    school_id: "SCH-SMA-001",
+    npsn: "69968471",
+    name: "SMA NEGERI 1 KALIWEDI",
+    api_url: "https://api-sman1kaliwedi.sipena.biz.id",
+    logo_url: "https://api-sman1kaliwedi.sipena.biz.id/public/uploads/logos/logo-1780014578448-411900629.png",
+    level: "SMA"
+  },
+  {
+    school_id: "SCH-1791166154903",
+    npsn: "20214965",
+    name: "SMAN 1 DUKUPUNTANG",
+    api_url: "https://sman1dukupuntang.sipena.biz.id",
+    logo_url: "https://sman1dukupuntang.sipena.biz.id/public/uploads/logos/logo-1791166096376-464392214.png",
+    level: "SMA"
+  },
+  {
+    school_id: "SCH-SD-001",
+    npsn: "12345678",
+    name: "SD SIPENA",
+    api_url: "https://sd.sipena.biz.id",
+    logo_url: "https://sd.sipena.biz.id/public/uploads/logos/logo-1787355370512-202713279.png",
+    level: "SD"
+  }
+];
+
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -69,7 +120,7 @@ export default function LoginScreen() {
   };
 
   // School Selection State
-  const [schools, setSchools] = useState<School[]>([]);
+  const [schools, setSchools] = useState<School[]>(FALLBACK_SCHOOLS);
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
   const [isSchoolModalVisible, setIsSchoolModalVisible] = useState(false);
   const [isDemoModalVisible, setIsDemoModalVisible] = useState(false);
@@ -93,6 +144,7 @@ export default function LoginScreen() {
   useEffect(() => {
     generateCaptcha();
     fetchSchools();
+    checkPreviousSchool();
     checkExistingSession();
     checkBiometrics();
 
@@ -259,19 +311,65 @@ export default function LoginScreen() {
     }
   };
 
+  const checkPreviousSchool = async () => {
+    try {
+      const prevName = await SecureStore.getItemAsync('sipena_school_name');
+      const prevUrl = await SecureStore.getItemAsync('sipena_api_url');
+      if (prevName || prevUrl) {
+        const found = FALLBACK_SCHOOLS.find(s => 
+          (prevName && s.name.toLowerCase() === prevName.toLowerCase()) || 
+          (prevUrl && s.api_url.toLowerCase() === prevUrl.toLowerCase())
+        );
+        if (found) {
+          setSelectedSchool(found);
+        } else if (prevName && prevUrl) {
+          setSelectedSchool({
+            school_id: 'SCH-PREV',
+            npsn: '',
+            name: prevName,
+            api_url: prevUrl,
+            logo_url: '',
+            level: 'SMA',
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Check previous school error:', e);
+    }
+  };
+
   const fetchSchools = async () => {
     setIsLoadingSchools(true);
     try {
-      const response = await axios.get('https://api.sipena.biz.id/api/schools');
-      if (response.data && Array.isArray(response.data)) {
+      // 1. Baca cache lokal jika pernah disimpan sebelumnya
+      try {
+        const cached = await SecureStore.getItemAsync('sipena_cached_schools');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSchools(parsed);
+          }
+        }
+      } catch (cacheErr) {
+        console.warn('Gagal membaca cache sekolah:', cacheErr);
+      }
+
+      // 2. Coba fetch online dengan timeout 4 detik
+      const response = await axios.get('https://api.sipena.biz.id/api/schools', { timeout: 4000 });
+      if (response.data && Array.isArray(response.data) && response.data.length > 0) {
         const sanitized = response.data.map((item: any) => ({
           ...item,
           api_url: (item.api_url || '').trim().replace(/\/+$/, '')
         }));
         setSchools(sanitized);
+        try {
+          await SecureStore.setItemAsync('sipena_cached_schools', JSON.stringify(sanitized));
+        } catch {}
       }
     } catch (error) {
-      console.error("Gagal mengambil daftar sekolah:", error);
+      console.warn("Gagal mengambil daftar sekolah online, menggunakan data offline fallback:", error);
+      // Jamin daftar sekolah tidak pernah kosong
+      setSchools((prev) => (prev && prev.length > 0 ? prev : FALLBACK_SCHOOLS));
     } finally {
       setIsLoadingSchools(false);
     }
@@ -409,10 +507,14 @@ export default function LoginScreen() {
     }
   };
 
-  const filteredSchools = schools.filter(s => 
-    s.name.toLowerCase().includes(searchSchool.toLowerCase()) || 
-    s.npsn.includes(searchSchool)
-  );
+  const currentSchools = (schools && schools.length > 0) ? schools : FALLBACK_SCHOOLS;
+  const filteredSchools = currentSchools.filter(s => {
+    const q = (searchSchool || '').trim().toLowerCase();
+    if (!q) return true;
+    const nameMatch = (s?.name || '').toLowerCase().includes(q);
+    const npsnMatch = (s?.npsn || '').toLowerCase().includes(q);
+    return nameMatch || npsnMatch;
+  });
 
   return (
     <KeyboardAvoidingView 

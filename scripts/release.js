@@ -42,9 +42,9 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **Tampilan Wacana/Passage CBT:** Wacana dan teks narasi soal ujian kini otomatis tampil lengkap dan rapi di layar CBT.
-- **Kamera Pengawas Interaktif (Draggable):** Frame kamera pengawas kini dapat digeser (drag & drop) secara bebas agar tidak menghalangi membaca soal atau opsi jawaban.
-- **Dukungan Simbol Khusus & Rumus:** Simbol matematika, sains, pangkat, indeks, dan karakter khusus kini terkonversi rapi menjadi teks yang mudah dibaca.`;
+- **Ketahanan Daftar Sekolah (Offline & Fallback Resilience):** Seluruh daftar sekolah mitra kini tetap muncul lengkap dan dapat dipilih oleh siswa, guru, dan orang tua meskipun server registrasi pusat sedang gangguan.
+- **Cache Lokal Cerdas & Auto-Detect:** Menyimpan riwayat sekolah tersinkronisasi di penyimpanan lokal perangkat sehingga proses login lebih cepat dan stabil.
+- **Pencegahan Null-Safety Pencarian Sekolah:** Pencarian sekolah berdasarkan nama atau NPSN kini lebih aman dan responsif.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
