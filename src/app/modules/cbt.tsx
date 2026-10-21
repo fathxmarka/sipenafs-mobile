@@ -15,6 +15,8 @@ import {
   Alert,
   Dimensions,
   Share,
+  PanResponder,
+  Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -24,6 +26,7 @@ import { Toast, ToastType } from '../../components/ui/Toast';
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { formatCbtText } from '../../utils/cbtFormatter';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -77,11 +80,14 @@ interface Question {
   academic_year?: string | null;
   semester?: string | null;
   term?: { id: number; name: string; semester: string } | null;
+  storyText?: string | null;
+  story_text?: string | null;
   passage?: {
-    id: string;
-    title: string;
-    content: string;
-  } | null;
+    id?: string;
+    title?: string;
+    content?: string;
+    audio_url?: string;
+  } | string | null;
 }
 
 interface Passage {
@@ -298,6 +304,31 @@ export default function CbtScreen() {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [proctorWarningCount, setProctorWarningCount] = useState(0);
   const [isCameraBoxMinimized, setIsCameraBoxMinimized] = useState(false);
+
+  // Draggable Floating Camera Preview (agar tidak menghalangi membaca soal)
+  const cameraPan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const cameraPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dx) > 3 || Math.abs(gestureState.dy) > 3;
+      },
+      onPanResponderGrant: () => {
+        cameraPan.setOffset({
+          x: (cameraPan.x as any)._value,
+          y: (cameraPan.y as any)._value,
+        });
+        cameraPan.setValue({ x: 0, y: 0 });
+      },
+      onPanResponderMove: Animated.event(
+        [null, { dx: cameraPan.x, dy: cameraPan.y }],
+        { useNativeDriver: false }
+      ),
+      onPanResponderRelease: () => {
+        cameraPan.flattenOffset();
+      },
+    })
+  ).current;
 
   // -------------------------------------------------------------
   // INITIALIZATION
@@ -1366,14 +1397,20 @@ Format JSON array murni tanpa pembuka/penutup markdown:
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (!res.data?.shuffledQuestions || res.data.shuffledQuestions.length === 0) {
+      const loadedQuestions = res.data?.questions || res.data?.shuffledQuestions || [];
+
+      if (!loadedQuestions || loadedQuestions.length === 0) {
         showToast('Belum ada soal pada ujian ini.', 'warning');
         setLoading(false);
         return;
       }
 
+      // Reset camera position to default
+      cameraPan.setValue({ x: 0, y: 0 });
+      cameraPan.setOffset({ x: 0, y: 0 });
+
       setActiveStudentExam(exam);
-      setStudentQuestions(res.data.shuffledQuestions);
+      setStudentQuestions(loadedQuestions);
       setCurrentQuestionIndex(0);
 
       // Load existing saved answers if any
@@ -1554,6 +1591,22 @@ Format JSON array murni tanpa pembuka/penutup markdown:
         })()
       : currentQuestion.options || {}
     : {};
+
+  // Current active passage / story text for the current question
+  const currentPassage = (() => {
+    if (!currentQuestion) return null;
+    let p = currentQuestion.passage || (currentQuestion as any).storyText || (currentQuestion as any).story_text;
+    if (!p) return null;
+    if (typeof p === 'string') {
+      try {
+        const parsed = JSON.parse(p);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch {
+        return { title: 'Wacana / Teks Cerita', content: p };
+      }
+    }
+    return p;
+  })();
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
@@ -2269,12 +2322,12 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                         <View style={styles.passageCardMini}>
                           <Ionicons name="book-outline" size={14} color="#059669" />
                           <Text style={styles.passageCardMiniTitle} numberOfLines={1}>
-                            Wacana: {item.passage.title}
+                            Wacana: {typeof item.passage === 'object' ? item.passage?.title : 'Teks Cerita'}
                           </Text>
                         </View>
                       )}
 
-                      <Text style={styles.questionItemText}>{item.text}</Text>
+                      <Text style={styles.questionItemText}>{formatCbtText(item.text)}</Text>
 
                       {/* Options List */}
                       <View style={styles.optionsPreviewBox}>
@@ -3022,7 +3075,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                             <View style={styles.passageCardMini}>
                               <Ionicons name="book-outline" size={13} color="#059669" />
                               <Text style={styles.passageCardMiniTitle} numberOfLines={1}>
-                                Wacana: {item.passage.title}
+                                Wacana: {typeof item.passage === 'object' ? item.passage?.title : 'Teks Cerita'}
                               </Text>
                             </View>
                           )}
@@ -4173,9 +4226,21 @@ Format JSON array murni tanpa pembuka/penutup markdown:
             </TouchableOpacity>
           </View>
 
-          {/* Floating Camera Preview Box if Proctor Enabled */}
+          {/* Floating Draggable Camera Preview Box if Proctor Enabled */}
           {activeStudentExam?.proctor_enabled && (
-            <View style={[styles.floatingCameraWrapper, isCameraBoxMinimized && styles.floatingCameraMinimized]}>
+            <Animated.View
+              style={[
+                styles.floatingCameraWrapper,
+                isCameraBoxMinimized && styles.floatingCameraMinimized,
+                {
+                  transform: [
+                    { translateX: cameraPan.x },
+                    { translateY: cameraPan.y },
+                  ],
+                },
+              ]}
+              {...cameraPanResponder.panHandlers}
+            >
               {!isCameraBoxMinimized ? (
                 <View style={styles.cameraBoxInner}>
                   {cameraPermission?.granted ? (
@@ -4186,9 +4251,14 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                       <Text style={styles.cameraOffText}>Izin Kamera Diperlukan</Text>
                     </View>
                   )}
+                  {/* Top Drag Handle Bar so student knows it can be dragged */}
+                  <View style={styles.cameraDragHeader}>
+                    <Ionicons name="reorder-two-outline" size={13} color="#CBD5E1" />
+                    <Text style={styles.cameraDragText}>GESER</Text>
+                  </View>
                   <View style={styles.cameraStatusPill}>
                     <View style={styles.recDot} />
-                    <Text style={styles.cameraStatusText}>PENGAWAS AKTIF</Text>
+                    <Text style={styles.cameraStatusText}>AKTIF</Text>
                   </View>
                   <TouchableOpacity
                     style={styles.minimizeCameraBtn}
@@ -4204,22 +4274,26 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                 >
                   <View style={styles.recDot} />
                   <Ionicons name="videocam" size={14} color="#059669" />
-                  <Text style={styles.restoreCameraText}>Kamera</Text>
+                  <Text style={styles.restoreCameraText}>Kamera ⠿</Text>
                 </TouchableOpacity>
               )}
-            </View>
+            </Animated.View>
           )}
 
           {/* Question & Content Area */}
           <ScrollView contentContainerStyle={styles.arenaContentScroll} showsVerticalScrollIndicator={false}>
             {/* If Current Question has Passage / Soal Cerita */}
-            {currentQuestion?.passage && (
+            {currentPassage && (
               <View style={styles.passageCard}>
                 <View style={styles.passageCardHeader}>
                   <Ionicons name="book" size={16} color="#059669" />
-                  <Text style={styles.passageCardTitle}>{currentQuestion.passage.title}</Text>
+                  <Text style={styles.passageCardTitle}>
+                    {formatCbtText(currentPassage.title || 'Wacana / Teks Cerita')}
+                  </Text>
                 </View>
-                <Text style={styles.passageCardContent}>{currentQuestion.passage.content}</Text>
+                <Text style={styles.passageCardContent}>
+                  {formatCbtText(currentPassage.content)}
+                </Text>
               </View>
             )}
 
@@ -4233,7 +4307,9 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   </View>
                 )}
               </View>
-              <Text style={styles.arenaQuestionText}>{currentQuestion?.text}</Text>
+              <Text style={styles.arenaQuestionText}>
+                {formatCbtText(currentQuestion?.text)}
+              </Text>
             </View>
 
             {/* Radio Options A - E */}
@@ -4253,7 +4329,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                       </Text>
                     </View>
                     <Text style={[styles.arenaOptionText, isSelected && styles.arenaOptionTextSelected]}>
-                      {String(val)}
+                      {formatCbtText(String(val))}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -5422,7 +5498,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 60,
     right: 16,
-    zIndex: 99,
+    zIndex: 999,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
   },
   floatingCameraMinimized: {
     top: 60,
@@ -5435,6 +5516,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
     borderWidth: 2,
     borderColor: '#059669',
+  },
+  cameraDragHeader: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    right: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+    borderRadius: 4,
+    gap: 2,
+  },
+  cameraDragText: {
+    fontSize: 7.5,
+    color: '#E2E8F0',
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   cameraOffOverlay: {
     flex: 1,
@@ -5451,11 +5552,11 @@ const styles = StyleSheet.create({
   },
   cameraStatusPill: {
     position: 'absolute',
-    top: 4,
+    bottom: 4,
     left: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
     paddingHorizontal: 4,
     paddingVertical: 2,
     borderRadius: 4,

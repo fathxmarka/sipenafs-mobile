@@ -42,9 +42,9 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **Integrasi Mode Pembelajaran Jarak Jauh (PJJ):** Siswa kini dapat memantau status PJJ rombel secara langsung dari dashboard mobile.
-- **Pemberitahuan Status Presensi Siswa:** Tampilan kartu kehadiran siswa otomatis mendeteksi status KBM harian (Tatap Muka atau PJJ Bebas Radius).
-- **Peningkatan Stabilitas & Sinkronisasi Kehadiran:** Penyesuaian endpoint status presensi siswa yang lebih responsif dan aman.`;
+- **Tampilan Wacana/Passage CBT:** Wacana dan teks narasi soal ujian kini otomatis tampil lengkap dan rapi di layar CBT.
+- **Kamera Pengawas Interaktif (Draggable):** Frame kamera pengawas kini dapat digeser (drag & drop) secara bebas agar tidak menghalangi membaca soal atau opsi jawaban.
+- **Dukungan Simbol Khusus & Rumus:** Simbol matematika, sains, pangkat, indeks, dan karakter khusus kini terkonversi rapi menjadi teks yang mudah dibaca.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
