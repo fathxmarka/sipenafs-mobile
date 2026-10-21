@@ -42,9 +42,9 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **Ketahanan Daftar Sekolah (Offline & Fallback Resilience):** Seluruh daftar sekolah mitra kini tetap muncul lengkap dan dapat dipilih oleh siswa, guru, dan orang tua meskipun server registrasi pusat sedang gangguan.
-- **Cache Lokal Cerdas & Auto-Detect:** Menyimpan riwayat sekolah tersinkronisasi di penyimpanan lokal perangkat sehingga proses login lebih cepat dan stabil.
-- **Pencegahan Null-Safety Pencarian Sekolah:** Pencarian sekolah berdasarkan nama atau NPSN kini lebih aman dan responsif.`;
+- **Modul Kedisiplinan & Karakter Terpadu (BK & Wali Kelas):** Pemantauan net poin pelanggaran disiplin, tindakan pemutihan poin kompensasi/pembinaan, serta pencatatan prestasi dan piagam penghargaan siswa.
+- **Portal Orang Tua (Tab Karakter & Prestasi):** Orang tua dan wali siswa kini dapat memantau status disiplin, akumulasi poin, riwayat pemulihan/pemutihan, serta berkas piagam prestasi ananda langsung dari ponsel secara real-time.
+- **Aksesibilitas Wali Kelas di Mobile:** Wali Kelas dan Tenaga Pendidik kini memiliki akses langsung ke modul kedisiplinan untuk memonitor perkembangan karakter kelas binaannya.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {

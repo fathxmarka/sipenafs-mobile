@@ -11,7 +11,7 @@ import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
 import { Toast, ToastType } from '../../components/ui/Toast';
 
-type TabType = 'presensi' | 'nilai' | 'izin' | 'konsultasi';
+type TabType = 'presensi' | 'nilai' | 'karakter' | 'izin' | 'konsultasi';
 
 interface ChildProfile {
   id: string;
@@ -111,6 +111,21 @@ export default function OrtuModuleScreen() {
   const [subjectScores, setSubjectScores] = useState<SubjectScore[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequestItem[]>([]);
 
+  // Karakter & Prestasi data
+  const [characterSummary, setCharacterSummary] = useState({
+    gross_violation_points: 0,
+    total_deducted_points: 0,
+    net_violation_points: 0,
+    total_achievement_points: 0,
+    total_violations: 0,
+    total_deductions: 0,
+    total_achievements: 0,
+  });
+  const [violations, setViolations] = useState<any[]>([]);
+  const [deductions, setDeductions] = useState<any[]>([]);
+  const [achievements, setAchievements] = useState<any[]>([]);
+  const [charSubTab, setCharSubTab] = useState<'violations' | 'deductions' | 'achievements'>('violations');
+
   useEffect(() => {
     fetchParentOverview();
   }, []);
@@ -160,6 +175,18 @@ export default function OrtuModuleScreen() {
                   grade: Number(g.average || 84) >= 85 ? 'A' : 'B',
                 }))
               );
+            }
+            if (data.character_summary) {
+              setCharacterSummary(data.character_summary);
+            }
+            if (Array.isArray(data.violations)) {
+              setViolations(data.violations);
+            }
+            if (Array.isArray(data.deductions)) {
+              setDeductions(data.deductions);
+            }
+            if (Array.isArray(data.achievements)) {
+              setAchievements(data.achievements);
             }
           }
         } catch (_) {}
@@ -331,62 +358,82 @@ export default function OrtuModuleScreen() {
       </View>
 
       {/* Tab Selector */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'presensi' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('presensi')}
+      <View style={styles.tabScrollWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabContainer}
         >
-          <Ionicons
-            name="calendar-outline"
-            size={15}
-            color={activeTab === 'presensi' ? '#EC4899' : Colors.textLight}
-          />
-          <Text style={[styles.tabText, activeTab === 'presensi' && styles.tabTextActive]}>
-            Presensi
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'presensi' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('presensi')}
+          >
+            <Ionicons
+              name="calendar-outline"
+              size={15}
+              color={activeTab === 'presensi' ? '#EC4899' : Colors.textLight}
+            />
+            <Text style={[styles.tabText, activeTab === 'presensi' && styles.tabTextActive]}>
+              Presensi
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'nilai' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('nilai')}
-        >
-          <Ionicons
-            name="ribbon-outline"
-            size={15}
-            color={activeTab === 'nilai' ? '#EC4899' : Colors.textLight}
-          />
-          <Text style={[styles.tabText, activeTab === 'nilai' && styles.tabTextActive]}>
-            Nilai & Rapor
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'nilai' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('nilai')}
+          >
+            <Ionicons
+              name="ribbon-outline"
+              size={15}
+              color={activeTab === 'nilai' ? '#EC4899' : Colors.textLight}
+            />
+            <Text style={[styles.tabText, activeTab === 'nilai' && styles.tabTextActive]}>
+              Nilai & Rapor
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'izin' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('izin')}
-        >
-          <Ionicons
-            name="mail-outline"
-            size={15}
-            color={activeTab === 'izin' ? '#EC4899' : Colors.textLight}
-          />
-          <Text style={[styles.tabText, activeTab === 'izin' && styles.tabTextActive]}>
-            Surat Izin
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'karakter' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('karakter')}
+          >
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={15}
+              color={activeTab === 'karakter' ? '#EC4899' : Colors.textLight}
+            />
+            <Text style={[styles.tabText, activeTab === 'karakter' && styles.tabTextActive]}>
+              Karakter & Prestasi
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'konsultasi' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('konsultasi')}
-        >
-          <Ionicons
-            name="chatbubble-ellipses-outline"
-            size={15}
-            color={activeTab === 'konsultasi' ? '#EC4899' : Colors.textLight}
-          />
-          <Text style={[styles.tabText, activeTab === 'konsultasi' && styles.tabTextActive]}>
-            Wali Kelas
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'izin' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('izin')}
+          >
+            <Ionicons
+              name="mail-outline"
+              size={15}
+              color={activeTab === 'izin' ? '#EC4899' : Colors.textLight}
+            />
+            <Text style={[styles.tabText, activeTab === 'izin' && styles.tabTextActive]}>
+              Surat Izin
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'konsultasi' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('konsultasi')}
+          >
+            <Ionicons
+              name="chatbubble-ellipses-outline"
+              size={15}
+              color={activeTab === 'konsultasi' ? '#EC4899' : Colors.textLight}
+            />
+            <Text style={[styles.tabText, activeTab === 'konsultasi' && styles.tabTextActive]}>
+              Wali Kelas
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
 
       {isLoading ? (
@@ -473,6 +520,218 @@ export default function OrtuModuleScreen() {
                   </View>
                 </View>
               ))}
+            </View>
+          )}
+
+          {/* TAB: KARAKTER & PRESTASI */}
+          {activeTab === 'karakter' && (
+            <View>
+              <Text style={styles.sectionTitle}>Pencatatan Karakter & Prestasi</Text>
+              <Text style={styles.sectionSubtitle}>
+                Pantau poin kedisiplinan, pemulihan (pemutihan), serta prestasi penghargaan ananda secara real-time.
+              </Text>
+
+              {/* 3 Metric Cards */}
+              <View style={styles.charSummaryGrid}>
+                {/* Net Poin Kasus */}
+                <View style={[styles.charSummaryCard, { borderColor: (characterSummary.net_violation_points || 0) > 30 ? '#FCA5A5' : '#E5E7EB' }]}>
+                  <View style={styles.charCardHeader}>
+                    <Ionicons 
+                      name="warning-outline" 
+                      size={16} 
+                      color={(characterSummary.net_violation_points || 0) > 30 ? '#EF4444' : '#F59E0B'} 
+                    />
+                    <Text style={styles.charCardTitle}>Net Poin</Text>
+                  </View>
+                  <Text style={[styles.charCardNumber, { color: (characterSummary.net_violation_points || 0) > 30 ? '#EF4444' : '#111827' }]}>
+                    {characterSummary.net_violation_points || 0}
+                  </Text>
+                  <View style={[
+                    styles.charStatusBadge,
+                    { backgroundColor: (characterSummary.net_violation_points || 0) === 0 ? '#ECFDF5' : (characterSummary.net_violation_points || 0) <= 30 ? '#FFFBEB' : '#FEF2F2' }
+                  ]}>
+                    <Text style={[
+                      styles.charStatusText,
+                      { color: (characterSummary.net_violation_points || 0) === 0 ? '#10B981' : (characterSummary.net_violation_points || 0) <= 30 ? '#D97706' : '#EF4444' }
+                    ]}>
+                      {(characterSummary.net_violation_points || 0) === 0 ? 'Sangat Baik' : (characterSummary.net_violation_points || 0) <= 30 ? 'Perhatian' : 'Peringatan'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Pemutihan Poin */}
+                <View style={styles.charSummaryCard}>
+                  <View style={styles.charCardHeader}>
+                    <Ionicons name="refresh-circle-outline" size={16} color="#059669" />
+                    <Text style={styles.charCardTitle}>Pemutihan</Text>
+                  </View>
+                  <Text style={[styles.charCardNumber, { color: '#059669' }]}>
+                    -{characterSummary.total_deducted_points || 0}
+                  </Text>
+                  <Text style={styles.charCardSub}>
+                    {deductions.length} aksi tugas
+                  </Text>
+                </View>
+
+                {/* Prestasi & Piagam */}
+                <View style={styles.charSummaryCard}>
+                  <View style={styles.charCardHeader}>
+                    <Ionicons name="trophy-outline" size={16} color="#7C3AED" />
+                    <Text style={styles.charCardTitle}>Prestasi</Text>
+                  </View>
+                  <Text style={[styles.charCardNumber, { color: '#7C3AED' }]}>
+                    +{characterSummary.total_achievement_points || 0}
+                  </Text>
+                  <Text style={styles.charCardSub}>
+                    {achievements.length} capaian
+                  </Text>
+                </View>
+              </View>
+
+              {/* Sub-tab pills */}
+              <View style={styles.charSubTabRow}>
+                <TouchableOpacity
+                  style={[styles.charSubTabBtn, charSubTab === 'violations' && styles.charSubTabBtnActive]}
+                  onPress={() => setCharSubTab('violations')}
+                >
+                  <Ionicons name="alert-circle-outline" size={13} color={charSubTab === 'violations' ? '#DC2626' : Colors.textLight} />
+                  <Text style={[styles.charSubTabText, charSubTab === 'violations' && styles.charSubTabTextActive]}>
+                    Kasus ({violations.length})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.charSubTabBtn, charSubTab === 'deductions' && styles.charSubTabBtnActive]}
+                  onPress={() => setCharSubTab('deductions')}
+                >
+                  <Ionicons name="sparkles-outline" size={13} color={charSubTab === 'deductions' ? '#059669' : Colors.textLight} />
+                  <Text style={[styles.charSubTabText, charSubTab === 'deductions' && styles.charSubTabTextActive]}>
+                    Pemutihan ({deductions.length})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.charSubTabBtn, charSubTab === 'achievements' && styles.charSubTabBtnActive]}
+                  onPress={() => setCharSubTab('achievements')}
+                >
+                  <Ionicons name="trophy-outline" size={13} color={charSubTab === 'achievements' ? '#7C3AED' : Colors.textLight} />
+                  <Text style={[styles.charSubTabText, charSubTab === 'achievements' && styles.charSubTabTextActive]}>
+                    Prestasi ({achievements.length})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* List Content */}
+              {charSubTab === 'violations' && (
+                violations.length === 0 ? (
+                  <View style={styles.emptyBox}>
+                    <Ionicons name="shield-checkmark" size={42} color="#10B981" />
+                    <Text style={styles.emptyTitle}>Kedisiplinan Sangat Baik</Text>
+                    <Text style={styles.emptySub}>Alhamdulillah, tidak ada riwayat pelanggaran tata tertib sekolah.</Text>
+                  </View>
+                ) : (
+                  violations.map((item: any, idx: number) => (
+                    <View key={item.id || idx} style={styles.charItemCard}>
+                      <View style={styles.charItemHeader}>
+                        <View style={styles.charItemDateBox}>
+                          <Ionicons name="calendar-outline" size={14} color="#6B7280" />
+                          <Text style={styles.charItemDate}>
+                            {item.date ? new Date(item.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Hari ini'}
+                          </Text>
+                        </View>
+                        <View style={styles.violationPointsBadge}>
+                          <Text style={styles.violationPointsText}>+{item.points || item.type?.points || 5} Poin</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.charItemTitle}>{item.type?.name || 'Pelanggaran Disiplin'}</Text>
+                      {Boolean(item.notes || item.description) && (
+                        <Text style={styles.charItemNotes}>{item.notes || item.description}</Text>
+                      )}
+                      {Boolean(item.sanction) && (
+                        <View style={styles.sanctionBox}>
+                          <Text style={styles.sanctionLabel}>Tindakan/Sanksi:</Text>
+                          <Text style={styles.sanctionText}>{item.sanction}</Text>
+                        </View>
+                      )}
+                    </View>
+                  ))
+                )
+              )}
+
+              {charSubTab === 'deductions' && (
+                deductions.length === 0 ? (
+                  <View style={styles.emptyBox}>
+                    <Ionicons name="sparkles-outline" size={42} color="#9CA3AF" />
+                    <Text style={styles.emptyTitle}>Belum Ada Pemutihan Poin</Text>
+                    <Text style={styles.emptySub}>Belum ada riwayat pengurangan atau tugas pembinaan pemulihan poin.</Text>
+                  </View>
+                ) : (
+                  deductions.map((item: any, idx: number) => (
+                    <View key={item.id || idx} style={[styles.charItemCard, { borderLeftColor: '#059669', borderLeftWidth: 4 }]}>
+                      <View style={styles.charItemHeader}>
+                        <View style={styles.charItemDateBox}>
+                          <Ionicons name="calendar-outline" size={14} color="#6B7280" />
+                          <Text style={styles.charItemDate}>
+                            {item.date ? new Date(item.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Hari ini'}
+                          </Text>
+                        </View>
+                        <View style={styles.deductionPointsBadge}>
+                          <Text style={styles.deductionPointsText}>-{item.deduction_points || 0} Poin</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.charItemTitle}>{item.action_type || 'Tugas Edukatif & Pembinaan'}</Text>
+                      {Boolean(item.notes) && (
+                        <Text style={styles.charItemNotes}>{item.notes}</Text>
+                      )}
+                      {Boolean(item.teacher?.name) && (
+                        <Text style={styles.charItemTeacher}>Pembina: {item.teacher.name}</Text>
+                      )}
+                    </View>
+                  ))
+                )
+              )}
+
+              {charSubTab === 'achievements' && (
+                achievements.length === 0 ? (
+                  <View style={styles.emptyBox}>
+                    <Ionicons name="trophy-outline" size={42} color="#9CA3AF" />
+                    <Text style={styles.emptyTitle}>Belum Ada Catatan Prestasi</Text>
+                    <Text style={styles.emptySub}>Prestasi akademik, bakat olahraga, maupun seni ananda akan tercatat di sini.</Text>
+                  </View>
+                ) : (
+                  achievements.map((item: any, idx: number) => (
+                    <View key={item.id || idx} style={[styles.charItemCard, { borderLeftColor: '#7C3AED', borderLeftWidth: 4 }]}>
+                      <View style={styles.charItemHeader}>
+                        <View style={styles.charItemDateBox}>
+                          <Ionicons name="calendar-outline" size={14} color="#6B7280" />
+                          <Text style={styles.charItemDate}>
+                            {item.date ? new Date(item.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Hari ini'}
+                          </Text>
+                        </View>
+                        <View style={styles.achievementPointsBadge}>
+                          <Text style={styles.achievementPointsText}>+{item.points || item.type?.points || 10} Poin</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.charItemTitle}>{item.type?.name || 'Prestasi Siswa'}</Text>
+                      <View style={styles.charLevelBadge}>
+                        <Text style={styles.charLevelText}>{item.type?.category || 'Tingkat Sekolah'}</Text>
+                      </View>
+                      {Boolean(item.notes) && (
+                        <Text style={styles.charItemNotes}>{item.notes}</Text>
+                      )}
+                      {Boolean(item.certificate_url) && (
+                        <TouchableOpacity
+                          style={styles.certButton}
+                          onPress={() => Linking.openURL(item.certificate_url).catch(() => {})}
+                        >
+                          <Ionicons name="document-attach-outline" size={15} color="#7C3AED" />
+                          <Text style={styles.certButtonText}>Lihat Piagam / Sertifikat</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))
+                )
+              )}
             </View>
           )}
 
@@ -805,23 +1064,25 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: '600',
   },
+  tabScrollWrapper: {
+    backgroundColor: '#FFFFFF',
+    marginTop: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
+  },
   tabContainer: {
     flexDirection: 'row',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    marginTop: 12,
-    gap: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEEEEE',
+    gap: 8,
   },
   tabButton: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 5,
     paddingVertical: 8,
+    paddingHorizontal: 14,
     borderRadius: 8,
     backgroundColor: '#F3F4F6',
   },
@@ -1221,5 +1482,207 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  // Karakter & Prestasi Styles
+  charSummaryGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  charSummaryCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+  },
+  charCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  charCardTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.textLight,
+  },
+  charCardNumber: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginVertical: 2,
+  },
+  charStatusBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginTop: 2,
+  },
+  charStatusText: {
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  charCardSub: {
+    fontSize: 9,
+    color: Colors.textLight,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  charSubTabRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 14,
+    gap: 4,
+  },
+  charSubTabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  charSubTabBtnActive: {
+    backgroundColor: '#FFFFFF',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  charSubTabText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textLight,
+  },
+  charSubTabTextActive: {
+    color: Colors.text,
+    fontWeight: '700',
+  },
+  charItemCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  charItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  charItemDateBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  charItemDate: {
+    fontSize: 11,
+    color: '#6B7280',
+  },
+  violationPointsBadge: {
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  violationPointsText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  charItemTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  charItemNotes: {
+    fontSize: 12,
+    color: Colors.textLight,
+    marginBottom: 6,
+    lineHeight: 16,
+  },
+  sanctionBox: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 6,
+    padding: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#F59E0B',
+    marginTop: 4,
+  },
+  sanctionLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+    marginBottom: 2,
+  },
+  sanctionText: {
+    fontSize: 11,
+    color: '#92400E',
+  },
+  deductionPointsBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  deductionPointsText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  charItemTeacher: {
+    fontSize: 11,
+    color: '#059669',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  achievementPointsBadge: {
+    backgroundColor: '#F5F3FF',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  achievementPointsText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  charLevelBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EDE9FE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginBottom: 6,
+  },
+  charLevelText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  certButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F5F3FF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginTop: 6,
+  },
+  certButtonText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED',
   },
 });

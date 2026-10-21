@@ -35,7 +35,7 @@ const MENU_ITEMS: Array<{
   { id: '9', title: 'Portal\nOrang Tua', icon: 'heart-outline', type: 'Ionicons', color: '#EC4899', bg: '#FDF2F8', route: '/modules/ortu', allowedRoles: ['admin', 'orang tua', 'ortu'], active: true },
   { id: '10', title: 'Inventaris &\nPerpus', icon: 'library-outline', type: 'Ionicons', color: '#64748B', bg: '#F8FAFC', route: '/modules/sarpras', allowedRoles: ['admin', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'operator', 'guru'], active: true },
   { id: '11', title: 'E-Voting &\nPemilu', icon: 'checkbox-outline', type: 'Ionicons', color: '#D946EF', bg: '#FDF4FF', route: '/modules/voting', allowedRoles: ['admin', 'guru', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'siswa'], active: true },
-  { id: '12', title: 'Modul BK', icon: 'chatbubbles-outline', type: 'Ionicons', color: '#EAB308', bg: '#FEFCE8', route: '/modules/bk', allowedRoles: ['admin', 'guru bk', 'bk', 'kepala sekolah', 'siswa', 'student', 'orang tua', 'ortu'], active: true },
+  { id: '12', title: 'Modul BK', icon: 'chatbubbles-outline', type: 'Ionicons', color: '#EAB308', bg: '#FEFCE8', route: '/modules/bk', allowedRoles: ['admin', 'guru bk', 'bk', 'guru', 'wali kelas', 'kepala sekolah', 'siswa', 'student', 'orang tua', 'ortu'], active: true },
   { id: '13', title: 'WA Broadcast', icon: 'megaphone-outline', type: 'Ionicons', color: '#22C55E', bg: '#F0FDF4', route: '/modules/broadcast', allowedRoles: ['admin', 'kepala sekolah', 'operator', 'tata usaha', 'guru'], active: true },
   { id: '14', title: 'Administrasi\nSurat', icon: 'document-text-outline', type: 'Ionicons', color: '#6366F1', bg: '#EEF2FF', route: '/modules/surat', allowedRoles: ['admin', 'tata usaha', 'kepala sekolah', 'wakil kepala sekolah', 'operator', 'guru'], active: true },
   { id: '15', title: 'Perangkat\nAjar AI', icon: 'sparkles-outline', type: 'Ionicons', color: '#0EA5E9', bg: '#F0F9FF', route: '/modules/perangkat-ai', allowedRoles: ['admin', 'guru', 'kepala sekolah', 'wakil kepala sekolah', 'kurikulum'], active: true },
@@ -485,9 +485,9 @@ export default function HomeScreen() {
         return isWaliKelas || isKurikulum || isPimpinan;
       }
 
-      // 4. Modul BK (id: 12) -> HANYA untuk Guru BK atau Pimpinan (Privasi konseling)
+      // 4. Modul BK & Kedisiplinan (id: 12) -> Untuk Guru BK, Wali Kelas, atau Pimpinan
       if (item.id === '12') {
-        return isBkUser || isPimpinan;
+        return isBkUser || isWaliKelas || isPimpinan;
       }
 
       // 5. Pengaturan Sistem (id: 1) -> HANYA Pimpinan

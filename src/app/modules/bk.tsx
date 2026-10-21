@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, TextInput, Modal
+  ActivityIndicator, RefreshControl, TextInput, Modal, Linking
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -11,7 +11,7 @@ import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
 import { Toast, ToastType } from '../../components/ui/Toast';
 
-type TabType = 'pelanggaran' | 'prestasi' | 'konseling';
+type TabType = 'pelanggaran' | 'pemutihan' | 'prestasi' | 'konseling';
 
 interface ViolationItem {
   id: string;
@@ -26,15 +26,30 @@ interface ViolationItem {
   status: 'Diproses' | 'Selesai';
 }
 
+interface PointDeductionItem {
+  id: string;
+  studentId?: string;
+  studentName: string;
+  className: string;
+  deductionPoints: number;
+  actionType: string;
+  notes: string;
+  date: string;
+  teacherName?: string;
+}
+
 interface AchievementItem {
   id: string;
   studentId?: string;
   studentName: string;
   className: string;
   title: string;
+  category?: string;
   level: string;
   points: number;
   date: string;
+  notes?: string;
+  certificateUrl?: string;
 }
 
 interface CounselingLog {
@@ -61,6 +76,7 @@ export default function BkModuleScreen() {
   // User & Role State
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isStudentOrParent, setIsStudentOrParent] = useState(false);
+  const [isHomeroom, setIsHomeroom] = useState(false);
 
   // Booking modal
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
@@ -81,6 +97,7 @@ export default function BkModuleScreen() {
 
   // State
   const [violations, setViolations] = useState<ViolationItem[]>([]);
+  const [deductions, setDeductions] = useState<PointDeductionItem[]>([]);
   const [achievements, setAchievements] = useState<AchievementItem[]>([]);
   const [counselingLogs, setCounselingLogs] = useState<CounselingLog[]>([]);
   const [isAccessDenied, setIsAccessDenied] = useState(false);
@@ -89,6 +106,7 @@ export default function BkModuleScreen() {
     totalAchievements: 0,
     activeSessions: 0,
   });
+  const [apiUrl, setApiUrl] = useState<string>('');
 
   useEffect(() => {
     fetchBkData();
@@ -110,6 +128,8 @@ export default function BkModuleScreen() {
 
         isStudent = r.includes('siswa') || r.includes('student') || Boolean(u.student_id && !u.teacher_id && !u.nip);
         isParent = r.includes('ortu') || r.includes('orang tua') || r.includes('parent');
+        const homeroomActive = j.includes('wali kelas') || Boolean(u.is_walikelas) || caps.includes('walikelas') || caps.includes('wali_kelas');
+        setIsHomeroom(homeroomActive);
 
         const isBkOrAdmin = 
           r.includes('admin') || 
@@ -122,7 +142,8 @@ export default function BkModuleScreen() {
           j.includes('konseling') || 
           caps.includes('bk') ||
           r.includes('guru') ||
-          r.includes('wali kelas');
+          r.includes('wali kelas') ||
+          homeroomActive;
 
         if (!isBkOrAdmin && !isStudent && !isParent) {
           setIsAccessDenied(true);
@@ -133,7 +154,8 @@ export default function BkModuleScreen() {
         setIsStudentOrParent(isStudent || isParent);
       }
 
-      const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
+      const apiUrl = await SecureStore.getItemAsync('sipena_api_url') || '';
+      if (apiUrl) setApiUrl(apiUrl);
       const token = await SecureStore.getItemAsync('sipena_token');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
@@ -141,9 +163,11 @@ export default function BkModuleScreen() {
 
       if (apiUrl && token) {
         try {
-          const [resDash, resViolations, resCounseling] = await Promise.allSettled([
+          const [resDash, resViolations, resDeductions, resAchievements, resCounseling] = await Promise.allSettled([
             axios.get(`${apiUrl}/api/bk/dashboard`, { headers }),
             axios.get(`${apiUrl}/api/bk/violations`, { headers }),
+            axios.get(`${apiUrl}/api/bk/point-deductions`, { headers }),
+            axios.get(`${apiUrl}/api/bk/achievements`, { headers }),
             axios.get(`${apiUrl}/api/bk/counseling`, { headers }),
           ]);
 
@@ -169,11 +193,67 @@ export default function BkModuleScreen() {
               apiViolations = apiViolations.filter((v: any) => {
                 if (sid && v.studentId) return String(v.studentId) === sid;
                 if (sname && v.studentName) return v.studentName.toLowerCase().includes(sname);
-                return true; // jika backend sudah memfilter
+                return true;
               });
             }
 
             setViolations(apiViolations);
+          }
+
+          if (resDeductions.status === 'fulfilled' && resDeductions.value.data?.data) {
+            hasLoadedFromApi = true;
+            let apiDeds = resDeductions.value.data.data.map((d: any) => ({
+              id: d.id?.toString() || Math.random().toString(),
+              studentId: d.student_id?.toString() || d.student?.id?.toString() || '',
+              studentName: d.student?.name || 'Siswa',
+              className: d.student?.enrollments?.[0]?.class?.name || d.student?.class_name || 'XII',
+              deductionPoints: Number(d.deduction_points || 0),
+              actionType: d.action_type || 'Tugas Edukatif / Pemutihan Poin',
+              notes: d.notes || 'Catatan pemutihan poin',
+              date: d.date ? new Date(d.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Hari ini',
+              teacherName: d.teacher?.name || 'Guru BK',
+            }));
+
+            if (isStudent || isParent) {
+              const sid = String(u?.student_id || (isStudent ? u?.id : ''));
+              const sname = (isParent ? (u?.student_name || '') : (u?.name || '')).toLowerCase().trim();
+              apiDeds = apiDeds.filter((d: any) => {
+                if (sid && d.studentId) return String(d.studentId) === sid;
+                if (sname && d.studentName) return d.studentName.toLowerCase().includes(sname);
+                return true;
+              });
+            }
+
+            setDeductions(apiDeds);
+          }
+
+          if (resAchievements.status === 'fulfilled' && resAchievements.value.data?.data) {
+            hasLoadedFromApi = true;
+            let apiAchs = resAchievements.value.data.data.map((a: any) => ({
+              id: a.id?.toString() || Math.random().toString(),
+              studentId: a.student_id?.toString() || a.student?.id?.toString() || '',
+              studentName: a.student?.name || 'Siswa',
+              className: a.student?.enrollments?.[0]?.class?.name || a.student?.class_name || 'XII',
+              title: a.type?.name || 'Prestasi Siswa',
+              category: a.type?.category || 'Prestasi',
+              level: a.type?.category || 'Tingkat Sekolah',
+              points: Number(a.points || a.type?.points || 10),
+              date: a.date ? new Date(a.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Hari ini',
+              notes: a.notes || '',
+              certificateUrl: a.certificate_url || null,
+            }));
+
+            if (isStudent || isParent) {
+              const sid = String(u?.student_id || (isStudent ? u?.id : ''));
+              const sname = (isParent ? (u?.student_name || '') : (u?.name || '')).toLowerCase().trim();
+              apiAchs = apiAchs.filter((a: any) => {
+                if (sid && a.studentId) return String(a.studentId) === sid;
+                if (sname && a.studentName) return a.studentName.toLowerCase().includes(sname);
+                return true;
+              });
+            }
+
+            setAchievements(apiAchs);
           }
 
           if (resCounseling.status === 'fulfilled' && resCounseling.value.data?.data) {
@@ -210,6 +290,7 @@ export default function BkModuleScreen() {
         if (isStudent || isParent) {
           // Bagi siswa: catatan bersih (0 pelanggaran)
           setViolations([]);
+          setDeductions([]);
           setAchievements([
             {
               id: 'ac1',
@@ -234,7 +315,7 @@ export default function BkModuleScreen() {
             },
           ]);
         } else {
-          // Admin / Guru BK view
+          // Admin / Guru BK / Wali Kelas view
           const defaultViolations: ViolationItem[] = [
             {
               id: 'v1',
@@ -260,6 +341,20 @@ export default function BkModuleScreen() {
             },
           ];
           setViolations(defaultViolations);
+
+          const defaultDeductions: PointDeductionItem[] = [
+            {
+              id: 'pd1',
+              studentName: 'Rendy Pratama',
+              className: 'XI IPS 2',
+              deductionPoints: 5,
+              actionType: 'Piket Perpustakaan & Resume Buku Disiplin',
+              notes: 'Tugas edukatif kompensasi keterlambatan diselesaikan',
+              date: '30 Sep 2026',
+              teacherName: 'Dra. Endang Sulastri (Guru BK)',
+            }
+          ];
+          setDeductions(defaultDeductions);
 
           const defaultAchievements: AchievementItem[] = [
             {
@@ -437,293 +532,463 @@ export default function BkModuleScreen() {
       ) : (
         <>
           {/* KPI Stats */}
-          <View style={styles.kpiContainer}>
-            <View style={[styles.kpiCard, { backgroundColor: violations.length > 0 ? '#FEFCE8' : '#F0FDF4' }]}>
-              <View style={[styles.kpiIconWrapper, { backgroundColor: violations.length > 0 ? '#FEF08A' : '#DCFCE7' }]}>
-                <Ionicons
-                  name={violations.length > 0 ? "alert-circle" : "shield-checkmark"}
-                  size={18}
-                  color={violations.length > 0 ? "#CA8A04" : "#16A34A"}
-                />
-              </View>
-              <Text style={styles.kpiValue}>{violations.length} Kasus</Text>
-              <Text style={styles.kpiLabel}>
-                {isStudentOrParent ? 'Pelanggaran Anda' : 'Pelanggaran Terdata'}
-              </Text>
-            </View>
+          {(() => {
+            const grossPoints = violations.reduce((acc, v) => acc + (Number(v.points) || 0), 0);
+            const deductedPoints = deductions.reduce((acc, d) => acc + (Number(d.deductionPoints) || 0), 0);
+            const netPoints = Math.max(0, grossPoints - deductedPoints);
+            const achievementPoints = achievements.reduce((acc, a) => acc + (Number(a.points) || 0), 0);
 
-            <View style={[styles.kpiCard, { backgroundColor: '#ECFDF5' }]}>
-              <View style={[styles.kpiIconWrapper, { backgroundColor: '#D1FAE5' }]}>
-                <Ionicons name="trophy" size={18} color="#10B981" />
-              </View>
-              <Text style={styles.kpiValue}>{achievements.length} Prestasi</Text>
-              <Text style={styles.kpiLabel}>
-                {isStudentOrParent ? 'Reward Prestasi' : 'Reward & Prestasi'}
-              </Text>
-            </View>
-
-            {isStudentOrParent && (
-              <View style={[styles.kpiCard, { backgroundColor: '#EFF6FF' }]}>
-                <View style={[styles.kpiIconWrapper, { backgroundColor: '#DBEAFE' }]}>
-                  <Ionicons name="chatbubbles" size={18} color="#2563EB" />
-                </View>
-                <Text style={styles.kpiValue}>{counselingLogs.length} Sesi</Text>
-                <Text style={styles.kpiLabel}>Jurnal Konseling</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Tabs */}
-          <View style={styles.tabContainer}>
-            <TouchableOpacity
-              style={[styles.tabButton, activeTab === 'pelanggaran' && styles.tabButtonActive]}
-              onPress={() => setActiveTab('pelanggaran')}
-            >
-              <Ionicons
-                name="warning-outline"
-                size={16}
-                color={activeTab === 'pelanggaran' ? '#CA8A04' : Colors.textLight}
-              />
-              <Text style={[styles.tabText, activeTab === 'pelanggaran' && styles.tabTextActive]}>
-                {isStudentOrParent ? `Kasus (${violations.length})` : 'Buku Kasus'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tabButton, activeTab === 'prestasi' && styles.tabButtonActive]}
-              onPress={() => setActiveTab('prestasi')}
-            >
-              <Ionicons
-                name="ribbon-outline"
-                size={16}
-                color={activeTab === 'prestasi' ? '#CA8A04' : Colors.textLight}
-              />
-              <Text style={[styles.tabText, activeTab === 'prestasi' && styles.tabTextActive]}>
-                {isStudentOrParent ? `Prestasi (${achievements.length})` : 'Prestasi'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tabButton, activeTab === 'konseling' && styles.tabButtonActive]}
-              onPress={() => setActiveTab('konseling')}
-            >
-              <Ionicons
-                name="chatbubble-ellipses-outline"
-                size={16}
-                color={activeTab === 'konseling' ? '#CA8A04' : Colors.textLight}
-              />
-              <Text style={[styles.tabText, activeTab === 'konseling' && styles.tabTextActive]}>
-                {isStudentOrParent ? `Konseling (${counselingLogs.length})` : 'Konseling'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#CA8A04" />
-              <Text style={styles.loadingText}>Memuat modul BK...</Text>
-            </View>
-          ) : (
-            <ScrollView
-              contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
-              refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#CA8A04']} />}
-              showsVerticalScrollIndicator={false}
-            >
-              {/* TAB 1: PELANGGARAN */}
-              {activeTab === 'pelanggaran' && (
-                <View>
-                  <Text style={styles.sectionTitle}>
-                    {isStudentOrParent ? 'Buku Catatan Kedisiplinan Saya' : 'Buku Pelanggaran & Catatan Kedisiplinan'}
+            return (
+              <View style={styles.kpiGrid}>
+                {/* Card 1: Poin Net Kasus */}
+                <View style={[styles.kpiCardHalf, { backgroundColor: netPoints > 0 ? '#FEF2F2' : '#F0FDF4', borderColor: netPoints > 0 ? '#FECDD3' : '#BBF7D0' }]}>
+                  <View style={[styles.kpiIconWrapper, { backgroundColor: netPoints > 0 ? '#FFE4E6' : '#DCFCE7' }]}>
+                    <Ionicons
+                      name={netPoints > 0 ? "alert-circle" : "shield-checkmark"}
+                      size={18}
+                      color={netPoints > 0 ? "#E11D48" : "#16A34A"}
+                    />
+                  </View>
+                  <Text style={[styles.kpiValue, { color: netPoints > 0 ? '#BE123C' : '#15803D' }]}>{netPoints} Pts</Text>
+                  <Text style={styles.kpiLabel}>
+                    {isStudentOrParent ? 'Poin Pelanggaran Net' : 'Net Kasus Disiplin'}
                   </Text>
-                  <Text style={styles.sectionSubtitle}>
-                    {isStudentOrParent
-                      ? 'Catatan ketertiban dan kedisiplinan pribadi Anda di sekolah.'
-                      : 'Daftar pelanggaran tata tertib sekolah beserta akumulasi bobot poin disiplin.'}
-                  </Text>
-
-                  {violations.length === 0 ? (
-                    <View style={styles.emptyBox}>
-                      <View style={styles.emptyIconBox}>
-                        <Ionicons name="shield-checkmark" size={38} color="#10B981" />
-                      </View>
-                      <Text style={styles.emptyTitle}>Catatan Kedisiplinan Bersih</Text>
-                      <Text style={styles.emptyDesc}>
-                        {isStudentOrParent
-                          ? 'Luar biasa! Tidak ada catatan pelanggaran tata tertib sekolah yang terdata untuk Anda. Pertahankan kedisiplinan Anda!'
-                          : 'Belum ada data pelanggaran siswa yang tercatat.'}
-                      </Text>
-                    </View>
-                  ) : (
-                    violations.map(v => (
-                      <View key={v.id} style={styles.violationCard}>
-                        <View style={styles.cardTopRow}>
-                          <View style={styles.categoryBadge}>
-                            <Text style={styles.categoryBadgeText}>{v.category}</Text>
-                          </View>
-                          <View style={styles.pointBadge}>
-                            <Text style={styles.pointBadgeText}>+{v.points} POIN</Text>
-                          </View>
-                        </View>
-
-                        <Text style={styles.studentTitle}>{v.studentName} ({v.className})</Text>
-                        <Text style={styles.descText}>{v.description}</Text>
-
-                        <View style={styles.divider} />
-
-                        <View style={styles.sanctionBox}>
-                          <Text style={styles.sanctionLabel}>Tindakan / Sanksi:</Text>
-                          <Text style={styles.sanctionValue}>{v.sanction}</Text>
-                        </View>
-
-                        <View style={styles.footerRow}>
-                          <Text style={styles.dateText}>Tgl: {v.date}</Text>
-                          <View
-                            style={[
-                              styles.statusTag,
-                              v.status === 'Selesai' ? styles.statusDone : styles.statusProgress,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.statusText,
-                                v.status === 'Selesai' ? styles.statusDoneText : styles.statusProgressText,
-                              ]}
-                            >
-                              {v.status.toUpperCase()}
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
-                    ))
-                  )}
+                  <Text style={styles.kpiSubLabel}>Bruto: {grossPoints} • {violations.length} Kasus</Text>
                 </View>
+
+                {/* Card 2: Pemutihan Poin */}
+                <View style={[styles.kpiCardHalf, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}>
+                  <View style={[styles.kpiIconWrapper, { backgroundColor: '#DCFCE7' }]}>
+                    <Ionicons name="checkmark-done-circle" size={18} color="#059669" />
+                  </View>
+                  <Text style={[styles.kpiValue, { color: '#047857' }]}>-{deductedPoints} Pts</Text>
+                  <Text style={styles.kpiLabel}>Pemutihan Disiplin</Text>
+                  <Text style={styles.kpiSubLabel}>{deductions.length} Riwayat Kompensasi</Text>
+                </View>
+
+                {/* Card 3: Poin Prestasi */}
+                <View style={[styles.kpiCardHalf, { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }]}>
+                  <View style={[styles.kpiIconWrapper, { backgroundColor: '#FEF3C7' }]}>
+                    <Ionicons name="trophy" size={18} color="#D97706" />
+                  </View>
+                  <Text style={[styles.kpiValue, { color: '#B45309' }]}>+{achievementPoints} Pts</Text>
+                  <Text style={styles.kpiLabel}>
+                    {isStudentOrParent ? 'Reward Prestasi' : 'Poin Prestasi Siswa'}
+                  </Text>
+                  <Text style={styles.kpiSubLabel}>{achievements.length} Prestasi Terdata</Text>
+                </View>
+
+                {/* Card 4: Sesi Konseling */}
+                <View style={[styles.kpiCardHalf, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
+                  <View style={[styles.kpiIconWrapper, { backgroundColor: '#DBEAFE' }]}>
+                    <Ionicons name="chatbubbles" size={18} color="#2563EB" />
+                  </View>
+                  <Text style={[styles.kpiValue, { color: '#1D4ED8' }]}>{counselingLogs.length} Sesi</Text>
+                  <Text style={styles.kpiLabel}>Jurnal Konseling</Text>
+                  <Text style={styles.kpiSubLabel}>Pendampingan BK</Text>
+                </View>
+              </View>
+            );
+          })()}
+
+          {/* Search bar for Wali Kelas / Guru / BK */}
+          {!isStudentOrParent && (
+            <View style={styles.searchBarWrapper}>
+              <Ionicons name="search" size={16} color="#94A3B8" />
+              <TextInput
+                style={styles.searchBarInput}
+                placeholder="Cari siswa, kelas (contoh: XII), kasus, prestasi..."
+                placeholderTextColor="#94A3B8"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                </TouchableOpacity>
               )}
+            </View>
+          )}
 
-              {/* TAB 2: PRESTASI */}
-              {activeTab === 'prestasi' && (
-                <View>
-                  <Text style={styles.sectionTitle}>
-                    {isStudentOrParent ? 'Buku Catatan Prestasi Saya' : 'Buku Catatan Prestasi Siswa'}
-                  </Text>
-                  <Text style={styles.sectionSubtitle}>
-                    {isStudentOrParent
-                      ? 'Daftar penghargaan dan apresiasi poin reward yang telah Anda raih.'
-                      : 'Apresiasi dan poin reward bagi siswa berprestasi di bidang akademik dan non-akademik.'}
-                  </Text>
+          {/* Filtered Data Prep */}
+          {(() => {
+            const q = searchQuery.toLowerCase().trim();
+            const filteredViolations = violations.filter(v => 
+              !q || 
+              (v.studentName && v.studentName.toLowerCase().includes(q)) || 
+              (v.className && v.className.toLowerCase().includes(q)) || 
+              (v.category && v.category.toLowerCase().includes(q)) ||
+              (v.description && v.description.toLowerCase().includes(q))
+            );
+            const filteredDeductions = deductions.filter(d => 
+              !q || 
+              (d.studentName && d.studentName.toLowerCase().includes(q)) || 
+              (d.className && d.className.toLowerCase().includes(q)) || 
+              (d.actionType && d.actionType.toLowerCase().includes(q)) ||
+              (d.notes && d.notes.toLowerCase().includes(q))
+            );
+            const filteredAchievements = achievements.filter(a => 
+              !q || 
+              (a.studentName && a.studentName.toLowerCase().includes(q)) || 
+              (a.className && a.className.toLowerCase().includes(q)) || 
+              (a.title && a.title.toLowerCase().includes(q)) ||
+              (a.level && a.level.toLowerCase().includes(q))
+            );
+            const filteredCounseling = counselingLogs.filter(c => 
+              !q || 
+              (c.studentName && c.studentName.toLowerCase().includes(q)) || 
+              (c.className && c.className.toLowerCase().includes(q)) || 
+              (c.topic && c.topic.toLowerCase().includes(q))
+            );
 
-                  {achievements.length === 0 ? (
-                    <View style={styles.emptyBox}>
-                      <View style={[styles.emptyIconBox, { backgroundColor: '#FEF3C7' }]}>
-                        <Ionicons name="trophy-outline" size={38} color="#D97706" />
-                      </View>
-                      <Text style={styles.emptyTitle}>Belum Ada Catatan Prestasi</Text>
-                      <Text style={styles.emptyDesc}>
-                        Torehkan prestasimu dalam bidang akademik maupun non-akademik dan dapatkan poin reward sekolah!
-                      </Text>
-                    </View>
-                  ) : (
-                    achievements.map(ac => (
-                      <View key={ac.id} style={styles.achievementCard}>
-                        <View style={styles.acHeader}>
-                          <View style={styles.acIcon}>
-                            <Ionicons name="trophy" size={20} color="#10B981" />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.acTitle}>{ac.title}</Text>
-                            <Text style={styles.acStudent}>{ac.studentName} • {ac.className}</Text>
-                          </View>
-                          <View style={styles.acPointBadge}>
-                            <Text style={styles.acPointText}>+{ac.points} REWARD</Text>
-                          </View>
-                        </View>
-                        <View style={styles.acFooter}>
-                          <Text style={styles.acLevel}>{ac.level}</Text>
-                          <Text style={styles.acDate}>{ac.date}</Text>
-                        </View>
-                      </View>
-                    ))
-                  )}
-                </View>
-              )}
-
-              {/* TAB 3: KONSELING */}
-              {activeTab === 'konseling' && (
-                <View>
-                  <View style={styles.sectionHeaderRow}>
-                    <Text style={styles.sectionTitle}>
-                      {isStudentOrParent ? 'Jurnal Konsultasi BK Saya' : 'Jurnal Sesi Pendampingan BK'}
-                    </Text>
+            return (
+              <>
+                {/* Scrollable Tabs */}
+                <View style={styles.tabContainer}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScrollContainer}>
                     <TouchableOpacity
-                      style={styles.bookSessionBtn}
-                      onPress={() => setIsBookingModalOpen(true)}
+                      style={[styles.tabButtonScroll, activeTab === 'pelanggaran' && styles.tabButtonActive]}
+                      onPress={() => setActiveTab('pelanggaran')}
                     >
-                      <Ionicons name="calendar" size={14} color="#FFFFFF" />
-                      <Text style={styles.bookSessionBtnText}>
-                        {isStudentOrParent ? 'Ajukan Konseling' : 'Jadwalkan Sesi'}
+                      <Ionicons
+                        name="warning-outline"
+                        size={15}
+                        color={activeTab === 'pelanggaran' ? '#CA8A04' : Colors.textLight}
+                      />
+                      <Text style={[styles.tabText, activeTab === 'pelanggaran' && styles.tabTextActive]}>
+                        Kasus ({filteredViolations.length})
                       </Text>
                     </TouchableOpacity>
-                  </View>
 
-                  {counselingLogs.length === 0 ? (
-                    <View style={styles.emptyBox}>
-                      <View style={[styles.emptyIconBox, { backgroundColor: '#FEF08A' }]}>
-                        <Ionicons name="chatbubbles-outline" size={38} color="#CA8A04" />
-                      </View>
-                      <Text style={styles.emptyTitle}>Belum Ada Sesi Konseling</Text>
-                      <Text style={styles.emptyDesc}>
-                        Ada kendala belajar, penjurusan kuliah, atau butuh teman bicara? Jadwalkan konsultasi dengan Guru BK sekarang!
+                    <TouchableOpacity
+                      style={[styles.tabButtonScroll, activeTab === 'pemutihan' && styles.tabButtonActive]}
+                      onPress={() => setActiveTab('pemutihan')}
+                    >
+                      <Ionicons
+                        name="checkmark-done-circle-outline"
+                        size={15}
+                        color={activeTab === 'pemutihan' ? '#059669' : Colors.textLight}
+                      />
+                      <Text style={[styles.tabText, activeTab === 'pemutihan' && { color: '#059669', fontWeight: '800' }]}>
+                        Pemutihan ({filteredDeductions.length})
                       </Text>
-                      <TouchableOpacity
-                        style={styles.emptyBookBtn}
-                        onPress={() => setIsBookingModalOpen(true)}
-                      >
-                        <Ionicons name="calendar" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                        <Text style={styles.emptyBookBtnText}>Ajukan Konseling Sekarang</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    counselingLogs.map(log => (
-                      <View key={log.id} style={styles.counselingCard}>
-                        <View style={styles.counselingHeader}>
-                          <View style={styles.counselorBox}>
-                            <Ionicons name="person-circle-outline" size={20} color="#CA8A04" />
-                            <Text style={styles.counselorName}>{log.counselorName}</Text>
-                          </View>
-                          <View
-                            style={[
-                              styles.statusTag,
-                              log.status === 'Selesai' ? styles.statusDone : styles.statusWaiting,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.statusText,
-                                log.status === 'Selesai' ? styles.statusDoneText : styles.statusWaitingText,
-                              ]}
-                            >
-                              {log.status.toUpperCase()}
-                            </Text>
-                          </View>
-                        </View>
+                    </TouchableOpacity>
 
-                        <Text style={styles.counselingTopic}>{log.topic}</Text>
-                        <Text style={styles.counselingStudent}>
-                          {isStudentOrParent ? `Status Siswa: ${log.studentName}` : `Peserta: ${log.studentName} (${log.className})`}
+                    <TouchableOpacity
+                      style={[styles.tabButtonScroll, activeTab === 'prestasi' && styles.tabButtonActive]}
+                      onPress={() => setActiveTab('prestasi')}
+                    >
+                      <Ionicons
+                        name="ribbon-outline"
+                        size={15}
+                        color={activeTab === 'prestasi' ? '#CA8A04' : Colors.textLight}
+                      />
+                      <Text style={[styles.tabText, activeTab === 'prestasi' && styles.tabTextActive]}>
+                        Prestasi ({filteredAchievements.length})
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.tabButtonScroll, activeTab === 'konseling' && styles.tabButtonActive]}
+                      onPress={() => setActiveTab('konseling')}
+                    >
+                      <Ionicons
+                        name="chatbubble-ellipses-outline"
+                        size={15}
+                        color={activeTab === 'konseling' ? '#CA8A04' : Colors.textLight}
+                      />
+                      <Text style={[styles.tabText, activeTab === 'konseling' && styles.tabTextActive]}>
+                        Konseling ({filteredCounseling.length})
+                      </Text>
+                    </TouchableOpacity>
+                  </ScrollView>
+                </View>
+
+                {isLoading ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#CA8A04" />
+                    <Text style={styles.loadingText}>Memuat modul BK...</Text>
+                  </View>
+                ) : (
+                  <ScrollView
+                    contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 40 }]}
+                    refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#CA8A04']} />}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {/* TAB 1: PELANGGARAN */}
+                    {activeTab === 'pelanggaran' && (
+                      <View>
+                        <Text style={styles.sectionTitle}>
+                          {isStudentOrParent ? 'Buku Catatan Kedisiplinan Saya' : 'Buku Pelanggaran & Catatan Kedisiplinan'}
+                        </Text>
+                        <Text style={styles.sectionSubtitle}>
+                          {isStudentOrParent
+                            ? 'Catatan ketertiban dan kedisiplinan pribadi Anda di sekolah.'
+                            : 'Daftar pelanggaran tata tertib siswa beserta akumulasi bobot poin disiplin.'}
                         </Text>
 
-                        <View style={styles.actionBox}>
-                          <Text style={styles.actionLabel}>Rencana Aksi / Pendampingan:</Text>
-                          <Text style={styles.actionText}>{log.actionTaken}</Text>
+                        {filteredViolations.length === 0 ? (
+                          <View style={styles.emptyBox}>
+                            <View style={styles.emptyIconBox}>
+                              <Ionicons name="shield-checkmark" size={38} color="#10B981" />
+                            </View>
+                            <Text style={styles.emptyTitle}>Catatan Kedisiplinan Bersih</Text>
+                            <Text style={styles.emptyDesc}>
+                              {isStudentOrParent
+                                ? 'Luar biasa! Tidak ada catatan pelanggaran tata tertib sekolah yang terdata untuk Anda. Pertahankan kedisiplinan Anda!'
+                                : 'Belum ada data pelanggaran siswa yang sesuai pencarian.'}
+                            </Text>
+                          </View>
+                        ) : (
+                          filteredViolations.map(v => (
+                            <View key={v.id} style={styles.violationCard}>
+                              <View style={styles.cardTopRow}>
+                                <View style={styles.categoryBadge}>
+                                  <Text style={styles.categoryBadgeText}>{v.category}</Text>
+                                </View>
+                                <View style={styles.pointBadge}>
+                                  <Text style={styles.pointBadgeText}>+{v.points} POIN</Text>
+                                </View>
+                              </View>
+
+                              <Text style={styles.studentTitle}>{v.studentName} ({v.className})</Text>
+                              <Text style={styles.descText}>{v.description}</Text>
+
+                              <View style={styles.divider} />
+
+                              <View style={styles.sanctionBox}>
+                                <Text style={styles.sanctionLabel}>Tindakan / Sanksi:</Text>
+                                <Text style={styles.sanctionValue}>{v.sanction}</Text>
+                              </View>
+
+                              <View style={styles.footerRow}>
+                                <Text style={styles.dateText}>Tgl: {v.date}</Text>
+                                <View
+                                  style={[
+                                    styles.statusTag,
+                                    v.status === 'Selesai' ? styles.statusDone : styles.statusProgress,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.statusText,
+                                      v.status === 'Selesai' ? styles.statusDoneText : styles.statusProgressText,
+                                    ]}
+                                  >
+                                    {v.status.toUpperCase()}
+                                  </Text>
+                                </View>
+                              </View>
+                            </View>
+                          ))
+                        )}
+                      </View>
+                    )}
+
+                    {/* TAB 2: PEMUTIHAN POIN */}
+                    {activeTab === 'pemutihan' && (
+                      <View>
+                        <Text style={styles.sectionTitle}>
+                          {isStudentOrParent ? 'Riwayat Pemutihan Poin Saya' : 'Buku Pengurangan / Pemutihan Poin'}
+                        </Text>
+                        <Text style={styles.sectionSubtitle}>
+                          {isStudentOrParent
+                            ? 'Daftar kompensasi edukatif yang berhasil mengurangi poin pelanggaran Anda.'
+                            : 'Catatan tugas edukatif dan konseling pembinaan yang memutihkan poin pelanggaran siswa.'}
+                        </Text>
+
+                        {filteredDeductions.length === 0 ? (
+                          <View style={styles.emptyBox}>
+                            <View style={[styles.emptyIconBox, { backgroundColor: '#ECFDF5' }]}>
+                              <Ionicons name="checkmark-done-circle-outline" size={38} color="#059669" />
+                            </View>
+                            <Text style={styles.emptyTitle}>Belum Ada Catatan Pemutihan Poin</Text>
+                            <Text style={styles.emptyDesc}>
+                              {isStudentOrParent
+                                ? 'Pengurangan poin diberikan setelah Anda menyelesaikan tugas edukatif atau bimbingan karakter.'
+                                : 'Belum ada pengurangan atau pemutihan poin pelanggaran yang dicatat untuk siswa.'}
+                            </Text>
+                          </View>
+                        ) : (
+                          filteredDeductions.map(d => (
+                            <View key={d.id} style={styles.deductionCard}>
+                              <View style={styles.cardTopRow}>
+                                <View style={styles.deductionBadge}>
+                                  <Text style={styles.deductionBadgeText}>{d.actionType}</Text>
+                                </View>
+                                <View style={styles.deductionPointBadge}>
+                                  <Text style={styles.deductionPointText}>-{d.deductionPoints} POIN</Text>
+                                </View>
+                              </View>
+
+                              <Text style={styles.studentTitle}>{d.studentName} ({d.className})</Text>
+                              <Text style={styles.descText}>{d.notes || 'Penyelesaian tugas edukatif / bimbingan karakter.'}</Text>
+
+                              <View style={styles.divider} />
+
+                              <View style={styles.footerRow}>
+                                <Text style={styles.dateText}>Tgl: {d.date}</Text>
+                                <Text style={styles.teacherNameText}>Pembimbing: {d.teacherName || 'Guru BK'}</Text>
+                              </View>
+                            </View>
+                          ))
+                        )}
+                      </View>
+                    )}
+
+                    {/* TAB 3: PRESTASI */}
+                    {activeTab === 'prestasi' && (
+                      <View>
+                        <Text style={styles.sectionTitle}>
+                          {isStudentOrParent ? 'Buku Catatan Prestasi Saya' : 'Buku Catatan Prestasi Siswa'}
+                        </Text>
+                        <Text style={styles.sectionSubtitle}>
+                          {isStudentOrParent
+                            ? 'Daftar penghargaan dan apresiasi poin reward yang telah Anda raih.'
+                            : 'Apresiasi dan poin reward bagi siswa berprestasi di bidang akademik dan non-akademik.'}
+                        </Text>
+
+                        {filteredAchievements.length === 0 ? (
+                          <View style={styles.emptyBox}>
+                            <View style={[styles.emptyIconBox, { backgroundColor: '#FEF3C7' }]}>
+                              <Ionicons name="trophy-outline" size={38} color="#D97706" />
+                            </View>
+                            <Text style={styles.emptyTitle}>Belum Ada Catatan Prestasi</Text>
+                            <Text style={styles.emptyDesc}>
+                              Torehkan prestasimu dalam bidang akademik maupun non-akademik dan dapatkan poin reward sekolah!
+                            </Text>
+                          </View>
+                        ) : (
+                          filteredAchievements.map(ac => (
+                            <View key={ac.id} style={styles.achievementCard}>
+                              <View style={styles.acHeader}>
+                                <View style={styles.acIcon}>
+                                  <Ionicons name="trophy" size={20} color="#10B981" />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.acTitle}>{ac.title}</Text>
+                                  <Text style={styles.acStudent}>{ac.studentName} • {ac.className}</Text>
+                                  {ac.category && <Text style={{ fontSize: 10, color: '#CA8A04', fontWeight: '700', marginTop: 2 }}>Kategori: {ac.category}</Text>}
+                                </View>
+                                <View style={styles.acPointBadge}>
+                                  <Text style={styles.acPointText}>+{ac.points} REWARD</Text>
+                                </View>
+                              </View>
+
+                              {ac.notes ? (
+                                <Text style={[styles.descText, { marginTop: 8 }]}>{ac.notes}</Text>
+                              ) : null}
+
+                              {ac.certificateUrl && (
+                                <TouchableOpacity
+                                  style={styles.certButton}
+                                  onPress={async () => {
+                                    const fullUrl = ac.certificateUrl?.startsWith('http') 
+                                      ? ac.certificateUrl 
+                                      : `${apiUrl || ''}${ac.certificateUrl}`;
+                                    try {
+                                      await Linking.openURL(fullUrl);
+                                    } catch (_) {
+                                      showToast('Tidak dapat membuka link sertifikat.', 'error');
+                                    }
+                                  }}
+                                >
+                                  <Ionicons name="ribbon-outline" size={14} color="#2563EB" />
+                                  <Text style={styles.certButtonText}>Lihat Piagam / Sertifikat Resmi</Text>
+                                </TouchableOpacity>
+                              )}
+
+                              <View style={styles.acFooter}>
+                                <Text style={styles.acLevel}>{ac.level}</Text>
+                                <Text style={styles.acDate}>{ac.date}</Text>
+                              </View>
+                            </View>
+                          ))
+                        )}
+                      </View>
+                    )}
+
+                    {/* TAB 4: KONSELING */}
+                    {activeTab === 'konseling' && (
+                      <View>
+                        <View style={styles.sectionHeaderRow}>
+                          <Text style={styles.sectionTitle}>
+                            {isStudentOrParent ? 'Jurnal Konsultasi BK Saya' : 'Jurnal Sesi Pendampingan BK'}
+                          </Text>
+                          <TouchableOpacity
+                            style={styles.bookSessionBtn}
+                            onPress={() => setIsBookingModalOpen(true)}
+                          >
+                            <Ionicons name="calendar" size={14} color="#FFFFFF" />
+                            <Text style={styles.bookSessionBtnText}>
+                              {isStudentOrParent ? 'Ajukan Konseling' : 'Jadwalkan Sesi'}
+                            </Text>
+                          </TouchableOpacity>
                         </View>
 
-                        <Text style={styles.counselingDate}>Jadwal: {log.date}</Text>
+                        {filteredCounseling.length === 0 ? (
+                          <View style={styles.emptyBox}>
+                            <View style={[styles.emptyIconBox, { backgroundColor: '#FEF08A' }]}>
+                              <Ionicons name="chatbubbles-outline" size={38} color="#CA8A04" />
+                            </View>
+                            <Text style={styles.emptyTitle}>Belum Ada Sesi Konseling</Text>
+                            <Text style={styles.emptyDesc}>
+                              Ada kendala belajar, penjurusan kuliah, atau butuh teman bicara? Jadwalkan konsultasi dengan Guru BK sekarang!
+                            </Text>
+                            <TouchableOpacity
+                              style={styles.emptyBookBtn}
+                              onPress={() => setIsBookingModalOpen(true)}
+                            >
+                              <Ionicons name="calendar" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                              <Text style={styles.emptyBookBtnText}>Ajukan Konseling Sekarang</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ) : (
+                          filteredCounseling.map(log => (
+                            <View key={log.id} style={styles.counselingCard}>
+                              <View style={styles.counselingHeader}>
+                                <View style={styles.counselorBox}>
+                                  <Ionicons name="person-circle-outline" size={20} color="#CA8A04" />
+                                  <Text style={styles.counselorName}>{log.counselorName}</Text>
+                                </View>
+                                <View
+                                  style={[
+                                    styles.statusTag,
+                                    log.status === 'Selesai' ? styles.statusDone : styles.statusWaiting,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.statusText,
+                                      log.status === 'Selesai' ? styles.statusDoneText : styles.statusWaitingText,
+                                    ]}
+                                  >
+                                    {log.status.toUpperCase()}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              <Text style={styles.counselingTopic}>{log.topic}</Text>
+                              <Text style={styles.counselingStudent}>
+                                {isStudentOrParent ? `Status Siswa: ${log.studentName}` : `Peserta: ${log.studentName} (${log.className})`}
+                              </Text>
+
+                              <View style={styles.actionBox}>
+                                <Text style={styles.actionLabel}>Rencana Aksi / Pendampingan:</Text>
+                                <Text style={styles.actionText}>{log.actionTaken}</Text>
+                              </View>
+
+                              <Text style={styles.counselingDate}>Jadwal: {log.date}</Text>
+                            </View>
+                          ))
+                        )}
                       </View>
-                    ))
-                  )}
-                </View>
-              )}
-            </ScrollView>
-          )}
+                    )}
+                  </ScrollView>
+                )}
+              </>
+            );
+          })()}
 
       {/* Modal Jadwalkan Konseling */}
       <Modal
@@ -1322,5 +1587,110 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
+  },
+  kpiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    gap: 8,
+  },
+  kpiCardHalf: {
+    width: '48.5%',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  kpiSubLabel: {
+    fontSize: 9.5,
+    color: Colors.textLight,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  searchBarWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    height: 40,
+  },
+  searchBarInput: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.text,
+    marginLeft: 6,
+    height: '100%',
+  },
+  tabScrollContainer: {
+    gap: 8,
+    paddingRight: 16,
+  },
+  tabButtonScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+  },
+  deductionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#D1FAE5',
+  },
+  deductionBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  deductionBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  deductionPointBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  deductionPointText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  teacherNameText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  certButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  certButtonText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563EB',
   },
 });
