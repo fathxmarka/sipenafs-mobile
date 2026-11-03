@@ -42,9 +42,10 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **Modul Kedisiplinan & Karakter Terpadu (BK & Wali Kelas):** Pemantauan net poin pelanggaran disiplin, tindakan pemutihan poin kompensasi/pembinaan, serta pencatatan prestasi dan piagam penghargaan siswa.
-- **Portal Orang Tua (Tab Karakter & Prestasi):** Orang tua dan wali siswa kini dapat memantau status disiplin, akumulasi poin, riwayat pemulihan/pemutihan, serta berkas piagam prestasi ananda langsung dari ponsel secara real-time.
-- **Aksesibilitas Wali Kelas di Mobile:** Wali Kelas dan Tenaga Pendidik kini memiliki akses langsung ke modul kedisiplinan untuk memonitor perkembangan karakter kelas binaannya.`;
+- **Pemisahan Modul 10 Khusus Sarana & Prasarana:** Pembersihan total Modul 10 dari katalog perpustakaan / peminjaman buku fisik. Kini berfokus 100% pada fasilitas fisik, manajemen aset terinventaris, dan lokasi gedung/ruangan sekolah.
+- **Kartu Kendali Digital & Manajemen Servis:** Fitur jadwal pemeliharaan terencana, pelaporan kendala/kerusakan langsung secara mobile, pelacakan nomor seri aset, dan formulir penyelesaian servis (*complete maintenance*).
+- **Scanner QR Terpadu:** Pemindaian barcode & QR label inventaris fisik secara instan untuk verifikasi riwayat servis dan kartu kendali sarpras.
+- **E-Library Dipusatkan ke Modul 8:** Layanan buku teks, e-book reader, dan peminjaman buku kini dialihkan secara terpusat di Modul 8 E-Learning & E-Library.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
