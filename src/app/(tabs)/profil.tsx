@@ -4,11 +4,12 @@ import {
   ActivityIndicator, Modal, TextInput, Linking, Switch
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '../../constants/Colors';
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
+import axios from 'axios';
 import { Toast, ToastType } from '../../components/ui/Toast';
 import { checkForAppUpdate, AppUpdateInfo } from '../../services/updateService';
 import { UpdateModal } from '../../components/UpdateModal';
@@ -25,6 +26,7 @@ import {
 export default function ProfilScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams();
 
   const [userData, setUserData] = useState<any>(null);
   const [schoolName, setSchoolName] = useState<string>('Memuat Sekolah...');
@@ -82,6 +84,12 @@ export default function ProfilScreen() {
   useEffect(() => {
     loadProfileData();
   }, []);
+
+  useEffect(() => {
+    if (params?.openChangePassword === '1') {
+      setIsPasswordModalOpen(true);
+    }
+  }, [params?.openChangePassword]);
 
   const loadProfileData = async () => {
     try {
@@ -199,14 +207,63 @@ export default function ProfilScreen() {
 
     setIsUpdatingPassword(true);
     try {
-      await new Promise(r => setTimeout(r, 600));
+      const storedToken = await SecureStore.getItemAsync('sipena_token');
+      const storedApi = (await SecureStore.getItemAsync('sipena_api_url')) || apiUrl;
+      if (!storedApi || !storedToken) {
+        throw new Error('Sesi autentikasi kedaluwarsa. Silakan login ulang.');
+      }
+
+      const cleanApi = storedApi.trim().replace(/\/+$/, '');
+      const headers = { Authorization: `Bearer ${storedToken}` };
+
+      if (isStudent) {
+        await axios.post(
+          `${cleanApi}/api/auth/student/change-password`,
+          { current_password: oldPassword, new_password: newPassword },
+          { headers }
+        );
+      } else if (isParent) {
+        try {
+          await axios.post(
+            `${cleanApi}/api/parent/change-pin`,
+            { current_pin: oldPassword, new_pin: newPassword },
+            { headers }
+          );
+        } catch (eParent: any) {
+          if (eParent.response?.status === 404) {
+            await axios.post(
+              `${cleanApi}/api/parents/change-pin`,
+              { current_pin: oldPassword, new_pin: newPassword },
+              { headers }
+            );
+          } else {
+            throw eParent;
+          }
+        }
+      } else {
+        // Guru, Kepala Sekolah, TU, Admin
+        await axios.post(
+          `${cleanApi}/api/users/change-password`,
+          { current_password: oldPassword, new_password: newPassword },
+          { headers }
+        );
+      }
+
+      // Update stored user so must_change_password becomes false
+      if (userData) {
+        const updated = { ...userData, must_change_password: false };
+        setUserData(updated);
+        await SecureStore.setItemAsync('sipena_user', JSON.stringify(updated));
+      }
+
       setIsPasswordModalOpen(false);
       setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
       showToast('Kata sandi berhasil diperbarui!', 'success');
-    } catch (_) {
-      showToast('Gagal mengubah kata sandi.', 'error');
+    } catch (err: any) {
+      const errMsg = err.response?.data?.message || err.message || 'Gagal mengubah kata sandi. Periksa kata sandi lama Anda.';
+      showToast(errMsg, 'error');
     } finally {
       setIsUpdatingPassword(false);
     }
@@ -447,6 +504,15 @@ export default function ProfilScreen() {
                 <Ionicons name="close" size={22} color={Colors.text} />
               </TouchableOpacity>
             </View>
+
+            {userData?.must_change_password && (
+              <View style={{ backgroundColor: '#FEF3C7', padding: 12, borderRadius: 10, marginTop: 10, marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Ionicons name="shield-half" size={20} color="#D97706" />
+                <Text style={{ fontSize: 11, color: '#92400E', flex: 1, fontWeight: '600', lineHeight: 16 }}>
+                  Akun Anda masih menggunakan kata sandi default. Masukkan password default di kolom 'Saat Ini', lalu tentukan password baru yang aman.
+                </Text>
+              </View>
+            )}
 
             <Text style={styles.fieldLabel}>Kata Sandi Saat Ini:</Text>
             <TextInput

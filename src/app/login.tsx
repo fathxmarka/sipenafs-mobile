@@ -493,10 +493,17 @@ export default function LoginScreen() {
         }
         
         setIsLoadingLogin(false);
-        showToast("Login berhasil! Mengalihkan...", "success");
-        setTimeout(() => {
-          router.replace('/(tabs)');
-        }, 500);
+        if (userData.must_change_password) {
+          showToast("Password default terdeteksi! Harap perbarui kata sandi Anda.", "warning");
+          setTimeout(() => {
+            router.replace({ pathname: '/(tabs)/profil', params: { openChangePassword: '1' } } as any);
+          }, 600);
+        } else {
+          showToast("Login berhasil! Mengalihkan...", "success");
+          setTimeout(() => {
+            router.replace('/(tabs)');
+          }, 500);
+        }
       } else {
         throw new Error("Respon server tidak valid");
       }

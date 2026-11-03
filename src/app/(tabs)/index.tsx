@@ -573,6 +573,43 @@ export default function HomeScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 }}>
+        {/* Banner Peringatan Ganti Password Default */}
+        {userData?.must_change_password && (
+          <View style={{
+            marginHorizontal: 16,
+            marginTop: 8,
+            marginBottom: 12,
+            padding: 14,
+            backgroundColor: '#FFFBEB',
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: '#FDE68A',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12
+          }}>
+            <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="shield-half" size={22} color="#D97706" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#92400E' }}>Kata Sandi Masih Default</Text>
+              <Text style={{ fontSize: 11, color: '#B45309', marginTop: 2 }}>
+                Demi keamanan & privasi akun, harap segera perbarui kata sandi Anda.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={{
+                backgroundColor: '#D97706',
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 8
+              }}
+              onPress={() => router.push({ pathname: '/(tabs)/profil', params: { openChangePassword: '1' } } as any)}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>Ubah</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {/* ======================================================== */}
         {/* ROLE 1: DASHBOARD GURU                                    */}
         {/* ======================================================== */}
