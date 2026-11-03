@@ -42,10 +42,9 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **Pemisahan Modul 10 Khusus Sarana & Prasarana:** Pembersihan total Modul 10 dari katalog perpustakaan / peminjaman buku fisik. Kini berfokus 100% pada fasilitas fisik, manajemen aset terinventaris, dan lokasi gedung/ruangan sekolah.
-- **Kartu Kendali Digital & Manajemen Servis:** Fitur jadwal pemeliharaan terencana, pelaporan kendala/kerusakan langsung secara mobile, pelacakan nomor seri aset, dan formulir penyelesaian servis (*complete maintenance*).
-- **Scanner QR Terpadu:** Pemindaian barcode & QR label inventaris fisik secara instan untuk verifikasi riwayat servis dan kartu kendali sarpras.
-- **E-Library Dipusatkan ke Modul 8:** Layanan buku teks, e-book reader, dan peminjaman buku kini dialihkan secara terpusat di Modul 8 E-Learning & E-Library.`;
+- **Pengalihan Otomatis Ubah Kata Sandi Default:** Deteksi cerdas bagi Guru, PTK, dan Siswa yang masuk menggunakan kata sandi default/bawaan, dengan pengalihan otomatis langsung ke formulir pembaruan kata sandi.
+- **Banner Peringatan Keamanan Akun:** Menampilkan kartu pengingat keamanan di bagian atas dashboard Beranda selama akun masih menggunakan kata sandi default sekolah.
+- **Integrasi API Ubah Sandi Real-Time:** Form pembaruan kata sandi di Profil kini terhubung langsung ke backend server sekolah (/api/users/change-password & /api/auth/student/change-password) dengan pembaruan database seketika.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
