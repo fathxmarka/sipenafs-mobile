@@ -42,9 +42,9 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **Pengalihan Otomatis Ubah Kata Sandi Default:** Deteksi cerdas bagi Guru, PTK, dan Siswa yang masuk menggunakan kata sandi default/bawaan, dengan pengalihan otomatis langsung ke formulir pembaruan kata sandi.
-- **Banner Peringatan Keamanan Akun:** Menampilkan kartu pengingat keamanan di bagian atas dashboard Beranda selama akun masih menggunakan kata sandi default sekolah.
-- **Integrasi API Ubah Sandi Real-Time:** Form pembaruan kata sandi di Profil kini terhubung langsung ke backend server sekolah (/api/users/change-password & /api/auth/student/change-password) dengan pembaruan database seketika.`;
+- **Optimalisasi Login Administrator & Operator:** Dukungan penuh autentikasi akun Admin dan Operator Sekolah dengan penanganan sanitasi whitespace serta sinkronisasi kata sandi bawaan.
+- **Prioritas Server SMAN 1 Dukupuntang:** Penataan urutan server sekolah di pemilih instansi dengan server SMAN 1 Dukupuntang sebagai prioritas utama.
+- **Penanganan Sandi Default Menyeluruh:** Seluruh civitas (Admin, Kepala Sekolah, Guru, Siswa, dan Operator) yang menggunakan kata sandi bawaan diarahkan secara aman untuk memperbarui kata sandi institusi.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {

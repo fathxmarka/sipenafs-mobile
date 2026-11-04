@@ -36,6 +36,30 @@ type School = {
 
 const FALLBACK_SCHOOLS: School[] = [
   {
+    school_id: "SCH-1791166154903",
+    npsn: "20214965",
+    name: "SMAN 1 DUKUPUNTANG",
+    api_url: "https://sman1dukupuntang.sipena.biz.id",
+    logo_url: "https://sman1dukupuntang.sipena.biz.id/public/uploads/logos/logo-1791166096376-464392214.png",
+    level: "SMA"
+  },
+  {
+    school_id: "SCH-1791163558626",
+    npsn: "20222166",
+    name: "SMAN 4 KOTA CIREBON",
+    api_url: "https://sman4kotacirebon.sipena.biz.id",
+    logo_url: "https://sman4kotacirebon.sipena.biz.id/public/uploads/logos/logo-1791163507261-452292815.png",
+    level: "SMA"
+  },
+  {
+    school_id: "SCH-SD-001",
+    npsn: "12345678",
+    name: "SD SIPENA",
+    api_url: "https://sd.sipena.biz.id",
+    logo_url: "https://sd.sipena.biz.id/public/uploads/logos/logo-1787355370512-202713279.png",
+    level: "SD"
+  },
+  {
     school_id: "SCH-SMP-001",
     npsn: "20260001",
     name: "SMA SIPENA",
@@ -52,36 +76,12 @@ const FALLBACK_SCHOOLS: School[] = [
     level: "SMA"
   },
   {
-    school_id: "SCH-1791163558626",
-    npsn: "20222166",
-    name: "SMAN 4 KOTA CIREBON",
-    api_url: "https://sman4kotacirebon.sipena.biz.id",
-    logo_url: "https://sman4kotacirebon.sipena.biz.id/public/uploads/logos/logo-1791163507261-452292815.png",
-    level: "SMA"
-  },
-  {
     school_id: "SCH-SMA-001",
     npsn: "69968471",
     name: "SMA NEGERI 1 KALIWEDI",
     api_url: "https://api-sman1kaliwedi.sipena.biz.id",
     logo_url: "https://api-sman1kaliwedi.sipena.biz.id/public/uploads/logos/logo-1780014578448-411900629.png",
     level: "SMA"
-  },
-  {
-    school_id: "SCH-1791166154903",
-    npsn: "20214965",
-    name: "SMAN 1 DUKUPUNTANG",
-    api_url: "https://sman1dukupuntang.sipena.biz.id",
-    logo_url: "https://sman1dukupuntang.sipena.biz.id/public/uploads/logos/logo-1791166096376-464392214.png",
-    level: "SMA"
-  },
-  {
-    school_id: "SCH-SD-001",
-    npsn: "12345678",
-    name: "SD SIPENA",
-    api_url: "https://sd.sipena.biz.id",
-    logo_url: "https://sd.sipena.biz.id/public/uploads/logos/logo-1787355370512-202713279.png",
-    level: "SD"
   }
 ];
 
@@ -332,9 +332,13 @@ export default function LoginScreen() {
             level: 'SMA',
           });
         }
+      } else {
+        // Default langsung ke SMAN 1 Dukupuntang
+        setSelectedSchool(FALLBACK_SCHOOLS[0]);
       }
     } catch (e) {
       console.warn('Check previous school error:', e);
+      setSelectedSchool(FALLBACK_SCHOOLS[0]);
     }
   };
 
@@ -384,8 +388,11 @@ export default function LoginScreen() {
       return;
     }
 
+    const cleanUsername = username.trim();
+    const cleanPassword = password.trim();
+
     // Validasi Form
-    if (!username || !password) {
+    if (!cleanUsername || !cleanPassword) {
       showToast("Harap isi " + (loginType === 'civitas' ? "Username dan Password" : "NISN/NIS dan PIN Wali"), "warning");
       return;
     }
@@ -409,7 +416,7 @@ export default function LoginScreen() {
       if (loginType === 'civitas') {
         // Coba login sebagai Guru/Admin dulu
         try {
-          const res = await axios.post(`${schoolApiUrl}/api/auth/login`, { username, password });
+          const res = await axios.post(`${schoolApiUrl}/api/auth/login`, { username: cleanUsername, password: cleanPassword });
           if (res.data && res.data.success) {
             loginSuccess = true;
             userData = res.data.user;
@@ -419,7 +426,7 @@ export default function LoginScreen() {
           // Jika gagal, coba login sebagai Siswa
           if (e.response && (e.response.status === 401 || e.response.status === 404)) {
             try {
-              const resStudent = await axios.post(`${schoolApiUrl}/api/auth/student/login`, { username, password });
+              const resStudent = await axios.post(`${schoolApiUrl}/api/auth/student/login`, { username: cleanUsername, password: cleanPassword });
               if (resStudent.data && resStudent.data.success) {
                 loginSuccess = true;
                 userData = resStudent.data.user;
