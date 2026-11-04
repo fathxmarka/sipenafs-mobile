@@ -94,15 +94,23 @@ function githubRequest(method, endpoint, data = null, headers = {}) {
     });
 }
 
-async function uploadAsset(uploadUrl, filePath, fileName) {
+async function uploadAsset(uploadUrl, filePath, fileName, maxRetries = 3) {
     const cleanUploadUrl = uploadUrl.replace(/\{.*\}/, '') + `?name=${encodeURIComponent(fileName)}`;
     const fileBuffer = fs.readFileSync(filePath);
     console.log(`Mengunggah ${fileName} (${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB)...`);
 
-    return githubRequest('POST', cleanUploadUrl, fileBuffer, {
-        'Content-Type': 'application/vnd.android.package-archive',
-        'Content-Length': fileBuffer.length
-    });
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return await githubRequest('POST', cleanUploadUrl, fileBuffer, {
+                'Content-Type': 'application/vnd.android.package-archive',
+                'Content-Length': fileBuffer.length
+            });
+        } catch (e) {
+            console.warn(`Upaya ${attempt}/${maxRetries} gagal mengunggah ${fileName}: ${e.message}`);
+            if (attempt === maxRetries) throw e;
+            await new Promise(res => setTimeout(res, 2500));
+        }
+    }
 }
 
 async function main() {
