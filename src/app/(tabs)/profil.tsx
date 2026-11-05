@@ -86,10 +86,12 @@ export default function ProfilScreen() {
   }, []);
 
   useEffect(() => {
-    if (params?.openChangePassword === '1') {
+    const roleStr = (userData?.role || '').toLowerCase();
+    const isAdmin = roleStr.includes('admin') || roleStr.includes('operator') || userData?.role_id === 1 || userData?.role_id === 2;
+    if (params?.openChangePassword === '1' && !isAdmin) {
       setIsPasswordModalOpen(true);
     }
-  }, [params?.openChangePassword]);
+  }, [params?.openChangePassword, userData?.role]);
 
   const loadProfileData = async () => {
     try {

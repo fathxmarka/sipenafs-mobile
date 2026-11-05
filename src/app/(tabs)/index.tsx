@@ -573,8 +573,8 @@ export default function HomeScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 }}>
-        {/* Banner Peringatan Ganti Password Default */}
-        {userData?.must_change_password && (
+        {/* Banner Peringatan Ganti Password Default (Khusus Guru / Siswa, Tidak Ditampilkan ke Admin) */}
+        {userData?.must_change_password && effectiveRole !== 'admin' && !detectedRole.includes('admin') && !detectedRole.includes('operator') && (
           <View style={{
             marginHorizontal: 16,
             marginTop: 8,

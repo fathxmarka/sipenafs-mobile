@@ -42,9 +42,9 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **Optimalisasi Login Administrator & Operator:** Dukungan penuh autentikasi akun Admin dan Operator Sekolah dengan penanganan sanitasi whitespace serta sinkronisasi kata sandi bawaan.
-- **Prioritas Server SMAN 1 Dukupuntang:** Penataan urutan server sekolah di pemilih instansi dengan server SMAN 1 Dukupuntang sebagai prioritas utama.
-- **Penanganan Sandi Default Menyeluruh:** Seluruh civitas (Admin, Kepala Sekolah, Guru, Siswa, dan Operator) yang menggunakan kata sandi bawaan diarahkan secara aman untuk memperbarui kata sandi institusi.`;
+- **Khusus Akun Admin & Operator:** Login Administrator langsung diarahkan ke Beranda utama tanpa dipaksa pengalihan ubah kata sandi bawaan.
+- **Pembersihan Banner Keamanan untuk Admin:** Banner pengingat pembaruan kata sandi di dashboard Beranda hanya aktif bagi akun regular (Guru, Siswa, Orang Tua) dan tidak mengganggu akses kerja Administrator.
+- **Peningkatan Stabilitas Autentikasi:** Otentikasi dan pemrosesan sesi akun pimpinan semakin responsif dan mulus.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {

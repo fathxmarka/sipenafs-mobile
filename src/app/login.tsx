@@ -500,7 +500,11 @@ export default function LoginScreen() {
         }
         
         setIsLoadingLogin(false);
-        if (userData.must_change_password) {
+        const roleStr = (userData?.role || '').toLowerCase();
+        const isAdminUser = roleStr.includes('admin') || roleStr.includes('operator') || userData?.role_id === 1 || userData?.role_id === 2;
+
+        // User admin & operator TIDAK diarahkan ke ubah password
+        if (userData.must_change_password && !isAdminUser) {
           showToast("Password default terdeteksi! Harap perbarui kata sandi Anda.", "warning");
           setTimeout(() => {
             router.replace({ pathname: '/(tabs)/profil', params: { openChangePassword: '1' } } as any);
