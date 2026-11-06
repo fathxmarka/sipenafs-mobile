@@ -4524,6 +4524,9 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                     ? currentAns.split(',').map((s) => s.trim().toUpperCase())
                     : (Array.isArray(currentAns) ? currentAns : []);
                   const isSelected = selectedList.includes(key);
+                  const imgMatch = typeof val === 'string' ? val.match(/<img[^>]+src=["']([^"']+)["']/i) : null;
+                  const optionImgSrc = imgMatch ? imgMatch[1] : null;
+                  const cleanText = formatCbtText(String(val));
 
                   return (
                     <TouchableOpacity
@@ -4537,9 +4540,19 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                           {isSelected ? '✓' : key}
                         </Text>
                       </View>
-                      <Text style={[styles.arenaOptionText, isSelected && { color: '#312E81', fontWeight: '700' }]}>
-                        {formatCbtText(String(val))}
-                      </Text>
+                      <View style={{ flex: 1 }}>
+                        {Boolean(cleanText) && (
+                          <Text style={[styles.arenaOptionText, isSelected && { color: '#312E81', fontWeight: '700' }]}>
+                            {cleanText}
+                          </Text>
+                        )}
+                        {Boolean(optionImgSrc) && (
+                          <Image
+                            source={{ uri: optionImgSrc!.startsWith('http') || optionImgSrc!.startsWith('data:') ? optionImgSrc! : `${apiUrl}${optionImgSrc!.startsWith('/') ? '' : '/'}${optionImgSrc!}` }}
+                            style={{ width: '100%', height: 120, resizeMode: 'contain', marginTop: 6, borderRadius: 6, backgroundColor: '#F8FAFC' }}
+                          />
+                        )}
+                      </View>
                     </TouchableOpacity>
                   );
                 })}
@@ -4551,6 +4564,10 @@ Format JSON array murni tanpa pembuka/penutup markdown:
               <View style={styles.optionsListWrapper}>
                 {Object.entries(parsedOptions).map(([key, val]) => {
                   const isSelected = studentAnswers[currentQuestion?.id || ''] === key;
+                  const imgMatch = typeof val === 'string' ? val.match(/<img[^>]+src=["']([^"']+)["']/i) : null;
+                  const optionImgSrc = imgMatch ? imgMatch[1] : null;
+                  const cleanText = formatCbtText(String(val));
+
                   return (
                     <TouchableOpacity
                       key={key}
@@ -4563,9 +4580,19 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                           {key}
                         </Text>
                       </View>
-                      <Text style={[styles.arenaOptionText, isSelected && styles.arenaOptionTextSelected]}>
-                        {formatCbtText(String(val))}
-                      </Text>
+                      <View style={{ flex: 1 }}>
+                        {Boolean(cleanText) && (
+                          <Text style={[styles.arenaOptionText, isSelected && styles.arenaOptionTextSelected]}>
+                            {cleanText}
+                          </Text>
+                        )}
+                        {Boolean(optionImgSrc) && (
+                          <Image
+                            source={{ uri: optionImgSrc!.startsWith('http') || optionImgSrc!.startsWith('data:') ? optionImgSrc! : `${apiUrl}${optionImgSrc!.startsWith('/') ? '' : '/'}${optionImgSrc!}` }}
+                            style={{ width: '100%', height: 120, resizeMode: 'contain', marginTop: 6, borderRadius: 6, backgroundColor: '#F8FAFC' }}
+                          />
+                        )}
+                      </View>
                     </TouchableOpacity>
                   );
                 })}
