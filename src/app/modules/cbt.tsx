@@ -17,6 +17,7 @@ import {
   Share,
   PanResponder,
   Animated,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -72,7 +73,7 @@ interface Question {
   id: string;
   exam_id: string;
   text: string;
-  type: 'PG' | 'ESAI';
+  type: 'PG' | 'PGK' | 'ESAI' | 'Esai' | 'ESSAY' | string;
   options: string | { [key: string]: string };
   answer: string;
   score_weight: number;
@@ -152,6 +153,7 @@ export default function CbtScreen() {
     start_time: '',
     end_time: '',
     token: '',
+    use_token: true,
     level: '10',
     proctor_enabled: true,
     proctor_face_detect: true,
@@ -290,7 +292,7 @@ export default function CbtScreen() {
   const [activeStudentExam, setActiveStudentExam] = useState<Exam | null>(null);
   const [studentQuestions, setStudentQuestions] = useState<Question[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [studentAnswers, setStudentAnswers] = useState<{ [questionId: string]: string }>({});
+  const [studentAnswers, setStudentAnswers] = useState<{ [questionId: string]: any }>({});
   const [doubtfulAnswers, setDoubtfulAnswers] = useState<{ [questionId: string]: boolean }>({});
   const [timeLeftSeconds, setTimeLeftSeconds] = useState(0);
   const [isSubmittingExam, setIsSubmittingExam] = useState(false);
@@ -299,6 +301,12 @@ export default function CbtScreen() {
   const [pendingExamToStart, setPendingExamToStart] = useState<Exam | null>(null);
   const [isNavDrawerOpen, setIsNavDrawerOpen] = useState(false);
   const [examResultSummary, setExamResultSummary] = useState<any | null>(null);
+
+  // Essay Answer Camera Upload States
+  const [isAnswerCameraModalOpen, setIsAnswerCameraModalOpen] = useState(false);
+  const [isUploadingAnswerPhoto, setIsUploadingAnswerPhoto] = useState(false);
+  const [targetEssayQuestionId, setTargetEssayQuestionId] = useState<string | null>(null);
+  const answerCameraRef = useRef<any>(null);
 
   // Camera & Anti-Cheat Proctoring for Student
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -508,6 +516,7 @@ export default function CbtScreen() {
       start_time: startStr,
       end_time: endStr,
       token: generateRandomToken(),
+      use_token: true,
       level: '10',
       proctor_enabled: true,
       proctor_face_detect: true,
@@ -531,6 +540,7 @@ export default function CbtScreen() {
       start_time: exam.start_time ? exam.start_time.slice(0, 16).replace('T', ' ') : '',
       end_time: exam.end_time ? exam.end_time.slice(0, 16).replace('T', ' ') : '',
       token: exam.token || '',
+      use_token: exam.token !== null && exam.token !== undefined && exam.token !== '',
       level: exam.level || '10',
       proctor_enabled: !!exam.proctor_enabled,
       proctor_face_detect: exam.proctor_face_detect !== false,
@@ -562,7 +572,8 @@ export default function CbtScreen() {
         duration: Number(examForm.duration) || 60,
         start_time: examForm.start_time,
         end_time: examForm.end_time,
-        token: examForm.token.trim() || generateRandomToken(),
+        token: examForm.use_token ? (examForm.token.trim() || generateRandomToken()) : null,
+        use_token: examForm.use_token,
         level: examForm.level,
         proctor_enabled: examForm.proctor_enabled,
         proctor_face_detect: examForm.proctor_face_detect,
@@ -1363,7 +1374,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
   // STUDENT: START & TAKE EXAM WITH CAMERA PROCTORING
   // -------------------------------------------------------------
   const handleStartExamPrompt = (exam: Exam) => {
-    if (exam.token) {
+    if (exam.token && String(exam.token).trim() !== '' && String(exam.token).trim().toLowerCase() !== 'null') {
       setPendingExamToStart(exam);
       setInputToken('');
       setIsTokenPromptOpen(true);
@@ -1500,7 +1511,115 @@ Format JSON array murni tanpa pembuka/penutup markdown:
     if (activeStudentExam) {
       axios.post(
         `${apiUrl}/api/exams/${activeStudentExam.id}/save-progress`,
-        { answers: JSON.stringify(updated) },
+        { answers: updated },
+        { headers: { Authorization: `Bearer ${token}` } }
+      ).catch(() => {});
+    }
+  };
+
+  const handleTogglePgkAnswer = (questionId: string, optionKey: string) => {
+    const current = studentAnswers[questionId];
+    let list: string[] = [];
+    if (typeof current === 'string' && current.length > 0) {
+      list = current.split(',').map((s) => s.trim().toUpperCase());
+    } else if (Array.isArray(current)) {
+      list = [...current];
+    }
+    if (list.includes(optionKey)) {
+      list = list.filter((k) => k !== optionKey);
+    } else {
+      list.push(optionKey);
+    }
+    list.sort();
+    const updated = { ...studentAnswers, [questionId]: list.join(',') };
+    setStudentAnswers(updated);
+    if (activeStudentExam) {
+      axios.post(
+        `${apiUrl}/api/exams/${activeStudentExam.id}/save-progress`,
+        { answers: updated },
+        { headers: { Authorization: `Bearer ${token}` } }
+      ).catch(() => {});
+    }
+  };
+
+  const handleEssayChangeMobile = (questionId: string, text: string) => {
+    const current = studentAnswers[questionId];
+    let updatedVal: any = { answer: text, image_url: null };
+    if (typeof current === 'object' && current !== null && !Array.isArray(current)) {
+      updatedVal = { ...current, answer: text };
+    }
+    const updated = { ...studentAnswers, [questionId]: updatedVal };
+    setStudentAnswers(updated);
+    if (activeStudentExam) {
+      axios.post(
+        `${apiUrl}/api/exams/${activeStudentExam.id}/save-progress`,
+        { answers: updated },
+        { headers: { Authorization: `Bearer ${token}` } }
+      ).catch(() => {});
+    }
+  };
+
+  const openAnswerCameraModal = (questionId: string) => {
+    setTargetEssayQuestionId(questionId);
+    setIsAnswerCameraModalOpen(true);
+  };
+
+  const handleCaptureAnswerPhoto = async () => {
+    if (!answerCameraRef.current || !targetEssayQuestionId) return;
+    setIsUploadingAnswerPhoto(true);
+    try {
+      const photo = await answerCameraRef.current.takePictureAsync({
+        base64: true,
+        quality: 0.5,
+        skipProcessing: true,
+      });
+
+      if (photo && photo.base64) {
+        const uploadRes = await axios.post(
+          `${apiUrl}/api/exams/upload-answer-image`,
+          { image_base64: `data:image/jpeg;base64,${photo.base64}` },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        if (uploadRes.data?.success) {
+          const current = studentAnswers[targetEssayQuestionId];
+          const text = typeof current === 'object' && current !== null ? (current.answer || '') : (current || '');
+          const updatedVal = { answer: text, image_url: uploadRes.data.image_url };
+          const updated = { ...studentAnswers, [targetEssayQuestionId]: updatedVal };
+          setStudentAnswers(updated);
+          if (activeStudentExam) {
+            axios.post(
+              `${apiUrl}/api/exams/${activeStudentExam.id}/save-progress`,
+              { answers: updated },
+              { headers: { Authorization: `Bearer ${token}` } }
+            ).catch(() => {});
+          }
+          showToast('Foto jawaban berhasil dilampirkan!', 'success');
+          setIsAnswerCameraModalOpen(false);
+        } else {
+          showToast('Gagal mengunggah foto: ' + (uploadRes.data?.message || 'Error'), 'error');
+        }
+      }
+    } catch (err: any) {
+      console.error('Capture answer photo error:', err);
+      showToast('Gagal memproses foto: ' + err.message, 'error');
+    } finally {
+      setIsUploadingAnswerPhoto(false);
+    }
+  };
+
+  const handleRemoveEssayImageMobile = (questionId: string) => {
+    const current = studentAnswers[questionId];
+    let updatedVal: any = '';
+    if (typeof current === 'object' && current !== null) {
+      updatedVal = { ...current, image_url: null };
+    }
+    const updated = { ...studentAnswers, [questionId]: updatedVal };
+    setStudentAnswers(updated);
+    if (activeStudentExam) {
+      axios.post(
+        `${apiUrl}/api/exams/${activeStudentExam.id}/save-progress`,
+        { answers: updated },
         { headers: { Authorization: `Bearer ${token}` } }
       ).catch(() => {});
     }
@@ -1751,7 +1870,12 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                           <Text style={styles.tokenLabel}>TOKEN</Text>
                           <Text style={styles.tokenCode}>{exam.token}</Text>
                         </View>
-                      ) : null}
+                      ) : (
+                        <View style={[styles.tokenBox, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+                          <Text style={[styles.tokenLabel, { color: '#047857' }]}>AKSES</Text>
+                          <Text style={[styles.tokenCode, { color: '#065F46', fontSize: 9 }]}>BEBAS TOKEN</Text>
+                        </View>
+                      )}
                     </View>
 
                     {/* Meta Info Row */}
@@ -2045,20 +2169,45 @@ Format JSON array murni tanpa pembuka/penutup markdown:
 
               {/* Token Ujian */}
               <View style={styles.inputGroup}>
-                <View style={styles.labelWithAction}>
-                  <Text style={styles.inputLabel}>6. TOKEN UJIAN SISWA</Text>
-                  <TouchableOpacity onPress={() => setExamForm({ ...examForm, token: generateRandomToken() })}>
-                    <Text style={styles.linkAction}>Acak Token</Text>
-                  </TouchableOpacity>
+                <View style={[styles.switchRow, { marginBottom: 8, paddingHorizontal: 0 }]}>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={styles.inputLabel}>6. WAJIBKAN TOKEN MASUK</Text>
+                    <Text style={{ fontSize: 11, color: '#64748B' }}>
+                      Matikan jika ujian tanpa token (siswa langsung mulai via kamera/wajah).
+                    </Text>
+                  </View>
+                  <Switch
+                    value={examForm.use_token !== false}
+                    onValueChange={(val) => setExamForm({ ...examForm, use_token: val })}
+                    trackColor={{ false: '#CBD5E1', true: '#6EE7B7' }}
+                    thumbColor={examForm.use_token !== false ? '#059669' : '#F1F5F9'}
+                  />
                 </View>
-                <TextInput
-                  style={[styles.inputBox, { fontWeight: '700', letterSpacing: 2 }]}
-                  placeholder="KOSONGKAN JIKA TANPA TOKEN"
-                  placeholderTextColor="#94A3B8"
-                  value={examForm.token}
-                  autoCapitalize="characters"
-                  onChangeText={(val) => setExamForm({ ...examForm, token: val.toUpperCase() })}
-                />
+
+                {examForm.use_token !== false ? (
+                  <>
+                    <View style={styles.labelWithAction}>
+                      <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '700' }}>KODE TOKEN AKSES</Text>
+                      <TouchableOpacity onPress={() => setExamForm({ ...examForm, token: generateRandomToken() })}>
+                        <Text style={styles.linkAction}>Acak Token</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TextInput
+                      style={[styles.inputBox, { fontWeight: '700', letterSpacing: 2 }]}
+                      placeholder="KOSONGKAN UNTUK ACAK OTOMATIS"
+                      placeholderTextColor="#94A3B8"
+                      value={examForm.token}
+                      autoCapitalize="characters"
+                      onChangeText={(val) => setExamForm({ ...examForm, token: val.toUpperCase() })}
+                    />
+                  </>
+                ) : (
+                  <View style={{ padding: 10, backgroundColor: '#ECFDF5', borderRadius: 8, borderWidth: 1, borderColor: '#A7F3D0' }}>
+                    <Text style={{ fontSize: 11, color: '#065F46', fontWeight: '600' }}>
+                      ✓ Token Dinonaktifkan: Siswa dapat masuk ujian tanpa memasukkan token.
+                    </Text>
+                  </View>
+                )}
               </View>
 
               {/* Opsi Otomatis Acak Soal Bank (Khusus Try Out baru) */}
@@ -4312,29 +4461,148 @@ Format JSON array murni tanpa pembuka/penutup markdown:
               </Text>
             </View>
 
-            {/* Radio Options A - E */}
-            <View style={styles.optionsListWrapper}>
-              {Object.entries(parsedOptions).map(([key, val]) => {
-                const isSelected = studentAnswers[currentQuestion?.id || ''] === key;
-                return (
-                  <TouchableOpacity
-                    key={key}
-                    style={[styles.arenaOptionCard, isSelected && styles.arenaOptionCardSelected]}
-                    onPress={() => currentQuestion && handleSelectAnswer(currentQuestion.id, key)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.arenaRadioCircle, isSelected && styles.arenaRadioCircleSelected]}>
-                      <Text style={[styles.arenaRadioLetter, isSelected && styles.arenaRadioLetterSelected]}>
-                        {key}
+            {/* PGK: Checkbox Multi Options */}
+            {currentQuestion?.type === 'PGK' && (
+              <View style={styles.optionsListWrapper}>
+                <View style={{ backgroundColor: '#EEF2FF', padding: 10, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: '#C7D2FE' }}>
+                  <Text style={{ fontSize: 12, color: '#4338CA', fontWeight: '700' }}>
+                    ℹ️ Pilihan Ganda Kompleks: Anda dapat memilih lebih dari satu jawaban yang benar.
+                  </Text>
+                </View>
+                {Object.entries(parsedOptions).map(([key, val]) => {
+                  const currentAns = studentAnswers[currentQuestion?.id || ''];
+                  const selectedList = typeof currentAns === 'string'
+                    ? currentAns.split(',').map((s) => s.trim().toUpperCase())
+                    : (Array.isArray(currentAns) ? currentAns : []);
+                  const isSelected = selectedList.includes(key);
+
+                  return (
+                    <TouchableOpacity
+                      key={key}
+                      style={[styles.arenaOptionCard, isSelected && { borderColor: '#6366F1', backgroundColor: '#EEF2FF' }]}
+                      onPress={() => currentQuestion && handleTogglePgkAnswer(currentQuestion.id, key)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.arenaRadioCircle, { borderRadius: 6 }, isSelected && { backgroundColor: '#6366F1', borderColor: '#6366F1' }]}>
+                        <Text style={[styles.arenaRadioLetter, isSelected && { color: '#FFFFFF' }]}>
+                          {isSelected ? '✓' : key}
+                        </Text>
+                      </View>
+                      <Text style={[styles.arenaOptionText, isSelected && { color: '#312E81', fontWeight: '700' }]}>
+                        {formatCbtText(String(val))}
                       </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* PG: Single Radio Options */}
+            {(currentQuestion?.type === 'PG' || (!currentQuestion?.type && Object.keys(parsedOptions).length > 0)) && (
+              <View style={styles.optionsListWrapper}>
+                {Object.entries(parsedOptions).map(([key, val]) => {
+                  const isSelected = studentAnswers[currentQuestion?.id || ''] === key;
+                  return (
+                    <TouchableOpacity
+                      key={key}
+                      style={[styles.arenaOptionCard, isSelected && styles.arenaOptionCardSelected]}
+                      onPress={() => currentQuestion && handleSelectAnswer(currentQuestion.id, key)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.arenaRadioCircle, isSelected && styles.arenaRadioCircleSelected]}>
+                        <Text style={[styles.arenaRadioLetter, isSelected && styles.arenaRadioLetterSelected]}>
+                          {key}
+                        </Text>
+                      </View>
+                      <Text style={[styles.arenaOptionText, isSelected && styles.arenaOptionTextSelected]}>
+                        {formatCbtText(String(val))}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* ESAI: Text Input & Camera Capture */}
+            {(currentQuestion?.type === 'Esai' || currentQuestion?.type === 'ESSAY') && (
+              <View style={{ marginTop: 16 }}>
+                <TextInput
+                  style={{
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 12,
+                    borderWidth: 1.5,
+                    borderColor: '#CBD5E1',
+                    padding: 14,
+                    fontSize: 14,
+                    color: '#0F172A',
+                    minHeight: 120,
+                    textAlignVertical: 'top'
+                  }}
+                  multiline
+                  placeholder="Ketikkan uraian jawaban Anda di sini..."
+                  placeholderTextColor="#94A3B8"
+                  value={
+                    typeof studentAnswers[currentQuestion?.id || ''] === 'object' && studentAnswers[currentQuestion?.id || ''] !== null
+                      ? studentAnswers[currentQuestion?.id || ''].answer || ''
+                      : (studentAnswers[currentQuestion?.id || ''] || '')
+                  }
+                  onChangeText={(val) => currentQuestion && handleEssayChangeMobile(currentQuestion.id, val)}
+                />
+
+                {/* Upload / Capture Answer Photo */}
+                <View style={{ marginTop: 14, padding: 14, backgroundColor: '#F8FAFC', borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: '#94A3B8' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#334155', marginBottom: 4 }}>
+                    📸 Foto Lembar Jawaban (Opsional)
+                  </Text>
+                  <Text style={{ fontSize: 11, color: '#64748B', marginBottom: 12 }}>
+                    Lampirkan foto coretan rumus atau tulisan tangan jawaban Anda.
+                  </Text>
+
+                  {typeof studentAnswers[currentQuestion?.id || ''] === 'object' && studentAnswers[currentQuestion?.id || '']?.image_url ? (
+                    <View style={{ alignItems: 'center' }}>
+                      <Image
+                        source={{ uri: `${apiUrl}${studentAnswers[currentQuestion?.id || ''].image_url}` }}
+                        style={{ width: '100%', height: 180, borderRadius: 8, resizeMode: 'contain', backgroundColor: '#000' }}
+                      />
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                        <TouchableOpacity
+                          style={{ paddingVertical: 8, paddingHorizontal: 14, backgroundColor: '#0284C7', borderRadius: 8 }}
+                          onPress={() => currentQuestion && openAnswerCameraModal(currentQuestion.id)}
+                        >
+                          <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 12 }}>Ambil Ulang Foto</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={{ paddingVertical: 8, paddingHorizontal: 14, backgroundColor: '#EF4444', borderRadius: 8 }}
+                          onPress={() => currentQuestion && handleRemoveEssayImageMobile(currentQuestion.id)}
+                        >
+                          <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 12 }}>Hapus Foto</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                    <Text style={[styles.arenaOptionText, isSelected && styles.arenaOptionTextSelected]}>
-                      {formatCbtText(String(val))}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        paddingVertical: 12,
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: '#0284C7'
+                      }}
+                      onPress={() => currentQuestion && openAnswerCameraModal(currentQuestion.id)}
+                    >
+                      <Ionicons name="camera" size={18} color="#0284C7" />
+                      <Text style={{ color: '#0284C7', fontWeight: '700', fontSize: 13 }}>
+                        Ambil Foto Lembar Jawaban
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
 
             <View style={{ height: 60 }} />
           </ScrollView>
@@ -4419,7 +4687,10 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                 {/* Numbers Grid */}
                 <ScrollView contentContainerStyle={styles.numbersGrid}>
                   {studentQuestions.map((q, idx) => {
-                    const isAnswered = !!studentAnswers[q.id];
+                    const ans = studentAnswers[q.id];
+                    const isAnswered = typeof ans === 'object' && ans !== null
+                      ? Boolean(ans.answer?.trim()) || Boolean(ans.image_url)
+                      : Boolean(ans && String(ans).trim());
                     const isDoubt = !!doubtfulAnswers[q.id];
                     const isCurrent = currentQuestionIndex === idx;
 
@@ -4460,6 +4731,41 @@ Format JSON array murni tanpa pembuka/penutup markdown:
               </View>
             </View>
           </Modal>
+        </View>
+      </Modal>
+
+      {/* MODAL: ANSWER PHOTO CAPTURE FOR ESSAY */}
+      <Modal visible={isAnswerCameraModalOpen} animationType="slide" onRequestClose={() => setIsAnswerCameraModalOpen(false)}>
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingTop: 40, backgroundColor: '#0F172A' }}>
+            <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}>Foto Lembar Jawaban</Text>
+            <TouchableOpacity onPress={() => setIsAnswerCameraModalOpen(false)}>
+              <Ionicons name="close" size={26} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flex: 1 }}>
+            <CameraView ref={answerCameraRef} style={StyleSheet.absoluteFill} facing="back" />
+          </View>
+          <View style={{ padding: 20, backgroundColor: '#0F172A', alignItems: 'center' }}>
+            <TouchableOpacity
+              style={{
+                width: 72, height: 72, borderRadius: 36,
+                backgroundColor: isUploadingAnswerPhoto ? '#64748B' : '#0284C7',
+                alignItems: 'center', justifyContent: 'center', borderWidth: 4, borderColor: '#FFF'
+              }}
+              disabled={isUploadingAnswerPhoto}
+              onPress={handleCaptureAnswerPhoto}
+            >
+              {isUploadingAnswerPhoto ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <Ionicons name="camera" size={32} color="#FFF" />
+              )}
+            </TouchableOpacity>
+            <Text style={{ color: '#94A3B8', fontSize: 12, marginTop: 8 }}>
+              {isUploadingAnswerPhoto ? 'Mengunggah foto jawaban...' : 'Arahkan kamera ke lembar jawaban & jepret'}
+            </Text>
+          </View>
         </View>
       </Modal>
 
