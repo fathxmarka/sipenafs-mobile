@@ -42,9 +42,11 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **Khusus Akun Admin & Operator:** Login Administrator langsung diarahkan ke Beranda utama tanpa dipaksa pengalihan ubah kata sandi bawaan.
-- **Pembersihan Banner Keamanan untuk Admin:** Banner pengingat pembaruan kata sandi di dashboard Beranda hanya aktif bagi akun regular (Guru, Siswa, Orang Tua) dan tidak mengganggu akses kerja Administrator.
-- **Peningkatan Stabilitas Autentikasi:** Otentikasi dan pemrosesan sesi akun pimpinan semakin responsif dan mulus.`;
+- **CBT Jawaban Bergambar:** Siswa dapat melihat gambar pada pilihan jawaban (opsi A-E) dengan tampilan responsif langsung di kartu jawaban arena CBT.
+- **CBT Multi-Rombel (Rombongan Belajar):** Pembuatan dan pengeditan ujian mendukung pemilihan sasaran multi-rombel menggunakan chip filter interaktif ("Pilih Semua Rombel" / "Batal Semua").
+- **Dukungan Pilihan Ganda Kompleks (PGK):** Multi-select centang interaktif untuk soal jenis PGK dengan indikator status terjawab real-time.
+- **Upload Foto Lembar Jawaban Esai:** Siswa dapat mengambil foto lembar jawaban esai via kamera belakang perangkat dan mengunggahnya langsung ke server CBT.
+- **Bypass Token Ujian Biometrik:** Ujian tanpa token (opsional diatur guru/admin) dapat langsung dimulai siswa tanpa hambatan popup token manual.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
