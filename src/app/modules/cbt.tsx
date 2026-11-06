@@ -149,6 +149,7 @@ export default function CbtScreen() {
     type: 'UH',
     subject_id: '',
     class_id: '',
+    class_ids: [] as string[],
     duration: '60',
     start_time: '',
     end_time: '',
@@ -512,6 +513,7 @@ export default function CbtScreen() {
       type: 'UH',
       subject_id: defaultSubjectId,
       class_id: defaultClassId,
+      class_ids: defaultClassId ? [String(defaultClassId)] : [],
       duration: '60',
       start_time: startStr,
       end_time: endStr,
@@ -536,6 +538,7 @@ export default function CbtScreen() {
       type: exam.type || 'UH',
       subject_id: String(exam.subject_id),
       class_id: exam.class_id ? String(exam.class_id) : '',
+      class_ids: exam.class_id ? [String(exam.class_id)] : [],
       duration: String(exam.duration || 60),
       start_time: exam.start_time ? exam.start_time.slice(0, 16).replace('T', ' ') : '',
       end_time: exam.end_time ? exam.end_time.slice(0, 16).replace('T', ' ') : '',
@@ -564,11 +567,13 @@ export default function CbtScreen() {
     }
 
     try {
+      const selectedClassIds = (examForm.class_ids || []).map(Number).filter(n => !isNaN(n) && n > 0);
       const payload: any = {
         title: examForm.title.trim(),
         type: examForm.type,
         subject_id: Number(examForm.subject_id),
-        class_id: examForm.class_id ? Number(examForm.class_id) : null,
+        class_id: selectedClassIds.length > 0 ? selectedClassIds[0] : (examForm.class_id ? Number(examForm.class_id) : null),
+        class_ids: selectedClassIds.length > 0 ? selectedClassIds : (examForm.class_id ? [Number(examForm.class_id)] : []),
         duration: Number(examForm.duration) || 60,
         start_time: examForm.start_time,
         end_time: examForm.end_time,
@@ -2144,27 +2149,71 @@ Format JSON array murni tanpa pembuka/penutup markdown:
 
               {/* Kelas Sasaran */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>5. KELAS SASARAN (OPSIONAL)</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={styles.inputLabel}>5. KELAS SASARAN (MULTI ROMBEL)</Text>
+                  {classes.length > 0 && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        const allIds = classes.map((c) => String(c.id));
+                        const isAllSelected = (examForm.class_ids || []).length === allIds.length;
+                        setExamForm({
+                          ...examForm,
+                          class_ids: isAllSelected ? [] : allIds,
+                          class_id: isAllSelected ? '' : (allIds[0] || ''),
+                        });
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, color: Colors.primary, fontWeight: '700' }}>
+                        {(examForm.class_ids || []).length === classes.length ? 'Batal Semua' : 'Pilih Semua Rombel'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pickerChipsRow}>
                   <TouchableOpacity
-                    style={[styles.pickerChip, !examForm.class_id && styles.pickerChipActive]}
-                    onPress={() => setExamForm({ ...examForm, class_id: '' })}
+                    style={[styles.pickerChip, (!(examForm.class_ids || []).length && !examForm.class_id) && styles.pickerChipActive]}
+                    onPress={() => setExamForm({ ...examForm, class_id: '', class_ids: [] })}
                   >
-                    <Text style={[styles.pickerChipText, !examForm.class_id && styles.pickerChipTextActive]}>Semua Kelas</Text>
+                    <Text style={[styles.pickerChipText, (!(examForm.class_ids || []).length && !examForm.class_id) && styles.pickerChipTextActive]}>
+                      Semua Kelas (Default)
+                    </Text>
                   </TouchableOpacity>
                   {classes.map((c) => {
-                    const isSelected = String(examForm.class_id) === String(c.id);
+                    const isSelected = (examForm.class_ids || []).includes(String(c.id)) || (!examForm.class_ids?.length && String(examForm.class_id) === String(c.id));
                     return (
                       <TouchableOpacity
                         key={c.id}
                         style={[styles.pickerChip, isSelected && styles.pickerChipActive]}
-                        onPress={() => setExamForm({ ...examForm, class_id: String(c.id), level: String(c.level || '10') })}
+                        onPress={() => {
+                          const currentIds = examForm.class_ids && examForm.class_ids.length > 0 
+                            ? [...examForm.class_ids] 
+                            : (examForm.class_id ? [String(examForm.class_id)] : []);
+                          let newIds: string[];
+                          if (currentIds.includes(String(c.id))) {
+                            newIds = currentIds.filter((id) => id !== String(c.id));
+                          } else {
+                            newIds = [...currentIds, String(c.id)];
+                          }
+                          setExamForm({
+                            ...examForm,
+                            class_ids: newIds,
+                            class_id: newIds[0] || '',
+                            level: String(c.level || examForm.level || '10'),
+                          });
+                        }}
                       >
-                        <Text style={[styles.pickerChipText, isSelected && styles.pickerChipTextActive]}>{c.name}</Text>
+                        <Text style={[styles.pickerChipText, isSelected && styles.pickerChipTextActive]}>
+                          {isSelected ? '✓ ' : ''}{c.name}
+                        </Text>
                       </TouchableOpacity>
                     );
                   })}
                 </ScrollView>
+                <Text style={{ fontSize: 11, color: '#64748B', marginTop: 4 }}>
+                  {(examForm.class_ids || []).length > 0
+                    ? `Dipilih ${examForm.class_ids.length} rombel untuk ujian ini.`
+                    : 'Default: Ujian berlaku untuk seluruh kelas.'}
+                </Text>
               </View>
 
               {/* Token Ujian */}

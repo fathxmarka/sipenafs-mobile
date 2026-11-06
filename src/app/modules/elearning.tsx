@@ -2065,10 +2065,10 @@ export default function ElearningModuleScreen() {
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.fieldLabel}>Kelas Sasaran:</Text>
+                  <Text style={styles.fieldLabel}>Kelas Sasaran (Multi Rombel):</Text>
                   <TextInput
                     style={styles.textInputSingle}
-                    placeholder="Contoh: XII MIPA 1"
+                    placeholder="Contoh: XII MIPA 1, XII MIPA 2"
                     value={newClass}
                     onChangeText={setNewClass}
                     placeholderTextColor={Colors.textLight}
