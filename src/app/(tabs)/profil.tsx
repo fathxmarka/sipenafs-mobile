@@ -13,6 +13,7 @@ import axios from 'axios';
 import { Toast, ToastType } from '../../components/ui/Toast';
 import { checkForAppUpdate, AppUpdateInfo } from '../../services/updateService';
 import { UpdateModal } from '../../components/UpdateModal';
+import { StudentFaceModal } from '../../components/StudentFaceModal';
 import { 
   checkBiometricSupport, 
   getBiometricProfile, 
@@ -46,6 +47,11 @@ export default function ProfilScreen() {
   const [biometricSupport, setBiometricSupport] = useState<BiometricAvailability | null>(null);
   const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
   const [isBiometricToggling, setIsBiometricToggling] = useState(false);
+
+  // Student Face ID state
+  const [isFaceRegistered, setIsFaceRegistered] = useState(false);
+  const [isFaceModalOpen, setIsFaceModalOpen] = useState(false);
+  const [schoolLocation, setSchoolLocation] = useState<any>(null);
 
   // Toast
   const [toast, setToast] = useState<{ visible: boolean; message: string; type: ToastType }>({
@@ -119,6 +125,29 @@ export default function ProfilScreen() {
         } else {
           const profile = await getBiometricProfile();
           setIsBiometricEnabled(!!profile);
+        }
+
+        const roleStr = (parsedUser.role || '').toLowerCase();
+        if (roleStr.includes('siswa') || roleStr.includes('student')) {
+          try {
+            const token = await SecureStore.getItemAsync('sipena_token');
+            if (storedApi && token) {
+              const headers = { Authorization: `Bearer ${token}` };
+              const [resMe, resAtt] = await Promise.allSettled([
+                axios.get(`${storedApi}/api/students/me`, { headers }),
+                axios.get(`${storedApi}/api/student-attendance/status`, { headers }),
+              ]);
+              if (resMe.status === 'fulfilled' && resMe.value.data) {
+                const sData = resMe.value.data.data || resMe.value.data;
+                setIsFaceRegistered(Boolean(sData?.face_descriptor));
+              }
+              if (resAtt.status === 'fulfilled' && resAtt.value.data?.school) {
+                setSchoolLocation(resAtt.value.data.school);
+              }
+            }
+          } catch (err) {
+            console.warn('Error fetching student face info in profile:', err);
+          }
         }
       }
     } catch (e) {
@@ -399,32 +428,70 @@ export default function ProfilScreen() {
               </View>
             ) : (
               // Tampilan Pengguna Biasa (Guru, Siswa, Orang Tua)
-              <View style={styles.biometricSettingRow}>
-                <View style={styles.biometricSettingLeft}>
-                  <View style={[styles.biometricIconCircle, isBiometricEnabled ? styles.biometricIconCircleActive : styles.biometricIconCircleInactive]}>
-                    <Ionicons 
-                      name="finger-print" 
-                      size={22} 
-                      color={isBiometricEnabled ? "#0B8A7D" : Colors.textLight} 
-                    />
+              <>
+                <View style={styles.biometricSettingRow}>
+                  <View style={styles.biometricSettingLeft}>
+                    <View style={[styles.biometricIconCircle, isBiometricEnabled ? styles.biometricIconCircleActive : styles.biometricIconCircleInactive]}>
+                      <Ionicons 
+                        name="finger-print" 
+                        size={22} 
+                        color={isBiometricEnabled ? "#0B8A7D" : Colors.textLight} 
+                      />
+                    </View>
+                    <View style={styles.biometricTextContainer}>
+                      <Text style={styles.biometricSettingTitle}>Login Sidik Jari</Text>
+                      <Text style={styles.biometricSettingSubtitle}>
+                        {isBiometricEnabled 
+                          ? 'Aktif • Masuk cepat tanpa password' 
+                          : (biometricSupport?.enrolled ? 'Nonaktif • Ketuk switch untuk aktifkan' : 'Daftarkan sidik jari di pengaturan HP')}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.biometricTextContainer}>
-                    <Text style={styles.biometricSettingTitle}>Login Sidik Jari</Text>
-                    <Text style={styles.biometricSettingSubtitle}>
-                      {isBiometricEnabled 
-                        ? 'Aktif • Masuk cepat tanpa password' 
-                        : (biometricSupport?.enrolled ? 'Nonaktif • Ketuk switch untuk aktifkan' : 'Daftarkan sidik jari di pengaturan HP')}
-                    </Text>
-                  </View>
+                  <Switch
+                    value={isBiometricEnabled}
+                    onValueChange={handleToggleBiometric}
+                    disabled={isBiometricToggling || !biometricSupport?.available}
+                    trackColor={{ false: '#E5E7EB', true: '#A7F3D0' }}
+                    thumbColor={isBiometricEnabled ? '#0B8A7D' : '#F3F4F6'}
+                  />
                 </View>
-                <Switch
-                  value={isBiometricEnabled}
-                  onValueChange={handleToggleBiometric}
-                  disabled={isBiometricToggling || !biometricSupport?.available}
-                  trackColor={{ false: '#E5E7EB', true: '#A7F3D0' }}
-                  thumbColor={isBiometricEnabled ? '#0B8A7D' : '#F3F4F6'}
-                />
-              </View>
+
+                {/* Opsi Verifikasi Wajah (Face ID) Khusus Siswa */}
+                {((userData?.role || '').toLowerCase().includes('siswa') || (userData?.role || '').toLowerCase().includes('student')) && (
+                  <View style={[styles.biometricSettingRow, { borderTopWidth: 1, borderTopColor: '#F1F5F9', marginTop: 12, paddingTop: 12 }]}>
+                    <View style={styles.biometricSettingLeft}>
+                      <View style={[styles.biometricIconCircle, isFaceRegistered ? styles.biometricIconCircleActive : styles.biometricIconCircleInactive]}>
+                        <Ionicons 
+                          name="scan-outline" 
+                          size={22} 
+                          color={isFaceRegistered ? "#0B8A7D" : "#D97706"} 
+                        />
+                      </View>
+                      <View style={styles.biometricTextContainer}>
+                        <Text style={styles.biometricSettingTitle}>Verifikasi Wajah (Face ID)</Text>
+                        <Text style={styles.biometricSettingSubtitle}>
+                          {isFaceRegistered 
+                            ? 'Wajah Terdaftar • Presensi biometrik siap' 
+                            : 'Belum Terdaftar • Daftarkan wajah Anda'}
+                        </Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.faceRegisterActionBtn,
+                        isFaceRegistered ? styles.faceRegisterActionBtnEdit : styles.faceRegisterActionBtnNew
+                      ]}
+                      onPress={() => setIsFaceModalOpen(true)}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="camera-outline" size={14} color="#FFF" />
+                      <Text style={styles.faceRegisterActionBtnText}>
+                        {isFaceRegistered ? 'Perbarui' : 'Daftar'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </>
             )}
           </View>
 
@@ -612,6 +679,20 @@ export default function ProfilScreen() {
         visible={showUpdateModal}
         updateInfo={updateInfo}
         onDismiss={() => setShowUpdateModal(false)}
+      />
+
+      {/* Student Face ID Modal */}
+      <StudentFaceModal
+        visible={isFaceModalOpen}
+        onClose={() => setIsFaceModalOpen(false)}
+        mode="register"
+        schoolLocation={schoolLocation}
+        studentName={userData?.name}
+        onSuccess={() => {
+          setIsFaceRegistered(true);
+          showToast('Face ID siswa berhasil didaftarkan!', 'success');
+          loadProfileData();
+        }}
       />
     </View>
   );
@@ -982,6 +1063,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.textLight,
     marginTop: 2,
+  },
+  faceRegisterActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  faceRegisterActionBtnNew: {
+    backgroundColor: '#EA580C',
+  },
+  faceRegisterActionBtnEdit: {
+    backgroundColor: '#0B8A7D',
+  },
+  faceRegisterActionBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   adminSecurityNoticeCard: {
     backgroundColor: '#FFFBEB',

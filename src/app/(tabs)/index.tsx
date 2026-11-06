@@ -9,6 +9,8 @@ import Colors from '../../constants/Colors';
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
 import { useRouter } from 'expo-router';
+import { StudentFaceModal } from '../../components/StudentFaceModal';
+import { Toast, ToastType } from '../../components/ui/Toast';
 
 type RoleViewType = 'auto' | 'admin' | 'guru' | 'siswa' | 'ortu';
 
@@ -71,6 +73,16 @@ export default function HomeScreen() {
   const [studentAttStatus, setStudentAttStatus] = useState<any>(null);
   const [isStudentPjj, setIsStudentPjj] = useState(false);
   const [studentClassName, setStudentClassName] = useState<string>('');
+  const [isStudentFaceModalOpen, setIsStudentFaceModalOpen] = useState(false);
+  const [studentModalMode, setStudentModalMode] = useState<'attendance' | 'register'>('attendance');
+  const [studentAttAction, setStudentAttAction] = useState<'check-in' | 'check-out'>('check-in');
+  const [schoolLocation, setSchoolLocation] = useState<any>(null);
+  const [isFaceRegistered, setIsFaceRegistered] = useState(false);
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: ToastType }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
 
   useEffect(() => {
     loadData();
@@ -195,11 +207,22 @@ export default function HomeScreen() {
           }
         } else if (roleStr.includes('siswa') || roleStr.includes('student')) {
           try {
-            const resAtt = await axios.get(`${apiUrl}/api/student-attendance/status`, { headers });
-            if (resAtt.data && resAtt.data.success) {
-              setStudentAttStatus(resAtt.data.data || null);
-              setIsStudentPjj(Boolean(resAtt.data.is_pjj));
-              if (resAtt.data.class_name) setStudentClassName(resAtt.data.class_name);
+            const [resAtt, resMe] = await Promise.allSettled([
+              axios.get(`${apiUrl}/api/student-attendance/status`, { headers }),
+              axios.get(`${apiUrl}/api/students/me`, { headers }),
+            ]);
+
+            if (resAtt.status === 'fulfilled' && resAtt.value.data?.success) {
+              const attData = resAtt.value.data;
+              setStudentAttStatus(attData.data || null);
+              setIsStudentPjj(Boolean(attData.is_pjj));
+              if (attData.class_name) setStudentClassName(attData.class_name);
+              if (attData.school) setSchoolLocation(attData.school);
+            }
+
+            if (resMe.status === 'fulfilled' && resMe.value.data) {
+              const studentData = resMe.value.data.data || resMe.value.data;
+              setIsFaceRegistered(Boolean(studentData?.face_descriptor));
             }
           } catch (e: any) {
             console.warn('Fetch student attendance error:', e.message);
@@ -808,36 +831,229 @@ export default function HomeScreen() {
               </View>
             )}
 
-            {/* Status Presensi Hari Ini */}
-            <View style={styles.cardSection}>
-              <View style={[styles.studentAttendanceCard, isStudentPjj && { borderColor: '#A7F3D0', backgroundColor: '#F0FDF4' }]}>
-                <View style={[styles.attIconWrapper, isStudentPjj && { backgroundColor: '#DCFCE7' }]}>
-                  <Ionicons 
-                    name={studentAttStatus?.check_in_time ? "checkmark-circle" : "time-outline"} 
-                    size={24} 
-                    color={studentAttStatus?.check_in_time ? "#10B981" : (isStudentPjj ? "#EA580C" : "#64748B")} 
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.attStatusTitle}>
-                    {studentAttStatus?.check_in_time 
-                      ? (isStudentPjj ? 'Presensi Masuk PJJ Tercatat' : 'Presensi Masuk Tercatat')
-                      : (isStudentPjj ? 'Belum Absen Masuk PJJ' : 'Belum Absen Masuk')}
-                  </Text>
-                  <Text style={styles.attStatusTime}>
-                    {studentAttStatus?.check_in_time 
-                      ? `${isStudentPjj ? 'Absen Mandiri di Rumah' : 'Presensi Sekolah'} • ${new Date(studentAttStatus.check_in_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB`
-                      : (isStudentPjj ? 'Buka web untuk absen wajah dari rumah' : 'Silakan absen di lingkungan sekolah')}
-                  </Text>
-                  <Text style={[styles.attStatusNote, !studentAttStatus?.check_in_time && { color: '#DC2626' }]}>
-                    Status: {studentAttStatus?.check_in_time ? (studentAttStatus.status || 'Hadir Tepat Waktu') : 'Belum Presensi'}
-                  </Text>
+            {/* Banner Pendaftaran Wajah Siswa jika belum terdaftar */}
+            {!isFaceRegistered && (
+              <View style={styles.studentFaceRegisterAlert}>
+                <View style={styles.studentFaceAlertLeft}>
+                  <View style={styles.faceAlertIconCircle}>
+                    <Ionicons name="scan-outline" size={24} color="#EA580C" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.faceAlertTitle}>Wajah Belum Terdaftar</Text>
+                    <Text style={styles.faceAlertSubtitle}>
+                      Daftarkan Face ID Anda untuk kemudahan absen masuk & pulang dengan scan biometrik di HP.
+                    </Text>
+                  </View>
                 </View>
                 <TouchableOpacity
-                  style={[styles.attActionBtn, isStudentPjj && { backgroundColor: '#059669' }]}
-                  onPress={() => router.push('/modules/presensi' as any)}
+                  style={styles.faceAlertActionBtn}
+                  onPress={() => {
+                    setStudentModalMode('register');
+                    setIsStudentFaceModalOpen(true);
+                  }}
+                  activeOpacity={0.8}
                 >
-                  <Text style={styles.attActionBtnText}>Detail</Text>
+                  <Ionicons name="camera-outline" size={16} color="#FFF" />
+                  <Text style={styles.faceAlertActionBtnText}>Daftar Face ID Sekarang</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Card Presensi Masuk & Pulang Siswa */}
+            <View style={styles.cardSection}>
+              <View style={[styles.studentAttModernCard, isStudentPjj && { borderColor: '#A7F3D0' }]}>
+                {/* Header Card */}
+                <View style={styles.studentAttHeaderRow}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={[styles.studentAttIconBadge, isStudentPjj ? { backgroundColor: '#DCFCE7' } : { backgroundColor: '#EFF6FF' }]}>
+                      <Ionicons
+                        name={isStudentPjj ? "home" : "school"}
+                        size={18}
+                        color={isStudentPjj ? "#059669" : "#2563EB"}
+                      />
+                    </View>
+                    <View>
+                      <Text style={styles.studentAttCardTitle}>Presensi Harian Siswa</Text>
+                      <Text style={styles.studentAttCardSubtitle}>
+                        {isStudentPjj ? 'Mode PJJ (Bebas Radius)' : 'Kamera Selfie & Geofence GPS'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Face ID status chip */}
+                  <TouchableOpacity
+                    style={[
+                      styles.faceStatusChip,
+                      isFaceRegistered ? styles.faceStatusChipSuccess : styles.faceStatusChipWarn
+                    ]}
+                    onPress={() => {
+                      setStudentModalMode('register');
+                      setIsStudentFaceModalOpen(true);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={isFaceRegistered ? "checkmark-circle" : "alert-circle"}
+                      size={13}
+                      color={isFaceRegistered ? "#059669" : "#D97706"}
+                    />
+                    <Text style={[
+                      styles.faceStatusChipText,
+                      isFaceRegistered ? { color: '#059669' } : { color: '#D97706' }
+                    ]}>
+                      {isFaceRegistered ? 'Face ID Aktif' : 'Belum Ada Face ID'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Jam Masuk vs Jam Pulang Grid */}
+                <View style={styles.studentAttTimesGrid}>
+                  {/* Blok Masuk */}
+                  <View style={[
+                    styles.studentAttTimeCol,
+                    studentAttStatus?.check_in_time ? styles.studentAttColDone : styles.studentAttColPending
+                  ]}>
+                    <View style={styles.studentAttTimeColHeader}>
+                      <Ionicons
+                        name="log-in-outline"
+                        size={16}
+                        color={studentAttStatus?.check_in_time ? "#059669" : "#64748B"}
+                      />
+                      <Text style={[
+                        styles.studentAttColLabel,
+                        studentAttStatus?.check_in_time && { color: '#059669' }
+                      ]}>
+                        ABSEN MASUK
+                      </Text>
+                    </View>
+                    <Text style={[
+                      styles.studentAttTimeValue,
+                      studentAttStatus?.check_in_time && { color: '#065F46' }
+                    ]}>
+                      {studentAttStatus?.check_in_time
+                        ? new Date(studentAttStatus.check_in_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB'
+                        : '-- : --'}
+                    </Text>
+                    <View style={[
+                      styles.studentAttStatusBadge,
+                      studentAttStatus?.check_in_time ? styles.statusBadgeSuccess : styles.statusBadgeDefault
+                    ]}>
+                      <Text style={[
+                        styles.studentAttStatusBadgeText,
+                        studentAttStatus?.check_in_time ? { color: '#059669' } : { color: '#64748B' }
+                      ]}>
+                        {studentAttStatus?.check_in_time ? (studentAttStatus.status || 'Hadir') : 'Belum Masuk'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Divider */}
+                  <View style={styles.studentAttDivider} />
+
+                  {/* Blok Pulang */}
+                  <View style={[
+                    styles.studentAttTimeCol,
+                    studentAttStatus?.check_out_time ? styles.studentAttColDone : styles.studentAttColPending
+                  ]}>
+                    <View style={styles.studentAttTimeColHeader}>
+                      <Ionicons
+                        name="log-out-outline"
+                        size={16}
+                        color={studentAttStatus?.check_out_time ? "#059669" : "#64748B"}
+                      />
+                      <Text style={[
+                        styles.studentAttColLabel,
+                        studentAttStatus?.check_out_time && { color: '#059669' }
+                      ]}>
+                        ABSEN PULANG
+                      </Text>
+                    </View>
+                    <Text style={[
+                      styles.studentAttTimeValue,
+                      studentAttStatus?.check_out_time && { color: '#065F46' }
+                    ]}>
+                      {studentAttStatus?.check_out_time
+                        ? new Date(studentAttStatus.check_out_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB'
+                        : '-- : --'}
+                    </Text>
+                    <View style={[
+                      styles.studentAttStatusBadge,
+                      studentAttStatus?.check_out_time ? styles.statusBadgeSuccess : styles.statusBadgeDefault
+                    ]}>
+                      <Text style={[
+                        styles.studentAttStatusBadgeText,
+                        studentAttStatus?.check_out_time ? { color: '#059669' } : { color: '#64748B' }
+                      ]}>
+                        {studentAttStatus?.check_out_time ? 'Sudah Pulang' : (studentAttStatus?.check_in_time ? 'Belum Pulang' : '-')}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Tombol Aksi Utama */}
+                <View style={styles.studentAttBtnWrapper}>
+                  {!studentAttStatus?.check_in_time ? (
+                    <TouchableOpacity
+                      style={[styles.studentAttMainBtn, { backgroundColor: '#2563EB' }]}
+                      onPress={() => {
+                        if (!isFaceRegistered) {
+                          setToast({
+                            visible: true,
+                            message: 'Silakan daftarkan Face ID terlebih dahulu sebelum absen masuk.',
+                            type: 'warning'
+                          });
+                          setStudentModalMode('register');
+                          setIsStudentFaceModalOpen(true);
+                          return;
+                        }
+                        setStudentAttAction('check-in');
+                        setStudentModalMode('attendance');
+                        setIsStudentFaceModalOpen(true);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="camera" size={18} color="#FFF" />
+                      <Text style={styles.studentAttMainBtnText}>Absen Masuk Sekarang</Text>
+                    </TouchableOpacity>
+                  ) : !studentAttStatus?.check_out_time ? (
+                    <TouchableOpacity
+                      style={[styles.studentAttMainBtn, { backgroundColor: '#EA580C' }]}
+                      onPress={() => {
+                        if (!isFaceRegistered) {
+                          setToast({
+                            visible: true,
+                            message: 'Silakan daftarkan Face ID terlebih dahulu sebelum absen pulang.',
+                            type: 'warning'
+                          });
+                          setStudentModalMode('register');
+                          setIsStudentFaceModalOpen(true);
+                          return;
+                        }
+                        setStudentAttAction('check-out');
+                        setStudentModalMode('attendance');
+                        setIsStudentFaceModalOpen(true);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="camera" size={18} color="#FFF" />
+                      <Text style={styles.studentAttMainBtnText}>Absen Pulang Sekarang</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.studentAttCompletedBanner}>
+                      <Ionicons name="checkmark-done-circle" size={20} color="#059669" />
+                      <Text style={styles.studentAttCompletedText}>Presensi Hari Ini Telah Selesai</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Link Riwayat */}
+                <TouchableOpacity
+                  style={styles.studentAttHistoryLink}
+                  onPress={() => router.push('/modules/presensi' as any)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.studentAttHistoryLinkText}>Lihat Riwayat & Rekap Presensi Siswa</Text>
+                  <Ionicons name="chevron-forward" size={14} color="#64748B" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -1554,6 +1770,43 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Student Face Attendance & Registration Modal */}
+      <StudentFaceModal
+        visible={isStudentFaceModalOpen}
+        onClose={() => setIsStudentFaceModalOpen(false)}
+        mode={studentModalMode}
+        attendanceAction={studentAttAction}
+        isPjj={isStudentPjj}
+        schoolLocation={schoolLocation}
+        studentName={userData?.name}
+        onSuccess={() => {
+          loadData();
+          if (studentModalMode === 'register') {
+            setIsFaceRegistered(true);
+            setToast({
+              visible: true,
+              message: 'Face ID siswa berhasil didaftarkan!',
+              type: 'success',
+            });
+          } else {
+            setToast({
+              visible: true,
+              message: studentAttAction === 'check-in' 
+                ? 'Presensi Masuk berhasil dicatat!' 
+                : 'Presensi Pulang berhasil dicatat!',
+              type: 'success',
+            });
+          }
+        }}
+      />
+
+      <Toast
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onDismiss={() => setToast(prev => ({ ...prev, visible: false }))}
+      />
     </View>
   );
 }
@@ -1876,6 +2129,212 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  studentFaceRegisterAlert: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 14,
+    backgroundColor: '#FFF7ED',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#FED7AA',
+    gap: 12,
+  },
+  studentFaceAlertLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  faceAlertIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#FFEDD5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  faceAlertTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#9A3412',
+  },
+  faceAlertSubtitle: {
+    fontSize: 12,
+    color: '#C2410C',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  faceAlertActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#EA580C',
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  faceAlertActionBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  studentAttModernCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    padding: 16,
+    gap: 14,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  studentAttHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  studentAttIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  studentAttCardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  studentAttCardSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  faceStatusChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  faceStatusChipSuccess: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  faceStatusChipWarn: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+  },
+  faceStatusChipText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  studentAttTimesGrid: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 12,
+    alignItems: 'center',
+  },
+  studentAttTimeCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  studentAttColDone: {},
+  studentAttColPending: {},
+  studentAttTimeColHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  studentAttColLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  studentAttTimeValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#334155',
+    marginBottom: 6,
+  },
+  studentAttStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  statusBadgeSuccess: {
+    backgroundColor: '#D1FAE5',
+  },
+  statusBadgeDefault: {
+    backgroundColor: '#E2E8F0',
+  },
+  studentAttStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  studentAttDivider: {
+    width: 1,
+    height: 48,
+    backgroundColor: '#CBD5E1',
+    marginHorizontal: 8,
+  },
+  studentAttBtnWrapper: {
+    marginTop: 2,
+  },
+  studentAttMainBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  studentAttMainBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  studentAttCompletedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  studentAttCompletedText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  studentAttHistoryLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingTop: 4,
+  },
+  studentAttHistoryLinkText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
   },
   scheduleItemStudent: {
     flexDirection: 'row',

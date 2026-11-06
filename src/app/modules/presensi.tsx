@@ -9,6 +9,8 @@ import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '../../constants/Colors';
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
+import { StudentFaceModal } from '../../components/StudentFaceModal';
+import { Toast, ToastType } from '../../components/ui/Toast';
 
 const avatarMale = require('../../../assets/images/avatar_male.png');
 const avatarFemale = require('../../../assets/images/avatar_female.png');
@@ -48,6 +50,21 @@ export default function PresensiScreen() {
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error' | 'info'; title: string; desc: string } | null>(null);
   
   const [userData, setUserData] = useState<any>(null);
+
+  // Student Attendance States
+  const [studentAttStatus, setStudentAttStatus] = useState<any>(null);
+  const [studentHistory, setStudentHistory] = useState<any[]>([]);
+  const [isStudentPjj, setIsStudentPjj] = useState(false);
+  const [studentSchoolLoc, setStudentSchoolLoc] = useState<any>(null);
+  const [isStudentFaceReg, setIsStudentFaceReg] = useState(false);
+  const [isStudentFaceModalOpen, setIsStudentFaceModalOpen] = useState(false);
+  const [studentModalMode, setStudentModalMode] = useState<'attendance' | 'register'>('attendance');
+  const [studentAttAction, setStudentAttAction] = useState<'check-in' | 'check-out'>('check-in');
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: ToastType }>({
+    visible: false,
+    message: '',
+    type: 'info',
+  });
 
   // ================= TAB 1: KBM & KELAS STATES =================
   const [classes, setClasses] = useState<any[]>([]);
@@ -154,7 +171,42 @@ export default function PresensiScreen() {
       setAuthToken(token);
       const headers = { Authorization: `Bearer ${token}` };
 
-      // Parallel Fetch
+      if (userStr) {
+        const parsed = JSON.parse(userStr);
+        const roleStr = (parsed.role || '').toLowerCase();
+        if (roleStr.includes('siswa') || roleStr.includes('student')) {
+          try {
+            const [resAtt, resMe, resHistory] = await Promise.allSettled([
+              axios.get(`${apiUrl}/api/student-attendance/status`, { headers }),
+              axios.get(`${apiUrl}/api/students/me`, { headers }),
+              axios.get(`${apiUrl}/api/student-attendance/history`, { headers }),
+            ]);
+
+            if (resAtt.status === 'fulfilled' && resAtt.value.data?.success) {
+              setStudentAttStatus(resAtt.value.data.data || null);
+              setIsStudentPjj(Boolean(resAtt.value.data.is_pjj));
+              if (resAtt.value.data.school) setStudentSchoolLoc(resAtt.value.data.school);
+            }
+
+            if (resMe.status === 'fulfilled' && resMe.value.data) {
+              const sData = resMe.value.data.data || resMe.value.data;
+              setIsStudentFaceReg(Boolean(sData?.face_descriptor));
+            }
+
+            if (resHistory.status === 'fulfilled' && resHistory.value.data?.success) {
+              setStudentHistory(resHistory.value.data.data || []);
+            }
+          } catch (e: any) {
+            console.warn('Student attendance fetch error:', e.message);
+          } finally {
+            setIsLoading(false);
+            setIsRefreshing(false);
+          }
+          return;
+        }
+      }
+
+      // Parallel Fetch (for Teacher / Admin)
       const [resClasses, resStaffSummary, resViolations, resVioTypes, resStudents, resTeachers] = await Promise.allSettled([
         axios.get(`${apiUrl}/api/classes?perPage=all`, { headers }),
         axios.get(`${apiUrl}/api/teacher-attendance/school-summary`, { headers }),
@@ -499,6 +551,371 @@ export default function PresensiScreen() {
       s.name.toLowerCase().includes(q) || (s.nisn && s.nisn.toLowerCase().includes(q))
     ).slice(0, 20);
   }, [allStudents, studentSearchInModal]);
+
+  const isStudentUser = Boolean(
+    (userData?.role || '').toLowerCase().includes('siswa') ||
+    (userData?.role || '').toLowerCase().includes('student')
+  );
+
+  const studentAttStats = useMemo(() => {
+    const total = studentHistory.length;
+    let hadir = 0;
+    let sakit = 0;
+    let izin = 0;
+    let alpa = 0;
+
+    studentHistory.forEach((item: any) => {
+      const st = (item.status || '').toUpperCase();
+      if (st.includes('HADIR') || st === 'H' || item.check_in_time) {
+        hadir++;
+      } else if (st.includes('SAKIT') || st === 'S') {
+        sakit++;
+      } else if (st.includes('IZIN') || st === 'I') {
+        izin++;
+      } else if (st.includes('ALPA') || st.includes('ALPHA') || st === 'A') {
+        alpa++;
+      } else {
+        hadir++;
+      }
+    });
+
+    const pct = total > 0 ? Math.round((hadir / total) * 100) : 100;
+    return { total, hadir, sakit, izin, alpa, pct };
+  }, [studentHistory]);
+
+  if (isStudentUser) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backBtn}
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+          >
+            <Feather name="arrow-left" size={22} color={Colors.secondary} />
+          </TouchableOpacity>
+          <View style={styles.headerTitleWrap}>
+            <Text style={styles.headerTitle}>Presensi Siswa</Text>
+            <View style={styles.headerBadge}>
+              <Text style={styles.headerBadgeText}>Verifikasi Wajah & Lokasi GPS</Text>
+            </View>
+          </View>
+          <TouchableOpacity 
+            style={styles.refreshBtn}
+            onPress={handleRefresh}
+            activeOpacity={0.7}
+          >
+            <Feather name="refresh-cw" size={18} color={Colors.primary} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.scrollContent}
+          contentContainerStyle={{ paddingBottom: 110, paddingHorizontal: 16, paddingTop: 16 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} colors={['#EA580C']} />
+          }
+        >
+          {/* Banner PJJ */}
+          {isStudentPjj && (
+            <View style={styles.studentPjjBanner}>
+              <Ionicons name="home" size={20} color="#059669" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.studentPjjTitle}>MODE PJJ AKTIF (BEBAS RADIUS)</Text>
+                <Text style={styles.studentPjjDesc}>
+                  Kelas Anda hari ini terjadwal Pembelajaran Jarak Jauh. Anda dapat absen masuk & pulang mandiri dari rumah tanpa batas jarak radius sekolah.
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Banner Pendaftaran Wajah (Face ID) */}
+          <View style={[styles.studentFaceCard, !isStudentFaceReg && styles.studentFaceCardWarn]}>
+            <View style={styles.studentFaceLeft}>
+              <View style={[styles.studentFaceIconCircle, !isStudentFaceReg && { backgroundColor: '#FFEDD5' }]}>
+                <Ionicons 
+                  name={isStudentFaceReg ? "checkmark-circle" : "scan-outline"} 
+                  size={24} 
+                  color={isStudentFaceReg ? "#059669" : "#EA580C"} 
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.studentFaceTitle}>
+                  {isStudentFaceReg ? 'Face ID Siswa Terverifikasi' : 'Face ID Belum Terdaftar'}
+                </Text>
+                <Text style={styles.studentFaceDesc}>
+                  {isStudentFaceReg
+                    ? 'Data biometrik wajah Anda aktif untuk presensi sekolah.'
+                    : 'Daftarkan wajah sekarang agar dapat melakukan presensi mandiri.'}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[styles.studentFaceBtn, !isStudentFaceReg && styles.studentFaceBtnOrange]}
+              onPress={() => {
+                setStudentModalMode('register');
+                setIsStudentFaceModalOpen(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="camera-outline" size={15} color="#FFF" />
+              <Text style={styles.studentFaceBtnText}>
+                {isStudentFaceReg ? 'Perbarui Wajah' : 'Daftar Wajah'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Card Presensi Hari Ini */}
+          <View style={styles.studentTodayCard}>
+            <View style={styles.studentTodayHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={styles.todayIconCircle}>
+                  <Ionicons name="calendar-outline" size={18} color="#2563EB" />
+                </View>
+                <View>
+                  <Text style={styles.studentTodayTitle}>Presensi Hari Ini</Text>
+                  <Text style={styles.studentTodayDate}>
+                    {new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                  </Text>
+                </View>
+              </View>
+              <View style={[styles.studentStatusPill, studentAttStatus?.check_in_time ? styles.pillSuccess : styles.pillPending]}>
+                <Text style={[styles.studentStatusPillText, studentAttStatus?.check_in_time ? { color: '#059669' } : { color: '#64748B' }]}>
+                  {studentAttStatus?.check_in_time ? (studentAttStatus.status || 'Hadir') : 'Belum Absen'}
+                </Text>
+              </View>
+            </View>
+
+            {/* In & Out Grid */}
+            <View style={styles.studentInOutGrid}>
+              {/* Masuk */}
+              <View style={styles.studentInOutCol}>
+                <View style={styles.studentColHeader}>
+                  <Ionicons name="log-in-outline" size={16} color={studentAttStatus?.check_in_time ? "#059669" : "#64748B"} />
+                  <Text style={styles.studentColTitle}>JAM MASUK</Text>
+                </View>
+                <Text style={[styles.studentColTime, studentAttStatus?.check_in_time && { color: '#065F46' }]}>
+                  {studentAttStatus?.check_in_time
+                    ? new Date(studentAttStatus.check_in_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB'
+                    : '-- : --'}
+                </Text>
+                <Text style={styles.studentColNote}>
+                  {studentAttStatus?.check_in_time ? 'Tercatat di server' : 'Wajib scan wajah & GPS'}
+                </Text>
+              </View>
+
+              <View style={styles.studentGridDivider} />
+
+              {/* Pulang */}
+              <View style={styles.studentInOutCol}>
+                <View style={styles.studentColHeader}>
+                  <Ionicons name="log-out-outline" size={16} color={studentAttStatus?.check_out_time ? "#059669" : "#64748B"} />
+                  <Text style={styles.studentColTitle}>JAM PULANG</Text>
+                </View>
+                <Text style={[styles.studentColTime, studentAttStatus?.check_out_time && { color: '#065F46' }]}>
+                  {studentAttStatus?.check_out_time
+                    ? new Date(studentAttStatus.check_out_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB'
+                    : '-- : --'}
+                </Text>
+                <Text style={styles.studentColNote}>
+                  {studentAttStatus?.check_out_time ? 'Tercatat di server' : (studentAttStatus?.check_in_time ? 'Buka kamera saat jam pulang' : 'Belum absen masuk')}
+                </Text>
+              </View>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={{ marginTop: 14 }}>
+              {!studentAttStatus?.check_in_time ? (
+                <TouchableOpacity
+                  style={[styles.studentActionBtn, { backgroundColor: '#2563EB' }]}
+                  onPress={() => {
+                    if (!isStudentFaceReg) {
+                      setToast({
+                        visible: true,
+                        message: 'Silakan daftarkan Face ID terlebih dahulu sebelum absen masuk.',
+                        type: 'warning',
+                      });
+                      setStudentModalMode('register');
+                      setIsStudentFaceModalOpen(true);
+                      return;
+                    }
+                    setStudentAttAction('check-in');
+                    setStudentModalMode('attendance');
+                    setIsStudentFaceModalOpen(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="camera" size={18} color="#FFF" />
+                  <Text style={styles.studentActionBtnText}>📸 Lakukan Absen Masuk Sekarang</Text>
+                </TouchableOpacity>
+              ) : !studentAttStatus?.check_out_time ? (
+                <TouchableOpacity
+                  style={[styles.studentActionBtn, { backgroundColor: '#EA580C' }]}
+                  onPress={() => {
+                    if (!isStudentFaceReg) {
+                      setToast({
+                        visible: true,
+                        message: 'Silakan daftarkan Face ID terlebih dahulu sebelum absen pulang.',
+                        type: 'warning',
+                      });
+                      setStudentModalMode('register');
+                      setIsStudentFaceModalOpen(true);
+                      return;
+                    }
+                    setStudentAttAction('check-out');
+                    setStudentModalMode('attendance');
+                    setIsStudentFaceModalOpen(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="camera" size={18} color="#FFF" />
+                  <Text style={styles.studentActionBtnText}>📸 Lakukan Absen Pulang Sekarang</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.studentDoneBanner}>
+                  <Ionicons name="checkmark-done-circle" size={22} color="#059669" />
+                  <Text style={styles.studentDoneBannerText}>Presensi Masuk & Pulang Selesai Hari Ini</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Statistik Kehadiran 30 Hari */}
+          <View style={styles.studentStatsCard}>
+            <Text style={styles.studentStatsTitle}>Statistik Kehadiran (30 Hari Terakhir)</Text>
+            <View style={styles.studentStatsGrid}>
+              <View style={[styles.studentStatBox, { backgroundColor: '#EFF6FF' }]}>
+                <Text style={[styles.studentStatVal, { color: '#1D4ED8' }]}>{studentAttStats.hadir}</Text>
+                <Text style={styles.studentStatLbl}>Hadir</Text>
+              </View>
+              <View style={[styles.studentStatBox, { backgroundColor: '#FEF3C7' }]}>
+                <Text style={[styles.studentStatVal, { color: '#B45309' }]}>{studentAttStats.sakit}</Text>
+                <Text style={styles.studentStatLbl}>Sakit</Text>
+              </View>
+              <View style={[styles.studentStatBox, { backgroundColor: '#F3E8FF' }]}>
+                <Text style={[styles.studentStatVal, { color: '#7E22CE' }]}>{studentAttStats.izin}</Text>
+                <Text style={styles.studentStatLbl}>Izin</Text>
+              </View>
+              <View style={[styles.studentStatBox, { backgroundColor: '#FEE2E2' }]}>
+                <Text style={[styles.studentStatVal, { color: '#B91C1C' }]}>{studentAttStats.alpa}</Text>
+                <Text style={styles.studentStatLbl}>Alpa</Text>
+              </View>
+              <View style={[styles.studentStatBox, { backgroundColor: '#ECFDF5' }]}>
+                <Text style={[styles.studentStatVal, { color: '#047857' }]}>{studentAttStats.pct}%</Text>
+                <Text style={styles.studentStatLbl}>Rasio</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Histori Kehadiran */}
+          <View style={{ marginTop: 18 }}>
+            <Text style={styles.studentHistoryHeader}>Riwayat Presensi Siswa</Text>
+            {studentHistory.length === 0 ? (
+              <View style={styles.studentEmptyBox}>
+                <Ionicons name="calendar-outline" size={36} color="#CBD5E1" />
+                <Text style={styles.studentEmptyTitle}>Belum Ada Riwayat Presensi</Text>
+                <Text style={styles.studentEmptySubtitle}>
+                  Data presensi harian Anda akan ditampilkan di sini setelah Anda melakukan absen masuk & pulang.
+                </Text>
+              </View>
+            ) : (
+              studentHistory.map((item: any, idx: number) => {
+                const dateStr = item.date ? new Date(item.date).toLocaleDateString('id-ID', {
+                  weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'
+                }) : `Hari ke-${idx + 1}`;
+
+                const inTime = item.check_in_time 
+                  ? new Date(item.check_in_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB'
+                  : '-';
+                const outTime = item.check_out_time
+                  ? new Date(item.check_out_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB'
+                  : '-';
+
+                return (
+                  <View key={item.id ? String(item.id) : String(idx)} style={styles.studentHistoryItem}>
+                    <View style={styles.historyItemTop}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Ionicons name="time-outline" size={16} color="#64748B" />
+                        <Text style={styles.historyItemDate}>{dateStr}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 6 }}>
+                        {Boolean(item.is_pjj) && (
+                          <View style={styles.historyPjjBadge}>
+                            <Text style={styles.historyPjjText}>PJJ</Text>
+                          </View>
+                        )}
+                        <View style={[
+                          styles.historyStatusBadge,
+                          item.status === 'Hadir' || item.check_in_time ? styles.hBadgeSuccess : styles.hBadgeDefault
+                        ]}>
+                          <Text style={[
+                            styles.historyStatusText,
+                            item.status === 'Hadir' || item.check_in_time ? { color: '#047857' } : { color: '#64748B' }
+                          ]}>
+                            {item.status || 'Hadir'}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    <View style={styles.historyTimesRow}>
+                      <View style={styles.historyTimeCol}>
+                        <Text style={styles.historyTimeLabel}>Masuk</Text>
+                        <Text style={styles.historyTimeVal}>{inTime}</Text>
+                      </View>
+                      <View style={styles.historyTimeCol}>
+                        <Text style={styles.historyTimeLabel}>Pulang</Text>
+                        <Text style={styles.historyTimeVal}>{outTime}</Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        </ScrollView>
+
+        {/* Face Attendance & Register Modal */}
+        <StudentFaceModal
+          visible={isStudentFaceModalOpen}
+          onClose={() => setIsStudentFaceModalOpen(false)}
+          mode={studentModalMode}
+          attendanceAction={studentAttAction}
+          isPjj={isStudentPjj}
+          schoolLocation={studentSchoolLoc}
+          studentName={userData?.name}
+          onSuccess={() => {
+            handleRefresh();
+            if (studentModalMode === 'register') {
+              setIsStudentFaceReg(true);
+              setToast({
+                visible: true,
+                message: 'Face ID siswa berhasil didaftarkan!',
+                type: 'success',
+              });
+            } else {
+              setToast({
+                visible: true,
+                message: studentAttAction === 'check-in' 
+                  ? 'Presensi Masuk berhasil dicatat!' 
+                  : 'Presensi Pulang berhasil dicatat!',
+                type: 'success',
+              });
+            }
+          }}
+        />
+
+        <Toast
+          visible={toast.visible}
+          message={toast.message}
+          type={toast.type}
+          onDismiss={() => setToast(prev => ({ ...prev, visible: false }))}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -2334,5 +2751,331 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
+  },
+  studentPjjBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#A7F3D0',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+  },
+  studentPjjTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#059669',
+    letterSpacing: 0.5,
+  },
+  studentPjjDesc: {
+    fontSize: 12,
+    color: '#065F46',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  studentFaceCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 14,
+  },
+  studentFaceCardWarn: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FED7AA',
+  },
+  studentFaceLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  studentFaceIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#ECFDF5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  studentFaceTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  studentFaceDesc: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  studentFaceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#059669',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  studentFaceBtnOrange: {
+    backgroundColor: '#EA580C',
+  },
+  studentFaceBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  studentTodayCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    marginBottom: 14,
+  },
+  studentTodayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  todayIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  studentTodayTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  studentTodayDate: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  studentStatusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  pillSuccess: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  pillPending: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
+  },
+  studentStatusPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  studentInOutGrid: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  studentInOutCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  studentColHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  studentColTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  studentColTime: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#334155',
+  },
+  studentColNote: {
+    fontSize: 10,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  studentGridDivider: {
+    width: 1,
+    height: 44,
+    backgroundColor: '#CBD5E1',
+    marginHorizontal: 8,
+  },
+  studentActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  studentActionBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  studentDoneBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  studentDoneBannerText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  studentStatsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 14,
+  },
+  studentStatsTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1E293B',
+    marginBottom: 10,
+  },
+  studentStatsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  studentStatBox: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  studentStatVal: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  studentStatLbl: {
+    fontSize: 10,
+    color: '#64748B',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  studentHistoryHeader: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1E293B',
+    marginBottom: 10,
+  },
+  studentEmptyBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 6,
+  },
+  studentEmptyTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  studentEmptySubtitle: {
+    fontSize: 11,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  studentHistoryItem: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 8,
+  },
+  historyItemTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  historyItemDate: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  historyPjjBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  historyPjjText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  historyStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  hBadgeSuccess: {
+    backgroundColor: '#D1FAE5',
+  },
+  hBadgeDefault: {
+    backgroundColor: '#F1F5F9',
+  },
+  historyStatusText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  historyTimesRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 8,
+  },
+  historyTimeCol: {
+    flex: 1,
+  },
+  historyTimeLabel: {
+    fontSize: 10,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  historyTimeVal: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginTop: 2,
   },
 });
