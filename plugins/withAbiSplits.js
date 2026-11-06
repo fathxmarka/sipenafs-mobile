@@ -9,7 +9,7 @@ module.exports = function withAbiSplits(config) {
         abi {
             reset()
             enable true
-            universalApk false
+            universalApk true
             include "armeabi-v7a", "arm64-v8a", "x86_64"
         }
     }
