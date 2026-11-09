@@ -42,11 +42,10 @@ if (!GITHUB_TOKEN) {
 }
 
 const releaseNotes = `## Apa yang Baru di Versi ${version}
-- **CBT Jawaban Bergambar:** Siswa dapat melihat gambar pada pilihan jawaban (opsi A-E) dengan tampilan responsif langsung di kartu jawaban arena CBT.
-- **CBT Multi-Rombel (Rombongan Belajar):** Pembuatan dan pengeditan ujian mendukung pemilihan sasaran multi-rombel menggunakan chip filter interaktif ("Pilih Semua Rombel" / "Batal Semua").
-- **Dukungan Pilihan Ganda Kompleks (PGK):** Multi-select centang interaktif untuk soal jenis PGK dengan indikator status terjawab real-time.
-- **Upload Foto Lembar Jawaban Esai:** Siswa dapat mengambil foto lembar jawaban esai via kamera belakang perangkat dan mengunggahnya langsung ke server CBT.
-- **Bypass Token Ujian Biometrik:** Ujian tanpa token (opsional diatur guru/admin) dapat langsung dimulai siswa tanpa hambatan popup token manual.`;
+- **Auto-Detect Arsitektur 32-bit & 64-bit:** Aplikasi kini secara otomatis mendeteksi apakah ponsel pengguna berbasis 32-bit (HP jadul / entry-level) atau 64-bit (HP modern). Saat pembaruan, ponsel 32-bit akan otomatis mengunduh paket 32-bit (armeabi-v7a) yang 100% kompatibel tanpa error.
+- **Dukungan Maksimal HP Jadul:** Menambahkan izin kelonggaran hardware pada AndroidManifest agar ponsel tanpa sensor biometrik atau kamera autofocus tetap dapat menginstal dan memperbarui aplikasi secara lancar.
+- **Ketersediaan Varian APK Lengkap:** Menyediakan varian Universal APK, ARM64-v8a, dan ARMv7 32-bit di rilis GitHub.
+- **CBT Jawaban Bergambar & Multi-Rombel:** Siswa dapat melihat gambar pada pilihan jawaban (opsi A-E) dan guru dapat menentukan multi-rombel sasaran ujian.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
@@ -152,19 +151,33 @@ async function main() {
 
     const assetsToUpload = [];
 
-    // Siapkan file APK utama (arm64 atau universal atau release)
-    const primarySrc = fs.existsSync(arm64Apk) ? arm64Apk : (fs.existsSync(universalApk) ? universalApk : (fs.existsSync(releaseApk) ? releaseApk : null));
-    if (primarySrc) {
-        const dest = path.join(releaseDir, `sipenafs-mobile-${tagName}.apk`);
-        fs.copyFileSync(primarySrc, dest);
-        assetsToUpload.push({ path: dest, name: `sipenafs-mobile-${tagName}.apk` });
+    // 1. Siapkan file APK UNIVERSAL (Sangat kompatibel untuk semua HP)
+    if (fs.existsSync(universalApk)) {
+        const destUniversal = path.join(releaseDir, `sipenafs-mobile-${tagName}-universal.apk`);
+        fs.copyFileSync(universalApk, destUniversal);
+        assetsToUpload.push({ path: destUniversal, name: `sipenafs-mobile-${tagName}-universal.apk` });
     }
 
-    // Siapkan armeabi-v7a jika ada
+    // 2. Siapkan file APK 64-bit arm64-v8a (Untuk HP modern 64-bit)
+    if (fs.existsSync(arm64Apk)) {
+        const destArm64 = path.join(releaseDir, `sipenafs-mobile-${tagName}-arm64.apk`);
+        fs.copyFileSync(arm64Apk, destArm64);
+        assetsToUpload.push({ path: destArm64, name: `sipenafs-mobile-${tagName}-arm64.apk` });
+    }
+
+    // 3. Siapkan file APK 32-bit armeabi-v7a (Khusus HP jadul 32-bit)
     if (fs.existsSync(armeabiApk)) {
         const destV7a = path.join(releaseDir, `sipenafs-mobile-${tagName}-armeabi-v7a.apk`);
         fs.copyFileSync(armeabiApk, destV7a);
         assetsToUpload.push({ path: destV7a, name: `sipenafs-mobile-${tagName}-armeabi-v7a.apk` });
+    }
+
+    // 4. File APK Utama (Default untuk download manual: utamakan universal agar aman 100% untuk semua HP)
+    const primarySrc = fs.existsSync(universalApk) ? universalApk : (fs.existsSync(arm64Apk) ? arm64Apk : (fs.existsSync(releaseApk) ? releaseApk : null));
+    if (primarySrc) {
+        const dest = path.join(releaseDir, `sipenafs-mobile-${tagName}.apk`);
+        fs.copyFileSync(primarySrc, dest);
+        assetsToUpload.push({ path: dest, name: `sipenafs-mobile-${tagName}.apk` });
     }
 
     if (assetsToUpload.length === 0) {

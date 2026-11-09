@@ -222,14 +222,23 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
 
           {/* Version Comparison Badge */}
           {!isDownloading && !downloadSuccess && (
-            <View style={styles.versionContainer}>
-              <View style={styles.versionBadgeOld}>
-                <Text style={styles.versionBadgeOldText}>v{updateInfo.currentVersion}</Text>
+            <View style={{ alignItems: 'center', marginBottom: 12 }}>
+              <View style={styles.versionContainer}>
+                <View style={styles.versionBadgeOld}>
+                  <Text style={styles.versionBadgeOldText}>v{updateInfo.currentVersion}</Text>
+                </View>
+                <Ionicons name="arrow-forward" size={16} color="#94A3B8" style={{ marginHorizontal: 8 }} />
+                <View style={styles.versionBadgeNew}>
+                  <Text style={styles.versionBadgeNewText}>v{updateInfo.latestVersion.replace(/^v/i, '')}</Text>
+                </View>
               </View>
-              <Ionicons name="arrow-forward" size={16} color="#94A3B8" style={{ marginHorizontal: 8 }} />
-              <View style={styles.versionBadgeNew}>
-                <Text style={styles.versionBadgeNewText}>v{updateInfo.latestVersion.replace(/^v/i, '')}</Text>
-              </View>
+              {Boolean(updateInfo.architecture) && (
+                <View style={{ marginTop: 6, backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12, borderWidth: 1, borderColor: '#BBF7D0' }}>
+                  <Text style={{ fontSize: 11, color: '#166534', fontWeight: '700' }}>
+                    ⚙️ Paket Terdeteksi: {updateInfo.architecture}
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 

@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import * as Device from 'expo-device';
 
 export interface AppUpdateInfo {
   hasUpdate: boolean;
@@ -7,6 +8,7 @@ export interface AppUpdateInfo {
   releaseName: string;
   releaseNotes: string;
   downloadUrl: string;
+  architecture?: string;
 }
 
 /**
@@ -78,20 +80,42 @@ export async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
       };
     }
 
-    // Cari file APK di daftar assets rilis GitHub
+    // Auto-detect arsitektur perangkat (32-bit vs 64-bit)
+    const supportedArchitectures = (Device.supportedCpuArchitectures || []).map((a: string) => a.toLowerCase());
+    const is64Bit = supportedArchitectures.some((a: string) => a.includes('64') || a.includes('arm64'));
+    let detectedArchLabel = is64Bit ? '64-bit (arm64-v8a)' : '32-bit (armeabi-v7a)';
+
+    // Cari file APK di daftar assets rilis GitHub sesuai arsitektur perangkat
     let apkDownloadUrl = '';
     if (Array.isArray(data.assets) && data.assets.length > 0) {
-      const universalAsset = data.assets.find((asset: any) =>
-        asset.name && asset.name.toLowerCase().includes('universal') && asset.name.toLowerCase().endsWith('.apk')
+      const v7aAsset = data.assets.find((asset: any) =>
+        asset.name && (asset.name.toLowerCase().includes('v7a') || asset.name.toLowerCase().includes('32bit') || asset.name.toLowerCase().includes('armeabi')) && asset.name.toLowerCase().endsWith('.apk')
       );
       const arm64Asset = data.assets.find((asset: any) =>
         asset.name && asset.name.toLowerCase().includes('arm64') && asset.name.toLowerCase().endsWith('.apk')
       );
-      const anyApkAsset = data.assets.find((asset: any) =>
-        asset.name && asset.name.toLowerCase().endsWith('.apk')
+      const universalAsset = data.assets.find((asset: any) =>
+        asset.name && asset.name.toLowerCase().includes('universal') && asset.name.toLowerCase().endsWith('.apk')
+      );
+      const mainApkAsset = data.assets.find((asset: any) =>
+        asset.name && !asset.name.toLowerCase().includes('v7a') && !asset.name.toLowerCase().includes('armeabi') && asset.name.toLowerCase().endsWith('.apk')
       );
 
-      const chosenAsset = universalAsset || arm64Asset || anyApkAsset;
+      let chosenAsset = null;
+      if (!is64Bit && supportedArchitectures.length > 0) {
+        // HP JADUL / ENTRY-LEVEL (32-BIT): Wajib pilih APK 32-bit agar tidak error "Aplikasi tidak kompatibel"
+        chosenAsset = v7aAsset || universalAsset || mainApkAsset;
+        detectedArchLabel = '32-bit (armeabi-v7a)';
+      } else {
+        // HP MODERN (64-BIT): Pilih APK arm64 atau main APK, fallback ke universal
+        chosenAsset = arm64Asset || mainApkAsset || universalAsset;
+        detectedArchLabel = '64-bit (arm64-v8a)';
+      }
+
+      if (!chosenAsset) {
+        chosenAsset = universalAsset || mainApkAsset || data.assets[0];
+      }
+
       if (chosenAsset && chosenAsset.browser_download_url) {
         apkDownloadUrl = chosenAsset.browser_download_url;
       } else if (data.assets[0]?.browser_download_url) {
@@ -111,6 +135,7 @@ export async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
       releaseName: data.name || `Pembaruan Versi ${latestVersion}`,
       releaseNotes: data.body || 'Peningkatan stabilitas dan fitur terbaru aplikasi SIPENAFS.',
       downloadUrl: apkDownloadUrl,
+      architecture: detectedArchLabel,
     };
   } catch (error) {
     // Silent fail agar aplikasi tetap bisa berjalan normal saat offline
