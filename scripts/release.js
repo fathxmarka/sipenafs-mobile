@@ -41,7 +41,47 @@ if (!GITHUB_TOKEN) {
     process.exit(1);
 }
 
-const releaseNotes = `## Apa yang Baru di Versi ${version}
+const releaseNotes = `## 📥 PANDUAN & LINK DOWNLOAD APK SIPENAFS MOBILE
+
+Pilih link unduh di bawah ini sesuai dengan kondisi perangkat Anda:
+
+---
+
+### 1. 🌟 Link Download Utama (UNIVERSAL - Rekomendasi Semua HP)
+> **Kompatibel untuk SEMUA tipe HP Android (HP Modern 64-bit maupun HP Jadul 32-bit).**
+> Gunakan link ini jika Anda tidak yakin dengan spesifikasi HP Anda agar dijamin 100% langsung terpasang tanpa error *"Aplikasi tidak kompatibel"*.
+
+👉 **[Download SIPENAFS Universal APK (Semua HP)](https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile-universal.apk)**  
+*(Link alternatif: [sipenafs-mobile.apk](https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile.apk))*
+
+---
+
+### 2. 📱 Khusus HP Jadul / Entry-Level (32-Bit / armeabi-v7a)
+> **Ukuran Lebih Ringan (~51 MB).**  
+> Dikhususkan untuk ponsel lama atau spek entry-level yang berarsitektur 32-bit.
+
+👉 **[Download SIPENAFS Khusus HP 32-Bit](https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile-32bit.apk)**  
+*(Link varian tag: [sipenafs-mobile-${tagName}-armeabi-v7a.apk](https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile-${tagName}-armeabi-v7a.apk))*
+
+---
+
+### 3. 🚀 Khusus HP Modern (64-Bit / arm64-v8a)
+> **Ukuran Ringan & Performa Maksimal (~59 MB).**  
+> Dikhususkan untuk ponsel keluaran terbaru yang berarsitektur 64-bit.
+
+👉 **[Download SIPENAFS Khusus HP 64-Bit](https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile-64bit.apk)**  
+*(Link varian tag: [sipenafs-mobile-${tagName}-arm64.apk](https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile-${tagName}-arm64.apk))*
+
+---
+
+## ⚡ Tautan Permanen Versi Terbaru (Selalu Mengarah ke Rilis Paling Baru)
+- **Universal (Semua HP):** \`https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile.apk\`
+- **Khusus 32-Bit:** \`https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-32bit.apk\`
+- **Khusus 64-Bit:** \`https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk\`
+
+---
+
+## 📋 Apa yang Baru di Versi ${version}:
 - **Auto-Detect Arsitektur 32-bit & 64-bit:** Aplikasi kini secara otomatis mendeteksi apakah ponsel pengguna berbasis 32-bit (HP jadul / entry-level) atau 64-bit (HP modern). Saat pembaruan, ponsel 32-bit akan otomatis mengunduh paket 32-bit (armeabi-v7a) yang 100% kompatibel tanpa error.
 - **Dukungan Maksimal HP Jadul:** Menambahkan izin kelonggaran hardware pada AndroidManifest agar ponsel tanpa sensor biometrik atau kamera autofocus tetap dapat menginstal dan memperbarui aplikasi secara lancar.
 - **Ketersediaan Varian APK Lengkap:** Menyediakan varian Universal APK, ARM64-v8a, dan ARMv7 32-bit di rilis GitHub.
@@ -156,6 +196,11 @@ async function main() {
         const destUniversal = path.join(releaseDir, `sipenafs-mobile-${tagName}-universal.apk`);
         fs.copyFileSync(universalApk, destUniversal);
         assetsToUpload.push({ path: destUniversal, name: `sipenafs-mobile-${tagName}-universal.apk` });
+
+        // Asset statis permanen Universal
+        const destStaticUniversal = path.join(releaseDir, 'sipenafs-mobile-universal.apk');
+        fs.copyFileSync(universalApk, destStaticUniversal);
+        assetsToUpload.push({ path: destStaticUniversal, name: 'sipenafs-mobile-universal.apk' });
     }
 
     // 2. Siapkan file APK 64-bit arm64-v8a (Untuk HP modern 64-bit)
@@ -163,6 +208,11 @@ async function main() {
         const destArm64 = path.join(releaseDir, `sipenafs-mobile-${tagName}-arm64.apk`);
         fs.copyFileSync(arm64Apk, destArm64);
         assetsToUpload.push({ path: destArm64, name: `sipenafs-mobile-${tagName}-arm64.apk` });
+
+        // Asset statis permanen 64-bit
+        const destStatic64 = path.join(releaseDir, 'sipenafs-mobile-64bit.apk');
+        fs.copyFileSync(arm64Apk, destStatic64);
+        assetsToUpload.push({ path: destStatic64, name: 'sipenafs-mobile-64bit.apk' });
     }
 
     // 3. Siapkan file APK 32-bit armeabi-v7a (Khusus HP jadul 32-bit)
@@ -170,6 +220,11 @@ async function main() {
         const destV7a = path.join(releaseDir, `sipenafs-mobile-${tagName}-armeabi-v7a.apk`);
         fs.copyFileSync(armeabiApk, destV7a);
         assetsToUpload.push({ path: destV7a, name: `sipenafs-mobile-${tagName}-armeabi-v7a.apk` });
+
+        // Asset statis permanen 32-bit
+        const destStatic32 = path.join(releaseDir, 'sipenafs-mobile-32bit.apk');
+        fs.copyFileSync(armeabiApk, destStatic32);
+        assetsToUpload.push({ path: destStatic32, name: 'sipenafs-mobile-32bit.apk' });
     }
 
     // 4. File APK Utama (Default untuk download manual: utamakan universal agar aman 100% untuk semua HP)
@@ -178,6 +233,11 @@ async function main() {
         const dest = path.join(releaseDir, `sipenafs-mobile-${tagName}.apk`);
         fs.copyFileSync(primarySrc, dest);
         assetsToUpload.push({ path: dest, name: `sipenafs-mobile-${tagName}.apk` });
+
+        // Asset statis utama sipenafs-mobile.apk (Universal)
+        const destStaticMain = path.join(releaseDir, 'sipenafs-mobile.apk');
+        fs.copyFileSync(primarySrc, destStaticMain);
+        assetsToUpload.push({ path: destStaticMain, name: 'sipenafs-mobile.apk' });
     }
 
     if (assetsToUpload.length === 0) {
