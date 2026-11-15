@@ -96,7 +96,14 @@ export default function HomeScreen() {
       const apiUrlStored = await SecureStore.getItemAsync('sipena_api_url');
       const token = await SecureStore.getItemAsync('sipena_token');
 
-      if (storedUser) setUserData(JSON.parse(storedUser));
+      if (storedUser) {
+        const parsed = JSON.parse(storedUser);
+        if ((parsed.role === 'student' || parsed.role === 'siswa') && !parsed.nisn && parsed.username) {
+          parsed.nisn = parsed.username;
+        }
+        setUserData(parsed);
+        if (parsed.class_name) setStudentClassName(parsed.class_name);
+      }
       if (storedSchool) setSchoolName(storedSchool);
       if (apiUrlStored) setApiUrl(apiUrlStored);
 
@@ -216,13 +223,30 @@ export default function HomeScreen() {
               const attData = resAtt.value.data;
               setStudentAttStatus(attData.data || null);
               setIsStudentPjj(Boolean(attData.is_pjj));
-              if (attData.class_name) setStudentClassName(attData.class_name);
+              if (attData.class_name) {
+                setStudentClassName(attData.class_name);
+                setUserData((prev: any) => prev ? ({ ...prev, class_name: attData.class_name }) : prev);
+              }
               if (attData.school) setSchoolLocation(attData.school);
             }
 
             if (resMe.status === 'fulfilled' && resMe.value.data) {
               const studentData = resMe.value.data.data || resMe.value.data;
               setIsFaceRegistered(Boolean(studentData?.face_descriptor));
+              const freshClass = studentData.class_name || 
+                                 studentData.class?.name || 
+                                 (studentData.enrollments && studentData.enrollments[0]?.class?.name);
+              if (freshClass) setStudentClassName(freshClass);
+              setUserData((prev: any) => {
+                const updated = {
+                  ...prev,
+                  ...studentData,
+                  nisn: studentData.nisn || prev?.nisn || prev?.username,
+                  class_name: freshClass || prev?.class_name,
+                };
+                SecureStore.setItemAsync('sipena_user', JSON.stringify(updated)).catch(() => {});
+                return updated;
+              });
             }
           } catch (e: any) {
             console.warn('Fetch student attendance error:', e.message);
@@ -802,8 +826,8 @@ export default function HomeScreen() {
             <View style={[styles.greetingSection, { backgroundColor: '#EFF6FF', marginHorizontal: 16, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: '#BFDBFE' }]}>
               <View style={styles.greetingLeft}>
                 <Text style={[styles.greetingText, { color: '#2563EB', fontWeight: '700' }]}>Semangat Belajar, Juara! 🎓</Text>
-                <Text style={styles.userName}>{userData?.name || 'Ahmad Fauzan'}</Text>
-                <Text style={styles.userRole}>NISN: {userData?.nisn || '0087654321'} • Kelas XII MIPA 1</Text>
+                <Text style={styles.userName}>{userData?.name || 'Siswa'}</Text>
+                <Text style={styles.userRole}>NISN: {userData?.nisn || userData?.username || '-'} • Kelas {studentClassName || userData?.class_name || userData?.class?.name || userData?.kelas || '-'}</Text>
               </View>
               <TouchableOpacity
                 onPress={() => router.push('/(tabs)/profil' as any)}
@@ -1119,7 +1143,7 @@ export default function HomeScreen() {
               <View style={styles.greetingLeft}>
                 <Text style={[styles.greetingText, { color: '#EC4899', fontWeight: '700' }]}>Selamat Datang Bapak/Ibu Wali 👨‍👩‍👧‍👦</Text>
                 <Text style={styles.userName}>{userData?.name || 'Orang Tua / Wali'}</Text>
-                <Text style={styles.userRole}>Wali Murid dari: {userData?.student_name || 'Ahmad Fauzan (XII MIPA 1)'}</Text>
+                <Text style={styles.userRole}>Wali Murid dari: {userData?.student_name || 'Ananda'}{userData?.class_name ? ` (${userData.class_name})` : ''}</Text>
               </View>
               <TouchableOpacity
                 onPress={() => router.push('/(tabs)/profil' as any)}

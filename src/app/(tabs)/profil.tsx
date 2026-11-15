@@ -140,6 +140,17 @@ export default function ProfilScreen() {
               if (resMe.status === 'fulfilled' && resMe.value.data) {
                 const sData = resMe.value.data.data || resMe.value.data;
                 setIsFaceRegistered(Boolean(sData?.face_descriptor));
+                const freshClass = sData.class_name || sData.class?.name || (sData.enrollments && sData.enrollments[0]?.class?.name);
+                setUserData((prev: any) => {
+                  const updated = {
+                    ...prev,
+                    ...sData,
+                    nisn: sData.nisn || prev?.nisn || prev?.username,
+                    class_name: freshClass || prev?.class_name,
+                  };
+                  SecureStore.setItemAsync('sipena_user', JSON.stringify(updated)).catch(() => {});
+                  return updated;
+                });
               }
               if (resAtt.status === 'fulfilled' && resAtt.value.data?.school) {
                 setSchoolLocation(resAtt.value.data.school);
@@ -364,6 +375,13 @@ export default function ProfilScreen() {
                 {userData?.nip || userData?.nisn || userData?.nis || userData?.username || '-'}
               </Text>
             </View>
+
+            {isStudent && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoKey}>Kelas</Text>
+                <Text style={styles.infoVal}>{userData?.class_name || userData?.class?.name || '-'}</Text>
+              </View>
+            )}
 
             <View style={styles.infoRow}>
               <Text style={styles.infoKey}>Nomor Telepon / WA</Text>

@@ -429,7 +429,10 @@ export default function LoginScreen() {
               const resStudent = await axios.post(`${schoolApiUrl}/api/auth/student/login`, { username: cleanUsername, password: cleanPassword });
               if (resStudent.data && resStudent.data.success) {
                 loginSuccess = true;
-                userData = resStudent.data.user;
+                userData = {
+                  ...resStudent.data.user,
+                  nisn: resStudent.data.user?.nisn || resStudent.data.user?.username || cleanUsername,
+                };
                 token = resStudent.data.token;
               }
             } catch (errStudent: any) {
