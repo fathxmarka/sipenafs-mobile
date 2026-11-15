@@ -82,10 +82,11 @@ Pilih link unduh di bawah ini sesuai dengan kondisi perangkat Anda:
 ---
 
 ## 📋 Apa yang Baru di Versi ${version}:
-- **Auto-Detect Arsitektur 32-bit & 64-bit:** Aplikasi kini secara otomatis mendeteksi apakah ponsel pengguna berbasis 32-bit (HP jadul / entry-level) atau 64-bit (HP modern). Saat pembaruan, ponsel 32-bit akan otomatis mengunduh paket 32-bit (armeabi-v7a) yang 100% kompatibel tanpa error.
-- **Dukungan Maksimal HP Jadul:** Menambahkan izin kelonggaran hardware pada AndroidManifest agar ponsel tanpa sensor biometrik atau kamera autofocus tetap dapat menginstal dan memperbarui aplikasi secara lancar.
-- **Ketersediaan Varian APK Lengkap:** Menyediakan varian Universal APK, ARM64-v8a, dan ARMv7 32-bit di rilis GitHub.
-- **CBT Jawaban Bergambar & Multi-Rombel:** Siswa dapat melihat gambar pada pilihan jawaban (opsi A-E) dan guru dapat menentukan multi-rombel sasaran ujian.`;
+- **Sinkronisasi Dinamis NISN & Kelas Siswa:** Menampilkan NISN riil dan nama kelas resmi siswa langsung dari database master (tanpa fallback teks contoh).
+- **Auto-Sync Profil Siswa:** Aplikasi otomatis menyelaraskan data siswa terbaru (NISN, NIS, nama kelas) saat dashboard beranda dibuka.
+- **Rincian Kelas di Menu Profil:** Menambahkan baris informasi kelas aktif pada menu rincian akun profil siswa.
+- **Auto-Detect Arsitektur 32-bit & 64-bit:** Aplikasi secara otomatis mendeteksi arsitektur ponsel (32-bit untuk HP lama vs 64-bit untuk HP modern) saat pembaruan in-app APK.
+- **Ketersediaan Varian APK Lengkap:** Menyediakan varian Universal APK, ARM64-v8a, dan ARMv7 32-bit di rilis GitHub.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
