@@ -82,11 +82,10 @@ Pilih link unduh di bawah ini sesuai dengan kondisi perangkat Anda:
 ---
 
 ## 📋 Apa yang Baru di Versi ${version}:
-- **Sinkronisasi Dinamis NISN & Kelas Siswa:** Menampilkan NISN riil dan nama kelas resmi siswa langsung dari database master (tanpa fallback teks contoh).
-- **Auto-Sync Profil Siswa:** Aplikasi otomatis menyelaraskan data siswa terbaru (NISN, NIS, nama kelas) saat dashboard beranda dibuka.
-- **Rincian Kelas di Menu Profil:** Menambahkan baris informasi kelas aktif pada menu rincian akun profil siswa.
-- **Auto-Detect Arsitektur 32-bit & 64-bit:** Aplikasi secara otomatis mendeteksi arsitektur ponsel (32-bit untuk HP lama vs 64-bit untuk HP modern) saat pembaruan in-app APK.
-- **Ketersediaan Varian APK Lengkap:** Menyediakan varian Universal APK, ARM64-v8a, dan ARMv7 32-bit di rilis GitHub.`;
+- **Kesiapan Penuh CBT Mobile & Anti-Cheat:** Penguatan modul CBT Android dengan wacana/soal cerita yang responsif, dukungan soal dan opsi jawaban bergambar, serta mode pilihan ganda tunggal (PG) & kompleks (PGK).
+- **AI Proctoring Kamera Depan & Esai Kamera Belakang:** Pengawasan AI Proctoring kamera depan dengan deteksi wajah, serta integrasi kamera belakang instan untuk memfoto coretan lembar jawaban esai siswa.
+- **Dual-Layer Auto-Save & Offline Resilience:** Progres jawaban siswa tersimpan ganda (penyimpanan lokal instan 0ms dan sinkronisasi berkala ke database server) dengan status tersimpan otomatis.
+- **Peningkatan Performa & Kompatibilitas:** Peningkatan responsivitas di semua varian Android (Universal, ARM64, dan ARMv7 32-bit).`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
