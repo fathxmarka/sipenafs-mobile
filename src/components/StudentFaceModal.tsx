@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal, View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Animated, Easing, Dimensions, Platform
+  ActivityIndicator, Animated, Easing, Dimensions, Platform, Alert
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
@@ -67,6 +68,7 @@ export const StudentFaceModal: React.FC<StudentFaceModalProps> = ({
 }) => {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const cameraRef = useRef<any>(null);
+  const router = useRouter();
 
   // States
   const [isProcessing, setIsProcessing] = useState(false);
@@ -229,6 +231,19 @@ export const StudentFaceModal: React.FC<StudentFaceModalProps> = ({
       if (!apiUrl || !token) {
         setErrorMessage('Sesi berakhir. Silakan login kembali.');
         setIsProcessing(false);
+        Alert.alert(
+          'Sesi Berakhir',
+          'Token login tidak ditemukan atau telah berakhir. Silakan masuk kembali.',
+          [
+            {
+              text: 'Login Ulang',
+              onPress: async () => {
+                onClose();
+                router.replace('/login');
+              },
+            },
+          ]
+        );
         return;
       }
 
@@ -304,6 +319,36 @@ export const StudentFaceModal: React.FC<StudentFaceModalProps> = ({
       }
     } catch (err: any) {
       console.log('Attendance submit error:', err?.response?.data || err?.message);
+      const isAuthExpired =
+        err?.response?.status === 401 ||
+        (err?.response?.data?.message || '').toLowerCase().includes('token') ||
+        (err?.response?.data?.message || '').toLowerCase().includes('kadaluarsa') ||
+        (err?.response?.data?.message || '').toLowerCase().includes('sesi');
+
+      if (isAuthExpired) {
+        setErrorMessage('Sesi akun Anda telah berakhir (kadaluarsa). Silakan login ulang.');
+        setIsProcessing(false);
+        Alert.alert(
+          'Sesi Telah Berakhir',
+          'Sesi login Anda telah kadaluarsa demi keamanan. Silakan login kembali dengan NISN Anda.',
+          [
+            {
+              text: 'Login Ulang Sekarang',
+              onPress: async () => {
+                await SecureStore.deleteItemAsync('sipena_token');
+                onClose();
+                router.replace('/login');
+              },
+            },
+            {
+              text: 'Tutup',
+              style: 'cancel',
+            },
+          ]
+        );
+        return;
+      }
+
       const msg = err?.response?.data?.message || err?.message || 'Terjadi kesalahan sistem.';
       setErrorMessage(msg);
       setIsProcessing(false);

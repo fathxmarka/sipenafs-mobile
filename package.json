@@ -1,7 +1,7 @@
 {
   "name": "sipenafs-mobile",
   "main": "expo-router/entry",
-  "version": "1.0.24",
+  "version": "1.0.25",
   "dependencies": {
     "@expo/ui": "~57.0.12",
     "@expo/vector-icons": "^15.0.2",

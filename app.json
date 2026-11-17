@@ -2,7 +2,7 @@
   "expo": {
     "name": "sipenafs-mobile",
     "slug": "sipenafs-mobile",
-    "version": "1.0.24",
+    "version": "1.0.25",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "sipenafsmobile",
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.sipenafs.mobile",
-      "versionCode": 25,
+      "versionCode": 26,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

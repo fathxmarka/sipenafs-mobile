@@ -82,6 +82,7 @@ Pilih link unduh di bawah ini sesuai dengan kondisi perangkat Anda:
 ---
 
 ## 📋 Apa yang Baru di Versi ${version}:
+- **Perbaikan Token & Penanganan Sesi Login:** Mengatasi kendala token kadaluarsa saat pendaftaran Face ID dan presensi dengan penanganan sesi otomatis serta opsi 1-klik Login Ulang.
 - **Kesiapan Penuh CBT Mobile & Anti-Cheat:** Penguatan modul CBT Android dengan wacana/soal cerita yang responsif, dukungan soal dan opsi jawaban bergambar, serta mode pilihan ganda tunggal (PG) & kompleks (PGK).
 - **AI Proctoring Kamera Depan & Esai Kamera Belakang:** Pengawasan AI Proctoring kamera depan dengan deteksi wajah, serta integrasi kamera belakang instan untuk memfoto coretan lembar jawaban esai siswa.
 - **Dual-Layer Auto-Save & Offline Resilience:** Progres jawaban siswa tersimpan ganda (penyimpanan lokal instan 0ms dan sinkronisasi berkala ke database server) dengan status tersimpan otomatis.
