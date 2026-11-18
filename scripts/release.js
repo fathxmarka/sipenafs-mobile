@@ -41,52 +41,35 @@ if (!GITHUB_TOKEN) {
     process.exit(1);
 }
 
-const releaseNotes = `## 📥 PANDUAN & LINK DOWNLOAD APK SIPENAFS MOBILE
+const releaseNotes = `PANDUAN & LINK DOWNLOAD APK SIPENAFS MOBILE
 
 Pilih link unduh di bawah ini sesuai dengan kondisi perangkat Anda:
 
----
+1. Link Download Utama (UNIVERSAL - Rekomendasi Semua HP)
+Kompatibel untuk SEMUA tipe HP Android (HP Modern 64-bit maupun HP Jadul 32-bit).
+Gunakan link ini jika Anda tidak yakin dengan spesifikasi HP Anda agar dijamin 100% langsung terpasang tanpa kendala.
 
-### 1. 🌟 Link Download Utama (UNIVERSAL - Rekomendasi Semua HP)
-> **Kompatibel untuk SEMUA tipe HP Android (HP Modern 64-bit maupun HP Jadul 32-bit).**
-> Gunakan link ini jika Anda tidak yakin dengan spesifikasi HP Anda agar dijamin 100% langsung terpasang tanpa error *"Aplikasi tidak kompatibel"*.
+Download SIPENAFS Universal APK (Semua HP): https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile-universal.apk
+Link alternatif: https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile.apk
 
-👉 **[Download SIPENAFS Universal APK (Semua HP)](https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile-universal.apk)**  
-*(Link alternatif: [sipenafs-mobile.apk](https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile.apk))*
+2. Khusus HP Jadul / Entry-Level (32-Bit / armeabi-v7a)
+Ukuran Lebih Ringan (~51 MB), dikhususkan untuk ponsel lama atau spek entry-level berarsitektur 32-bit:
+https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile-32bit.apk
 
----
+3. Khusus HP Modern (64-Bit / arm64-v8a)
+Ukuran Ringan & Performa Maksimal (~59 MB), dikhususkan untuk ponsel keluaran terbaru berarsitektur 64-bit:
+https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile-64bit.apk
 
-### 2. 📱 Khusus HP Jadul / Entry-Level (32-Bit / armeabi-v7a)
-> **Ukuran Lebih Ringan (~51 MB).**  
-> Dikhususkan untuk ponsel lama atau spek entry-level yang berarsitektur 32-bit.
+Tautan Permanen Versi Terbaru:
+- Universal: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile.apk
+- Khusus 32-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-32bit.apk
+- Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
-👉 **[Download SIPENAFS Khusus HP 32-Bit](https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile-32bit.apk)**  
-*(Link varian tag: [sipenafs-mobile-${tagName}-armeabi-v7a.apk](https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile-${tagName}-armeabi-v7a.apk))*
-
----
-
-### 3. 🚀 Khusus HP Modern (64-Bit / arm64-v8a)
-> **Ukuran Ringan & Performa Maksimal (~59 MB).**  
-> Dikhususkan untuk ponsel keluaran terbaru yang berarsitektur 64-bit.
-
-👉 **[Download SIPENAFS Khusus HP 64-Bit](https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile-64bit.apk)**  
-*(Link varian tag: [sipenafs-mobile-${tagName}-arm64.apk](https://github.com/${GITHUB_REPO}/releases/download/${tagName}/sipenafs-mobile-${tagName}-arm64.apk))*
-
----
-
-## ⚡ Tautan Permanen Versi Terbaru (Selalu Mengarah ke Rilis Paling Baru)
-- **Universal (Semua HP):** \`https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile.apk\`
-- **Khusus 32-Bit:** \`https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-32bit.apk\`
-- **Khusus 64-Bit:** \`https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk\`
-
----
-
-## 📋 Apa yang Baru di Versi ${version}:
-- **Perbaikan Token & Penanganan Sesi Login:** Mengatasi kendala token kadaluarsa saat pendaftaran Face ID dan presensi dengan penanganan sesi otomatis serta opsi 1-klik Login Ulang.
-- **Kesiapan Penuh CBT Mobile & Anti-Cheat:** Penguatan modul CBT Android dengan wacana/soal cerita yang responsif, dukungan soal dan opsi jawaban bergambar, serta mode pilihan ganda tunggal (PG) & kompleks (PGK).
-- **AI Proctoring Kamera Depan & Esai Kamera Belakang:** Pengawasan AI Proctoring kamera depan dengan deteksi wajah, serta integrasi kamera belakang instan untuk memfoto coretan lembar jawaban esai siswa.
-- **Dual-Layer Auto-Save & Offline Resilience:** Progres jawaban siswa tersimpan ganda (penyimpanan lokal instan 0ms dan sinkronisasi berkala ke database server) dengan status tersimpan otomatis.
-- **Peningkatan Performa & Kompatibilitas:** Peningkatan responsivitas di semua varian Android (Universal, ARM64, dan ARMv7 32-bit).`;
+Apa yang Baru di Versi ${version}:
+• Ruang Ujian Siswa Lebih Cepat: Tampilan dan proses pengerjaan soal asesmen CBT kini jauh lebih ringan, responsif, dan stabil.
+• Efisiensi Kamera & Hemat Daya: Pengawasan kamera AI dan sinkronisasi ujian berjalan lebih lancar serta hemat konsumsi baterai.
+• Sinkronisasi Jadwal Otomatis: Daftar asesmen dan kuis aktif tersinkronisasi langsung dengan kelas siswa secara akurat.
+• Peningkatan Keamanan & Performa: Peningkatan stabilitas koneksi jaringan serta perbaikan performa umum aplikasi.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {

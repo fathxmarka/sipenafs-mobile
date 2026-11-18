@@ -117,7 +117,7 @@ export default function CbtScreen() {
   const [user, setUser] = useState<any>(null);
   const [token, setToken] = useState<string>('');
   const [apiUrl, setApiUrl] = useState<string>('');
-  const [role, setRole] = useState<'guru' | 'siswa' | 'admin'>('guru');
+  const [role, setRole] = useState<'guru' | 'siswa' | 'admin'>('siswa');
 
   // Master Data
   const [exams, setExams] = useState<Exam[]>([]);
@@ -365,7 +365,39 @@ export default function CbtScreen() {
       setApiUrl(storedApiUrl);
 
       const roleStr = (userObj.role || '').toLowerCase();
-      const detectedRole = roleStr.includes('guru') ? 'guru' : (roleStr.includes('siswa') ? 'siswa' : 'admin');
+      const isStudent = 
+        Boolean(userObj.student_id) || 
+        roleStr.includes('siswa') || 
+        roleStr.includes('student') || 
+        roleStr.includes('murid');
+
+      const isTeacher = 
+        !isStudent && (
+          Boolean(userObj.teacher_id) || 
+          roleStr.includes('guru') || 
+          roleStr.includes('teacher') || 
+          roleStr.includes('pendidik')
+        );
+
+      const isAdmin = 
+        !isStudent && !isTeacher && (
+          roleStr.includes('admin') || 
+          roleStr.includes('operator') || 
+          roleStr.includes('superadmin') || 
+          userObj.role_id === 1
+        );
+
+      let detectedRole: 'guru' | 'siswa' | 'admin' = 'siswa';
+      if (isStudent) {
+        detectedRole = 'siswa';
+      } else if (isTeacher) {
+        detectedRole = 'guru';
+      } else if (isAdmin) {
+        detectedRole = 'admin';
+      } else {
+        // Fallback default paling aman: Siswa (tidak boleh default ke admin/guru)
+        detectedRole = 'siswa';
+      }
       setRole(detectedRole);
 
       if (detectedRole === 'guru' || detectedRole === 'admin') {
@@ -499,6 +531,10 @@ export default function CbtScreen() {
   };
 
   const openCreateExamModal = () => {
+    if (role === 'siswa') {
+      showToast('Akses ditolak: Fitur ini khusus untuk pendidik/guru.', 'error');
+      return;
+    }
     const now = new Date();
     const startStr = now.toISOString().slice(0, 16).replace('T', ' ');
     const end = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -532,6 +568,10 @@ export default function CbtScreen() {
   };
 
   const openEditExamModal = (exam: Exam) => {
+    if (role === 'siswa') {
+      showToast('Akses ditolak: Siswa tidak diizinkan mengubah ujian.', 'error');
+      return;
+    }
     setEditingExamId(exam.id);
     setExamForm({
       title: exam.title,
@@ -613,6 +653,10 @@ export default function CbtScreen() {
   };
 
   const handleDeleteExam = (exam: Exam) => {
+    if (role === 'siswa') {
+      showToast('Akses ditolak: Siswa tidak diizinkan menghapus ujian.', 'error');
+      return;
+    }
     Alert.alert(
       'Hapus Ujian?',
       `Seluruh data soal dan riwayat nilai untuk "${exam.title}" akan dihapus permanen.`,
@@ -641,6 +685,10 @@ export default function CbtScreen() {
   // TEACHER: QUESTIONS & PASSAGES (SOAL CERITA) MANAGEMENT
   // -------------------------------------------------------------
   const openQuestionsModal = async (exam: Exam) => {
+    if (role === 'siswa') {
+      showToast('Akses ditolak: Siswa tidak diizinkan mengelola soal.', 'error');
+      return;
+    }
     setSelectedExamForQuestions(exam);
     setIsQuestionsModalOpen(true);
     setQuestionTab('list');
@@ -902,6 +950,10 @@ export default function CbtScreen() {
   // TEACHER: STANDALONE BANK SOAL MANAGEMENT (KAPAN SAJA)
   // -------------------------------------------------------------
   const openStandaloneBankModal = async () => {
+    if (role === 'siswa') {
+      showToast('Akses ditolak: Siswa tidak diizinkan mengakses bank soal.', 'error');
+      return;
+    }
     setIsStandaloneBankModalOpen(true);
     setStandaloneBankTab('list');
     setEditingBankQuestionId(null);
@@ -1342,6 +1394,10 @@ Format JSON array murni tanpa pembuka/penutup markdown:
   // TEACHER: LIVE MONITORING & RESULTS
   // -------------------------------------------------------------
   const openResultsModal = async (exam: Exam) => {
+    if (role === 'siswa') {
+      showToast('Akses ditolak: Siswa tidak diizinkan memantau nilai ujian.', 'error');
+      return;
+    }
     setSelectedExamForResults(exam);
     setIsResultsModalOpen(true);
     setLoadingResults(true);
@@ -1760,9 +1816,9 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       ) : (
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* ==================================================== */}
-          {/* ROLE VIEW: TEACHER (GURU)                            */}
+          {/* ROLE VIEW: TEACHER (GURU) / ADMIN                    */}
           {/* ==================================================== */}
-          {(role === 'guru' || role === 'admin') && (
+          {role !== 'siswa' && (role === 'guru' || role === 'admin') && (
             <View>
               {/* Stat Cards */}
               <View style={styles.statsRow}>
@@ -2075,7 +2131,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       {/* ======================================================== */}
       {/* MODAL 1: TEACHER CREATE / EDIT EXAM                       */}
       {/* ======================================================== */}
-      <Modal visible={isExamModalOpen} transparent animationType="slide" onRequestClose={() => setIsExamModalOpen(false)}>
+      <Modal visible={role !== 'siswa' && isExamModalOpen} transparent animationType="slide" onRequestClose={() => setIsExamModalOpen(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { maxHeight: '90%' }]}>
             <View style={styles.modalHeader}>
@@ -2408,7 +2464,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       {/* ======================================================== */}
       {/* MODAL 2: QUESTIONS & SOAL CERITA MANAGEMENT              */}
       {/* ======================================================== */}
-      <Modal visible={isQuestionsModalOpen} transparent animationType="slide" onRequestClose={() => setIsQuestionsModalOpen(false)}>
+      <Modal visible={role !== 'siswa' && isQuestionsModalOpen} transparent animationType="slide" onRequestClose={() => setIsQuestionsModalOpen(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { maxHeight: '92%' }]}>
             <View style={styles.modalHeader}>
@@ -2765,7 +2821,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       {/* MODAL: TUKAR / GANTI SOAL DARI BANK SOAL                */}
       {/* ======================================================== */}
       <Modal
-        visible={isSwapModalOpen}
+        visible={role !== 'siswa' && isSwapModalOpen}
         transparent
         animationType="slide"
         onRequestClose={() => {
@@ -2967,7 +3023,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       {/* MODAL: STANDALONE GUDANG & BANK SOAL INDEPENDEN          */}
       {/* ======================================================== */}
       <Modal
-        visible={isStandaloneBankModalOpen}
+        visible={role !== 'siswa' && isStandaloneBankModalOpen}
         transparent
         animationType="slide"
         onRequestClose={() => setIsStandaloneBankModalOpen(false)}
@@ -4244,7 +4300,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       {/* ======================================================== */}
       {/* MODAL 3: LIVE RESULTS & MONITORING FOR TEACHER           */}
       {/* ======================================================== */}
-      <Modal visible={isResultsModalOpen} transparent animationType="slide" onRequestClose={() => setIsResultsModalOpen(false)}>
+      <Modal visible={role !== 'siswa' && isResultsModalOpen} transparent animationType="slide" onRequestClose={() => setIsResultsModalOpen(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { maxHeight: '90%' }]}>
             <View style={styles.modalHeader}>
@@ -4313,7 +4369,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       {/* ======================================================== */}
       {/* MODAL 4: PROCTOR VIOLATION LOGS                           */}
       {/* ======================================================== */}
-      <Modal visible={isLogsModalOpen} transparent animationType="slide" onRequestClose={() => setIsLogsModalOpen(false)}>
+      <Modal visible={role !== 'siswa' && isLogsModalOpen} transparent animationType="slide" onRequestClose={() => setIsLogsModalOpen(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { maxHeight: '75%' }]}>
             <View style={styles.modalHeader}>

@@ -21,6 +21,39 @@ interface UpdateModalProps {
   onDismiss: () => void;
 }
 
+function cleanReleaseNotes(notes?: string): string {
+  if (!notes) return 'Peningkatan performa, perbaikan bugs, dan kestabilan sistem aplikasi.';
+
+  let text = notes;
+
+  // Jika ada bagian "Apa yang Baru", prioritaskan ambil bagian tersebut agar ringkas & fokus
+  const match = text.match(/(?:Apa yang Baru|Pembaruan|Perubahan|Yang Baru)[\s\S]*$/i);
+  if (match) {
+    text = match[0];
+  }
+
+  // 1. Hapus simbol bintang-bintang markdown (**, *)
+  text = text.replace(/\*{1,3}/g, '');
+
+  // 2. Hapus simbol tanda pagar header (###, ##, #)
+  text = text.replace(/^#{1,6}\s*/gm, '');
+
+  // 3. Bersihkan link markdown [Label](url) -> Label
+  text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+  // 4. Hapus backticks (`)
+  text = text.replace(/`/g, '');
+
+  // 5. Hapus blockquote (>) dan garis pemisah (---)
+  text = text.replace(/^>\s*/gm, '');
+  text = text.replace(/^-{3,}\s*$/gm, '');
+
+  // 6. Rapikan baris kosong berlebih
+  text = text.replace(/\n{3,}/g, '\n\n');
+
+  return text.trim() || 'Peningkatan performa, perbaikan bugs, dan kestabilan sistem aplikasi.';
+}
+
 export const UpdateModal: React.FC<UpdateModalProps> = ({
   visible,
   updateInfo,
@@ -282,9 +315,9 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                 style={styles.notesScroll}
                 showsVerticalScrollIndicator={true}
               >
-                <Text style={styles.releaseNameText}>{updateInfo.releaseName}</Text>
+                <Text style={styles.releaseNameText}>{cleanReleaseNotes(updateInfo.releaseName)}</Text>
                 <Text style={styles.notesContent}>
-                  {updateInfo.releaseNotes.trim() || 'Peningkatan performa, perbaikan bugs, dan kestabilan sistem aplikasi.'}
+                  {cleanReleaseNotes(updateInfo.releaseNotes)}
                 </Text>
               </ScrollView>
             </View>
