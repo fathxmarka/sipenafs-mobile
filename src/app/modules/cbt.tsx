@@ -333,7 +333,7 @@ export default function CbtScreen() {
 
   // Active In-Exam AI Face Proctoring & Violation Lock States
   const proctorCameraRef = useRef<any>(null);
-  const [proctorFaceStatus, setProctorFaceStatus] = useState<'ok' | 'warning' | 'no_face' | 'multiple'>('ok');
+  const [proctorFaceStatus, setProctorFaceStatus] = useState<'ok' | 'warning' | 'no_face' | 'multiple' | 'wrong_person'>('ok');
   const [proctorAlertBanner, setProctorAlertBanner] = useState<string | null>(null);
   const [lockedModalInfo, setLockedModalInfo] = useState<{
     visible: boolean;
@@ -349,6 +349,9 @@ export default function CbtScreen() {
   }, [lockedModalInfo]);
 
   const missedFaceStreakRef = useRef(0);
+  const studentFaceDescriptorRef = useRef<string | null>(null);
+  const wrongPersonStreakRef = useRef(0);
+  const biometricScanTickRef = useRef(0);
   const isFaceScanningRef = useRef(false);
   const isPreCheckScanningRef = useRef(false);
   const studentAnswersRef = useRef<{ [questionId: string]: any }>({});
@@ -1819,7 +1822,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       const res = await axios.get(`${apiUrl}/api/exams/student/${exam.id}`, {
         headers: {
           Authorization: `Bearer ${token}`,
-          'X-App-Version': '1.0.28',
+          'X-App-Version': '1.0.29',
           'X-Client-Platform': Platform.OS,
         },
       });
@@ -1846,11 +1849,29 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       initialWindowHeightRef.current = Dimensions.get('window').height;
       examJustStartedUntilRef.current = Date.now() + 2500;
       missedFaceStreakRef.current = 0;
+      wrongPersonStreakRef.current = 0;
+      biometricScanTickRef.current = 0;
       isFaceScanningRef.current = false;
       isHandlingLockViolationRef.current = false;
       setIsCameraBoxMinimized(false);
       setProctorFaceStatus('ok');
       setProctorAlertBanner(null);
+
+      // Siapkan deteksi biometrik anti-joki (face-api.js on-device 128-d) jika siswa punya face_descriptor terdaftar
+      studentFaceDescriptorRef.current = null;
+      const rawFaceDesc = res.data?.student?.face_descriptor;
+      if (rawFaceDesc) {
+        try {
+          const parsedDesc = typeof rawFaceDesc === 'string' ? JSON.parse(rawFaceDesc) : rawFaceDesc;
+          if (Array.isArray(parsedDesc) && parsedDesc.length === 128) {
+            const descStr = JSON.stringify(parsedDesc);
+            studentFaceDescriptorRef.current = descStr;
+            if (Platform.OS === 'android' && mergedExam.proctor_enabled && mergedExam.proctor_face_detect !== false && FaceProctorNative?.initFaceRecognizer) {
+              FaceProctorNative.initFaceRecognizer(descStr).catch(() => {});
+            }
+          }
+        } catch {}
+      }
 
       // Aktifkan FLAG_SECURE (blokir screenshot & screen recording) + KEEP_SCREEN_ON
       if (Platform.OS === 'android' && FaceProctorNative?.setSecureExamMode) {
@@ -1943,6 +1964,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       // Matikan FLAG_SECURE & tutup arena ujian segera agar siswa tidak bisa melihat soal lagi
       if (Platform.OS === 'android' && FaceProctorNative?.setSecureExamMode) {
         FaceProctorNative.setSecureExamMode(false);
+        FaceProctorNative.releaseFaceRecognizer?.();
       }
       setIsStudentExamModalOpen(false);
       setIsNavDrawerOpen(false);
@@ -2252,12 +2274,22 @@ Format JSON array murni tanpa pembuka/penutup markdown:
 
         if (!photo?.uri) return;
 
-        const detection = await FaceProctorNative.detectFaces(photo.uri, true);
+        const shouldRunBiometric = Boolean(
+          Platform.OS === 'android' &&
+          studentFaceDescriptorRef.current &&
+          FaceProctorNative?.verifyFaceIdentity &&
+          biometricScanTickRef.current % 2 === 0
+        );
+        biometricScanTickRef.current += 1;
+
+        const detection = await FaceProctorNative.detectFaces(photo.uri, !shouldRunBiometric);
         const faceCount = Number(detection?.faceCount || 0);
         const studentId = user?.student_id || user?.id;
 
         if (faceCount === 0) {
+          if (shouldRunBiometric) FaceProctorNative?.deleteTempFile?.(photo.uri);
           missedFaceStreakRef.current += 1;
+          wrongPersonStreakRef.current = 0;
           const streak = missedFaceStreakRef.current;
 
           setProctorFaceStatus('no_face');
@@ -2284,7 +2316,9 @@ Format JSON array murni tanpa pembuka/penutup markdown:
             }
           }
         } else if (faceCount > 1) {
+          if (shouldRunBiometric) FaceProctorNative?.deleteTempFile?.(photo.uri);
           missedFaceStreakRef.current = 0;
+          wrongPersonStreakRef.current = 0;
           setProctorFaceStatus('multiple');
           setIsCameraBoxMinimized(false);
           setProctorAlertBanner(`⚠️ PERINGATAN AI PROCTORING: Terdeteksi ${faceCount} wajah di depan kamera! Pastikan Anda mengerjakan ujian sendirian.`);
@@ -2306,13 +2340,71 @@ Format JSON array murni tanpa pembuka/penutup markdown:
             ).catch(() => {});
           }
         } else {
-          // faceCount === 1 -> Normal! Hentikan alarm & bersihkan peringatan
+          // faceCount === 1 -> Lanjutkan verifikasi biometrik Anti-Joki (face-api.js 128-d on-device, threshold 0.68)
           missedFaceStreakRef.current = 0;
-          setProctorFaceStatus('ok');
-          setProctorAlertBanner(null);
-          try {
-            FaceProctorNative?.stopWarningAlarm();
-          } catch {}
+
+          if (shouldRunBiometric) {
+            let bioRes: any = null;
+            try {
+              bioRes = await FaceProctorNative.verifyFaceIdentity(photo.uri, 0.68, true);
+            } catch {
+              FaceProctorNative?.deleteTempFile?.(photo.uri);
+            }
+
+            if (bioRes?.checked === true && bioRes?.isMatch === false) {
+              wrongPersonStreakRef.current += 1;
+              const jokiStreak = wrongPersonStreakRef.current;
+
+              // Toleransi 2 kali scan biometrik beruntun (~12 detik) agar bebas false alarm dari 1 frame buram
+              if (jokiStreak >= 2) {
+                setProctorFaceStatus('wrong_person');
+                setIsCameraBoxMinimized(false);
+                setProctorAlertBanner('⚠️ PERINGATAN JOKI UJIAN: Wajah Anda tidak cocok dengan data siswa terdaftar! Kejadian ini dicatat ke Pengawas.');
+
+                try {
+                  Vibration.vibrate([0, 400, 150, 400]);
+                  FaceProctorNative.playWarningAlarm('Peringatan! Wajah Anda tidak cocok dengan data pendaftaran! Joki ujian terdeteksi.');
+                } catch {}
+
+                // Log ke backend pada pelanggaran ke-2, lalu tiap 2 siklus berikutnya
+                if (jokiStreak === 2 || (jokiStreak > 2 && (jokiStreak - 2) % 2 === 0)) {
+                  if (token && apiUrl && activeStudentExam) {
+                    const distTxt = typeof bioRes.distance === 'number' && bioRes.distance > 0
+                      ? ` (jarak kemiripan: ${bioRes.distance.toFixed(2)})`
+                      : '';
+                    axios.post(
+                      `${apiUrl}/api/exams/${activeStudentExam.id}/proctor-logs`,
+                      {
+                        student_id: studentId,
+                        type: 'WRONG_PERSON',
+                        details: `Peringatan: Wajah Anda tidak cocok dengan data pendaftaran! Joki Ujian terdeteksi di Android${distTxt}.`,
+                      },
+                      { headers: { Authorization: `Bearer ${token}` } }
+                    ).catch(() => {});
+                  }
+                }
+              }
+            } else if (bioRes?.checked === true && bioRes?.isMatch === true) {
+              wrongPersonStreakRef.current = 0;
+              setProctorFaceStatus('ok');
+              setProctorAlertBanner(null);
+              try {
+                FaceProctorNative?.stopWarningAlarm();
+              } catch {}
+            } else if (wrongPersonStreakRef.current < 2) {
+              setProctorFaceStatus('ok');
+              setProctorAlertBanner(null);
+              try {
+                FaceProctorNative?.stopWarningAlarm();
+              } catch {}
+            }
+          } else if (wrongPersonStreakRef.current < 2) {
+            setProctorFaceStatus('ok');
+            setProctorAlertBanner(null);
+            try {
+              FaceProctorNative?.stopWarningAlarm();
+            } catch {}
+          }
         }
       } catch (err) {
         // Lewati frame jika kamera sedang sibuk
@@ -2329,6 +2421,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       clearInterval(monitorTimer);
       isFaceScanningRef.current = false;
       try { FaceProctorNative?.stopWarningAlarm(); } catch {}
+      try { FaceProctorNative?.releaseFaceRecognizer?.(); } catch {}
     };
   }, [isStudentExamModalOpen, activeStudentExam, cameraPermission?.granted, isAnswerCameraModalOpen, isSubmittingExam]);
 
@@ -2526,10 +2619,11 @@ Format JSON array murni tanpa pembuka/penutup markdown:
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      // Bersihkan FLAG_SECURE, alarm, & penanda sesi aktif
+      // Bersihkan FLAG_SECURE, alarm, face recognizer & penanda sesi aktif
       try {
         FaceProctorNative?.setSecureExamMode(false);
         FaceProctorNative?.stopWarningAlarm();
+        FaceProctorNative?.releaseFaceRecognizer?.();
       } catch {}
 
       if (studentId) {
@@ -5702,7 +5796,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                 style={[
                   styles.cameraBoxInner,
                   isCameraBoxMinimized && styles.cameraBoxInnerMinimized,
-                  (proctorFaceStatus === 'no_face' || proctorFaceStatus === 'multiple') && {
+                  (proctorFaceStatus === 'no_face' || proctorFaceStatus === 'multiple' || proctorFaceStatus === 'wrong_person') && {
                     borderColor: '#DC2626',
                     borderWidth: 2.5,
                   },
@@ -5750,6 +5844,8 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                       <Text style={styles.cameraStatusText}>
                         {proctorFaceStatus === 'ok'
                           ? 'WAJAH OK'
+                          : proctorFaceStatus === 'wrong_person'
+                          ? 'JOKI / BEDA!'
                           : proctorFaceStatus === 'multiple'
                           ? '>1 WAJAH!'
                           : 'WAJAH HILANG!'}
@@ -5766,7 +5862,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   <TouchableOpacity
                     style={[
                       styles.restoreCameraOverlay,
-                      (proctorFaceStatus === 'no_face' || proctorFaceStatus === 'multiple') && {
+                      (proctorFaceStatus === 'no_face' || proctorFaceStatus === 'multiple' || proctorFaceStatus === 'wrong_person') && {
                         backgroundColor: '#FEF2F2',
                       },
                     ]}
@@ -5789,7 +5885,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                         proctorFaceStatus !== 'ok' && { color: '#DC2626' },
                       ]}
                     >
-                      {proctorFaceStatus === 'ok' ? 'AI OK ⠿' : 'CEK WAJAH!'}
+                      {proctorFaceStatus === 'ok' ? 'AI OK ⠿' : proctorFaceStatus === 'wrong_person' ? 'WAJAH BEDA!' : 'CEK WAJAH!'}
                     </Text>
                   </TouchableOpacity>
                 )}
