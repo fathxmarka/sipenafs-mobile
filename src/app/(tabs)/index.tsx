@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  Platform, ActivityIndicator, Modal, Linking
+  Platform, ActivityIndicator, Modal, Linking, Alert, AppState
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Colors from '../../constants/Colors';
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { StudentFaceModal } from '../../components/StudentFaceModal';
 import { Toast, ToastType } from '../../components/ui/Toast';
 
@@ -84,9 +84,22 @@ export default function HomeScreen() {
     type: 'info',
   });
 
+  const isHandling401Ref = useRef(false);
+
   useEffect(() => {
-    loadData();
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        loadData();
+      }
+    });
+    return () => sub.remove();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [])
+  );
 
   const loadData = async () => {
     try {
@@ -103,6 +116,9 @@ export default function HomeScreen() {
         }
         setUserData(parsed);
         if (parsed.class_name) setStudentClassName(parsed.class_name);
+        if (parsed.has_face_id || parsed.face_descriptor) {
+          setIsFaceRegistered(true);
+        }
       }
       if (storedSchool) setSchoolName(storedSchool);
       if (apiUrlStored) setApiUrl(apiUrlStored);
@@ -232,21 +248,38 @@ export default function HomeScreen() {
 
             if (resMe.status === 'fulfilled' && resMe.value.data) {
               const studentData = resMe.value.data.data || resMe.value.data;
-              setIsFaceRegistered(Boolean(studentData?.face_descriptor));
+              const hasFace = Boolean(studentData?.face_descriptor || studentData?.has_face_id);
+              setIsFaceRegistered(hasFace);
               const freshClass = studentData.class_name || 
                                  studentData.class?.name || 
                                  (studentData.enrollments && studentData.enrollments[0]?.class?.name);
               if (freshClass) setStudentClassName(freshClass);
               setUserData((prev: any) => {
+                // Jangan simpan string 2.6 KB face_descriptor ke Android SecureStore (limit 2048 byte!)
+                const { face_descriptor: _omitFaceDesc, ...safeStudent } = studentData || {};
                 const updated = {
                   ...prev,
-                  ...studentData,
-                  nisn: studentData.nisn || prev?.nisn || prev?.username,
+                  ...safeStudent,
+                  has_face_id: hasFace,
+                  nisn: safeStudent.nisn || prev?.nisn || prev?.username,
                   class_name: freshClass || prev?.class_name,
                 };
                 SecureStore.setItemAsync('sipena_user', JSON.stringify(updated)).catch(() => {});
                 return updated;
               });
+            } else if (resMe.status === 'rejected' && resMe.reason?.response?.status === 401) {
+              // Sesi siswa berakhir karena baru login di perangkat lain (Web) -> arahkan login ulang bersih
+              if (!isHandling401Ref.current) {
+                isHandling401Ref.current = true;
+                await SecureStore.deleteItemAsync('sipena_token').catch(() => {});
+                Alert.alert(
+                  'Sesi Login Berakhir',
+                  'Akun Anda baru saja masuk di perangkat lain (Web/HP lain). Silakan login kembali untuk menyinkronkan data Face ID & ujian.',
+                  [{ text: 'Login Ulang', onPress: () => { isHandling401Ref.current = false; router.replace('/login'); } }],
+                  { cancelable: false }
+                );
+              }
+              return;
             }
           } catch (e: any) {
             console.warn('Fetch student attendance error:', e.message);

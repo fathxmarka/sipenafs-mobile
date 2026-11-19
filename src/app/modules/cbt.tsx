@@ -1822,7 +1822,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       const res = await axios.get(`${apiUrl}/api/exams/student/${exam.id}`, {
         headers: {
           Authorization: `Bearer ${token}`,
-          'X-App-Version': '1.0.29',
+          'X-App-Version': '1.0.30',
           'X-Client-Platform': Platform.OS,
         },
       });

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal, View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Animated, Easing, Dimensions, Platform, Alert
+  ActivityIndicator, Animated, Easing, Dimensions, Platform, Alert, NativeModules
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +11,7 @@ import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
 import Colors from '../constants/Colors';
 
+const FaceProctorNative = NativeModules.FaceProctorModule || null;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Helper Haversine formula
@@ -25,19 +26,6 @@ function getDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: numbe
     Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
-}
-
-// Generate normalized 128-d biometric descriptor
-function generateSimulatedDescriptor(): number[] {
-  const descriptor: number[] = [];
-  let sumSq = 0;
-  for (let i = 0; i < 128; i++) {
-    const val = (Math.random() - 0.5) * 0.2;
-    descriptor.push(val);
-    sumSq += val * val;
-  }
-  const norm = Math.sqrt(sumSq) || 1;
-  return descriptor.map(v => v / norm);
 }
 
 interface StudentFaceModalProps {
@@ -201,27 +189,35 @@ export const StudentFaceModal: React.FC<StudentFaceModalProps> = ({
     setErrorMessage(null);
 
     let base64Photo = '';
+    let photoUri = '';
     try {
       if (cameraRef.current) {
         const photoPromise = cameraRef.current.takePictureAsync({
           base64: true,
-          quality: 0.5,
-          skipProcessing: true,
+          quality: 0.6,
+          skipProcessing: false,
+          shutterSound: false,
         });
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 2500)
+          setTimeout(() => reject(new Error('timeout')), 6000)
         );
         const photoResult: any = await Promise.race([photoPromise, timeoutPromise]);
-        if (photoResult && photoResult.base64) {
+        if (photoResult?.base64) {
           base64Photo = `data:image/jpeg;base64,${photoResult.base64}`;
+        }
+        if (photoResult?.uri) {
+          photoUri = photoResult.uri;
         }
       }
     } catch (camErr) {
       console.log('Camera capture warning:', camErr);
     }
 
-    if (!base64Photo) {
-      base64Photo = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD_simulated_student_face';
+    if (!base64Photo || !photoUri) {
+      setErrorMessage('Gagal mengambil gambar dari kamera. Pastikan kamera tidak terhalang lalu tekan tombol di bawah untuk mengulangi.');
+      setStatusMessage('Pengambilan foto gagal, silakan ulangi.');
+      setIsProcessing(false);
+      return;
     }
 
     try {
@@ -229,6 +225,7 @@ export const StudentFaceModal: React.FC<StudentFaceModalProps> = ({
       const token = await SecureStore.getItemAsync('sipena_token');
 
       if (!apiUrl || !token) {
+        FaceProctorNative?.deleteTempFile?.(photoUri);
         setErrorMessage('Sesi berakhir. Silakan login kembali.');
         setIsProcessing(false);
         Alert.alert(
@@ -250,9 +247,28 @@ export const StudentFaceModal: React.FC<StudentFaceModalProps> = ({
       const headers = { Authorization: `Bearer ${token}` };
 
       if (mode === 'register') {
-        // --- MODE 1: REGISTRASI WAJAH SISWA ---
-        setStatusMessage('Menyimpan Data Wajah...');
-        const descriptor = generateSimulatedDescriptor();
+        // --- MODE 1: REGISTRASI BIOMETRIK WAJAH ASLI (face-api.js 128-d on-device, 100% sinkron dengan Web!) ---
+        setStatusMessage('Mengekstrak Biometrik Wajah 128-d...');
+        if (!FaceProctorNative?.extractFaceDescriptor) {
+          FaceProctorNative?.deleteTempFile?.(photoUri);
+          setErrorMessage('Modul biometrik wajah tidak tersedia di perangkat ini.');
+          setIsProcessing(false);
+          return;
+        }
+
+        const extractRes = await FaceProctorNative.extractFaceDescriptor(photoUri, true);
+        if (!extractRes?.ok || !Array.isArray(extractRes.descriptor) || extractRes.descriptor.length !== 128) {
+          setErrorMessage(
+            extractRes?.error ||
+              'Wajah belum terdeteksi jelas! Posisikan wajah di tengah bingkai pada ruangan cukup cahaya lalu coba lagi.'
+          );
+          setStatusMessage('Wajah belum terbaca jelas, silakan ulangi.');
+          setIsProcessing(false);
+          return;
+        }
+
+        setStatusMessage('Menyimpan Data Biometrik Wajah...');
+        const descriptor: number[] = extractRes.descriptor;
 
         const res = await axios.post(
           `${apiUrl}/api/students/face/register`,
@@ -261,8 +277,21 @@ export const StudentFaceModal: React.FC<StudentFaceModalProps> = ({
         );
 
         if (res.data?.success) {
+          // Simpan flag has_face_id=true ke SecureStore (tanpa menyimpan string 2.6 KB face_descriptor!)
+          try {
+            const rawU = await SecureStore.getItemAsync('sipena_user');
+            if (rawU) {
+              const uObj = JSON.parse(rawU);
+              delete uObj.face_descriptor;
+              uObj.has_face_id = true;
+              if (res.data?.photo) uObj.photo = res.data.photo;
+              await SecureStore.setItemAsync('sipena_user', JSON.stringify(uObj));
+            }
+          } catch {}
+
+          try { FaceProctorNative?.releaseFaceRecognizer?.(); } catch {}
           setIsFaceVerified(true);
-          setStatusMessage('Pendaftaran Wajah Berhasil!');
+          setStatusMessage('Pendaftaran Face ID Berhasil!');
           setTimeout(() => {
             onSuccess(res.data);
             onClose();
@@ -273,6 +302,22 @@ export const StudentFaceModal: React.FC<StudentFaceModalProps> = ({
         }
       } else {
         // --- MODE 2: PRESENSI MASUK / PULANG SISWA ---
+        if (FaceProctorNative?.detectFaces) {
+          try {
+            const det = await FaceProctorNative.detectFaces(photoUri, true);
+            if (!det || Number(det.faceCount || 0) === 0) {
+              setErrorMessage('Wajah tidak terdeteksi di kamera! Hadapkan wajah Anda ke kamera lalu coba lagi.');
+              setStatusMessage('Wajah tidak terdeteksi.');
+              setIsProcessing(false);
+              return;
+            }
+          } catch {
+            FaceProctorNative?.deleteTempFile?.(photoUri);
+          }
+        } else {
+          FaceProctorNative?.deleteTempFile?.(photoUri);
+        }
+
         const radius = schoolLocation?.geofence_radius || 100;
         if (!isPjj && distanceToSchool !== null && distanceToSchool > radius) {
           setErrorMessage(
@@ -462,6 +507,9 @@ export const StudentFaceModal: React.FC<StudentFaceModalProps> = ({
                 <CameraView
                   style={StyleSheet.absoluteFill}
                   facing="front"
+                  flash="off"
+                  animateShutter={false}
+                  mute={true}
                   ref={cameraRef}
                 />
 

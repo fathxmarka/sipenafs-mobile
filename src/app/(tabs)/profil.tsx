@@ -109,6 +109,9 @@ export default function ProfilScreen() {
       if (storedUser) {
         parsedUser = JSON.parse(storedUser);
         setUserData(parsedUser);
+        if (parsedUser.has_face_id || parsedUser.face_descriptor) {
+          setIsFaceRegistered(true);
+        }
       }
       if (storedSchool) setSchoolName(storedSchool);
       if (storedApi) setApiUrl(storedApi);
@@ -139,13 +142,16 @@ export default function ProfilScreen() {
               ]);
               if (resMe.status === 'fulfilled' && resMe.value.data) {
                 const sData = resMe.value.data.data || resMe.value.data;
-                setIsFaceRegistered(Boolean(sData?.face_descriptor));
+                const hasFace = Boolean(sData?.face_descriptor || sData?.has_face_id);
+                setIsFaceRegistered(hasFace);
                 const freshClass = sData.class_name || sData.class?.name || (sData.enrollments && sData.enrollments[0]?.class?.name);
                 setUserData((prev: any) => {
+                  const { face_descriptor: _omitFaceDesc, ...safeSData } = sData || {};
                   const updated = {
                     ...prev,
-                    ...sData,
-                    nisn: sData.nisn || prev?.nisn || prev?.username,
+                    ...safeSData,
+                    has_face_id: hasFace,
+                    nisn: safeSData.nisn || prev?.nisn || prev?.username,
                     class_name: freshClass || prev?.class_name,
                   };
                   SecureStore.setItemAsync('sipena_user', JSON.stringify(updated)).catch(() => {});

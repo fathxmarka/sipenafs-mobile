@@ -190,7 +190,9 @@ export default function PresensiScreen() {
 
             if (resMe.status === 'fulfilled' && resMe.value.data) {
               const sData = resMe.value.data.data || resMe.value.data;
-              setIsStudentFaceReg(Boolean(sData?.face_descriptor));
+              setIsStudentFaceReg(Boolean(sData?.face_descriptor || sData?.has_face_id));
+            } else if (parsed.has_face_id || parsed.face_descriptor) {
+              setIsStudentFaceReg(true);
             }
 
             if (resHistory.status === 'fulfilled' && resHistory.value.data?.success) {
