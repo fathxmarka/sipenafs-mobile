@@ -18,7 +18,13 @@ import {
   PanResponder,
   Animated,
   Image,
+  NativeModules,
+  DeviceEventEmitter,
+  Vibration,
+  BackHandler,
+  Keyboard,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
@@ -29,6 +35,7 @@ import axios from 'axios';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { formatCbtText } from '../../utils/cbtFormatter';
 
+const FaceProctorNative = NativeModules.FaceProctorModule || null;
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Interface Types
@@ -49,6 +56,7 @@ interface Exam {
   proctor_tab_lock: boolean;
   proctor_max_warnings: number;
   proctor_face_tolerance?: number;
+  proctor_face_interval?: number;
   subject?: { id: number; name: string };
   class?: { id: number; name: string; level: number };
   _count?: { questions: number; results: number };
@@ -58,6 +66,7 @@ interface Exam {
     score_total: number;
     score_pg: number;
     status: string;
+    started_at?: string;
     finished_at?: string;
   }>;
 }
@@ -314,6 +323,38 @@ export default function CbtScreen() {
   const [proctorWarningCount, setProctorWarningCount] = useState(0);
   const [isCameraBoxMinimized, setIsCameraBoxMinimized] = useState(false);
 
+  // Pre-Exam Rules & Camera AI Proctoring Gate (persis Web ExamPanel)
+  const [isPreExamModalOpen, setIsPreExamModalOpen] = useState(false);
+  const [preExamTarget, setPreExamTarget] = useState<Exam | null>(null);
+  const [preCheckFaceStatus, setPreCheckFaceStatus] = useState<'checking' | 'ok' | 'no_face' | 'multiple' | 'no_permission' | 'split_screen'>('checking');
+  const [preCheckStatusNote, setPreCheckStatusNote] = useState('Memeriksa kamera & posisi wajah...');
+  const preCheckCameraRef = useRef<any>(null);
+
+  // Active In-Exam AI Face Proctoring & Violation Lock States
+  const proctorCameraRef = useRef<any>(null);
+  const [proctorFaceStatus, setProctorFaceStatus] = useState<'ok' | 'warning' | 'no_face' | 'multiple'>('ok');
+  const [proctorAlertBanner, setProctorAlertBanner] = useState<string | null>(null);
+  const [lockedModalInfo, setLockedModalInfo] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    isPermanent: boolean;
+    count: number;
+  } | null>(null);
+
+  const missedFaceStreakRef = useRef(0);
+  const isFaceScanningRef = useRef(false);
+  const isPreCheckScanningRef = useRef(false);
+  const studentAnswersRef = useRef<{ [questionId: string]: any }>({});
+  const examStartedAtRef = useRef<string>(new Date().toISOString());
+  const isHandlingLockViolationRef = useRef(false);
+  const isConfirmationAlertOpenRef = useRef(false);
+  const focusLostTimerRef = useRef<any>(null);
+  const saveProgressTimerRef = useRef<any>(null);
+  const initialWindowHeightRef = useRef<number>(Dimensions.get('window').height);
+  const examJustStartedUntilRef = useRef<number>(0);
+  const isKeyboardVisibleRef = useRef<boolean>(false);
+
   // Draggable Floating Camera Preview (agar tidak menghalangi membaca soal)
   const cameraPan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
   const cameraPanResponder = useRef(
@@ -404,7 +445,7 @@ export default function CbtScreen() {
         await fetchTeacherMasterData(storedApiUrl, storedToken, userObj);
         await fetchExamsList(storedApiUrl, storedToken);
       } else {
-        await fetchStudentExamsList(storedApiUrl, storedToken);
+        await fetchStudentExamsList(storedApiUrl, storedToken, userObj);
       }
     } catch (err: any) {
       console.error('Init CBT Error:', err);
@@ -501,18 +542,112 @@ export default function CbtScreen() {
   };
 
   // -------------------------------------------------------------
-  // DATA FETCHING: STUDENT
+  // DATA FETCHING: STUDENT (DENGAN DETEKSI FORCE-CLOSE & SINKRONISASI RESET PENGAWAS)
   // -------------------------------------------------------------
-  const fetchStudentExamsList = async (url?: string, jwt?: string) => {
+  const fetchStudentExamsList = async (url?: string, jwt?: string, userObjOverride?: any) => {
     try {
       const targetUrl = url || apiUrl;
       const targetToken = jwt || token;
+      const activeUser = userObjOverride || user;
+      const studentId = activeUser?.student_id || activeUser?.id;
+
       const res = await axios.get(`${targetUrl}/api/exams/student`, {
         headers: { Authorization: `Bearer ${targetToken}` },
       });
-      if (res.data?.data) {
-        setExams(res.data.data);
+
+      let loadedExams: Exam[] = Array.isArray(res.data?.data) ? res.data.data : [];
+
+      if (studentId) {
+        // 1. Sinkronkan status Reset Akses dari Pengawas di Server
+        for (const ex of loadedExams) {
+          const r = ex.results && ex.results.length > 0 ? ex.results[0] : null;
+          if (r && !r.finished_at && String(r.status || '').toLowerCase() === 'sedang mengerjakan') {
+            await AsyncStorage.removeItem(`sipena_locked_v6_${ex.id}_${studentId}`).catch(() => {});
+          }
+        }
+
+        // 2. Deteksi FORCE CLOSE / KILL APP saat ujian aktif sebelumnya
+        const activeSessionRaw = await AsyncStorage.getItem(`sipena_active_exam_session_${studentId}`).catch(() => null);
+        if (activeSessionRaw && !isStudentExamModalOpen) {
+          await AsyncStorage.removeItem(`sipena_active_exam_session_${studentId}`).catch(() => {});
+          try {
+            const prevSession = JSON.parse(activeSessionRaw);
+            const targetEx = loadedExams.find((ex) => String(ex.id) === String(prevSession?.examId));
+            const targetRes = targetEx?.results && targetEx.results.length > 0 ? targetEx.results[0] : null;
+
+            if (targetEx && prevSession?.tabLock && (!targetRes || !targetRes.finished_at)) {
+              const violKey = `sipena_violations_v6_${targetEx.id}_${studentId}`;
+              const lockKey = `sipena_locked_v6_${targetEx.id}_${studentId}`;
+              const backupKey = `sipena_backup_ans_${targetEx.id}_${studentId}`;
+
+              const prevCount = parseInt((await AsyncStorage.getItem(violKey)) || '0', 10) || 0;
+              const nextCount = prevCount + 1;
+              const isPermanent = nextCount >= 3;
+
+              await AsyncStorage.setItem(violKey, String(nextCount));
+              await AsyncStorage.setItem(lockKey, isPermanent ? 'permanent' : 'true');
+
+              let backedUpAnswers: any = {};
+              try {
+                const rawBackup = await AsyncStorage.getItem(backupKey);
+                if (rawBackup) backedUpAnswers = JSON.parse(rawBackup);
+              } catch {}
+
+              await axios.post(
+                `${targetUrl}/api/exams/${targetEx.id}/submit`,
+                {
+                  student_id: studentId,
+                  answers: backedUpAnswers,
+                  started_at: prevSession.startedAt || new Date().toISOString(),
+                  is_violation: !isPermanent,
+                  violation_count: nextCount,
+                  is_permanent: isPermanent,
+                },
+                { headers: { Authorization: `Bearer ${targetToken}` } }
+              ).catch(() => {});
+
+              await axios.post(
+                `${targetUrl}/api/exams/${targetEx.id}/proctor-logs`,
+                {
+                  student_id: studentId,
+                  type: 'FORCE_CLOSE_VIOLATION',
+                  details: `Pelanggaran ${nextCount}/3: Siswa menutup paksa (Force Close) aplikasi saat ujian berlangsung.`,
+                },
+                { headers: { Authorization: `Bearer ${targetToken}` } }
+              ).catch(() => {});
+
+              // Ambil ulang daftar ujian agar badge Terkunci langsung tampil
+              const refreshed = await axios.get(`${targetUrl}/api/exams/student`, {
+                headers: { Authorization: `Bearer ${targetToken}` },
+              }).catch(() => null);
+              if (refreshed?.data?.data) {
+                loadedExams = refreshed.data.data;
+              }
+
+              try {
+                Vibration.vibrate([0, 400, 150, 400]);
+                FaceProctorNative?.playWarningAlarm(
+                  isPermanent
+                    ? 'Pelanggaran berat! Anda menutup paksa aplikasi ujian. Akses diblokir permanen.'
+                    : 'Peringatan! Anda terdeteksi menutup paksa aplikasi ujian. Akses terkunci, silakan lapor ke pengawas.'
+                );
+              } catch {}
+
+              setLockedModalInfo({
+                visible: true,
+                title: isPermanent ? 'BLOKIR PERMANEN!' : 'Akses Ujian Terkunci!',
+                message: isPermanent
+                  ? `Anda menutup paksa aplikasi ujian (Pelanggaran 3/3). Ujian "${targetEx.title}" dihentikan permanen dan dikumpulkan otomatis.`
+                  : `Anda terdeteksi menutup paksa (Force Close) aplikasi saat mengerjakan "${targetEx.title}" (Pelanggaran ${nextCount}/3). Akses ujian dikunci otomatis. Anda WAJIB lapor ke Pengawas untuk meminta Reset Akses.`,
+                isPermanent,
+                count: nextCount,
+              });
+            }
+          } catch {}
+        }
       }
+
+      setExams(loadedExams);
     } catch (e: any) {
       console.error('Fetch student exams error:', e);
     }
@@ -1432,15 +1567,126 @@ Format JSON array murni tanpa pembuka/penutup markdown:
   };
 
   // -------------------------------------------------------------
-  // STUDENT: START & TAKE EXAM WITH CAMERA PROCTORING
+  // STUDENT: PRE-EXAM BRIEFING, AI FACE PROCTORING, SPLIT-SCREEN & TAB LOCK
   // -------------------------------------------------------------
+  const openPreExamBriefing = async (exam: Exam) => {
+    const studentId = user?.student_id || user?.id;
+
+    // 0. Validasi Jam Jadwal Ujian (tidak bisa mulai jika belum masuk jam mulai atau sudah berakhir)
+    const nowMs = Date.now();
+    if (exam.start_time) {
+      const startMs = new Date(exam.start_time).getTime();
+      if (!isNaN(startMs) && nowMs < startMs) {
+        const startStr = new Date(exam.start_time).toLocaleString('id-ID', {
+          day: '2-digit',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        showToast(`Ujian belum dimulai! Jadwal dimulai pada ${startStr} WIB.`, 'warning');
+        return;
+      }
+    }
+    if (exam.end_time) {
+      const endMs = new Date(exam.end_time).getTime();
+      if (!isNaN(endMs) && nowMs > endMs) {
+        showToast('Waktu pelaksanaan ujian ini telah berakhir.', 'error');
+        return;
+      }
+    }
+
+    // 1. Cek status blokir / terkunci dari server maupun AsyncStorage
+    const studentResult = exam.results && exam.results.length > 0 ? exam.results[0] : null;
+    const statusLower = String(studentResult?.status || '').toLowerCase();
+    if (statusLower.includes('blokir permanen')) {
+      setLockedModalInfo({
+        visible: true,
+        title: 'BLOKIR PERMANEN!',
+        message: `Anda telah mencapai batas maksimal pelanggaran (3/3) pada ujian "${exam.title}". Anda tidak diizinkan melanjutkan ujian ini.`,
+        isPermanent: true,
+        count: 3,
+      });
+      return;
+    }
+    if (statusLower.includes('terkunci')) {
+      setLockedModalInfo({
+        visible: true,
+        title: 'Akses Ujian Terkunci!',
+        message: `Ujian "${exam.title}" sedang dikunci (${studentResult?.status}). Anda WAJIB melapor ke Pengawas untuk meminta Reset Akses, lalu tekan tombol segarkan (↻) di pojok kanan atas.`,
+        isPermanent: false,
+        count: 1,
+      });
+      return;
+    }
+
+    if (studentId) {
+      const localLock = await AsyncStorage.getItem(`sipena_locked_v6_${exam.id}_${studentId}`).catch(() => null);
+      if (localLock === 'permanent') {
+        setLockedModalInfo({
+          visible: true,
+          title: 'BLOKIR PERMANEN!',
+          message: `Akses Anda pada ujian "${exam.title}" telah diblokir permanen karena 3 kali pelanggaran keamanan.`,
+          isPermanent: true,
+          count: 3,
+        });
+        return;
+      }
+      if (localLock === 'true' && studentResult?.finished_at) {
+        setLockedModalInfo({
+          visible: true,
+          title: 'Akses Ujian Terkunci!',
+          message: `Ujian "${exam.title}" terkunci karena pelanggaran keamanan. Lapor ke Pengawas untuk Reset Akses lalu tekan segarkan (↻).`,
+          isPermanent: false,
+          count: 1,
+        });
+        return;
+      }
+    }
+
+    // 2. Cek apakah perangkat sedang dalam mode Split Screen / Multi-Window
+    if (Platform.OS === 'android' && FaceProctorNative?.checkWindowSecurity) {
+      try {
+        const winSec = await FaceProctorNative.checkWindowSecurity();
+        if (winSec?.isMultiWindow || winSec?.isPiP) {
+          setPreExamTarget(exam);
+          setPreCheckFaceStatus('split_screen');
+          setPreCheckStatusNote('Terdeteksi mode Split Screen / Layar Terbelah! Tutup layar belah terlebih dahulu untuk memulai ujian.');
+          setIsPreExamModalOpen(true);
+          return;
+        }
+      } catch {}
+    }
+
+    // 3. Minta izin kamera jika proctoring aktif
+    if (exam.proctor_enabled && !cameraPermission?.granted) {
+      const perm = await requestCameraPermission();
+      if (!perm.granted) {
+        setPreExamTarget(exam);
+        setPreCheckFaceStatus('no_permission');
+        setPreCheckStatusNote('Izin kamera depan wajib diaktifkan untuk mengikuti ujian dengan AI Proctoring.');
+        setIsPreExamModalOpen(true);
+        return;
+      }
+    }
+
+    setPreExamTarget(exam);
+    if (exam.proctor_enabled && exam.proctor_face_detect !== false) {
+      setPreCheckFaceStatus('checking');
+      setPreCheckStatusNote('Mengarahkan kamera depan... Posisikan wajah Anda di tengah bingkai.');
+    } else {
+      setPreCheckFaceStatus('ok');
+      setPreCheckStatusNote('Perangkat siap! Baca tata tertib lalu tekan Mulai Ujian.');
+    }
+    setIsPreExamModalOpen(true);
+  };
+
   const handleStartExamPrompt = (exam: Exam) => {
     if (exam.token && String(exam.token).trim() !== '' && String(exam.token).trim().toLowerCase() !== 'null') {
       setPendingExamToStart(exam);
       setInputToken('');
       setIsTokenPromptOpen(true);
     } else {
-      startExamArena(exam);
+      openPreExamBriefing(exam);
     }
   };
 
@@ -1450,23 +1696,116 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       showToast('Token ujian salah! Silakan tanyakan ke guru pengawas.', 'error');
       return;
     }
+    const chosenExam = pendingExamToStart;
     setIsTokenPromptOpen(false);
-    startExamArena(pendingExamToStart);
+    openPreExamBriefing(chosenExam);
   };
 
+  // Pre-Exam Live Face Detection & Anti-Split-Screen Check Loop (every 1.5s while Pre-Exam Modal is open)
+  useEffect(() => {
+    if (!isPreExamModalOpen || !preExamTarget) return;
+
+    const runPreCheck = async () => {
+      if (isPreCheckScanningRef.current) return;
+      isPreCheckScanningRef.current = true;
+      try {
+        // Cek Split Screen native
+        if (Platform.OS === 'android' && FaceProctorNative?.checkWindowSecurity) {
+          const winSec = await FaceProctorNative.checkWindowSecurity();
+          if (winSec?.isMultiWindow || winSec?.isPiP) {
+            setPreCheckFaceStatus('split_screen');
+            setPreCheckStatusNote('Terdeteksi mode Split Screen / Multi-Window! Kembalikan aplikasi ke layar penuh.');
+            return;
+          }
+        }
+
+        if (!preExamTarget.proctor_enabled || preExamTarget.proctor_face_detect === false) {
+          setPreCheckFaceStatus('ok');
+          setPreCheckStatusNote('Perangkat & peraturan siap. Silakan klik Mulai Ujian.');
+          return;
+        }
+
+        if (!cameraPermission?.granted) {
+          setPreCheckFaceStatus('no_permission');
+          setPreCheckStatusNote('Izin kamera depan diperlukan untuk verifikasi AI Proctoring.');
+          return;
+        }
+
+        if (!FaceProctorNative?.detectFaces) {
+          setPreCheckFaceStatus('ok');
+          setPreCheckStatusNote('Kamera depan aktif dan siap mengawasi.');
+          return;
+        }
+
+        if (!preCheckCameraRef.current) return;
+
+        const photo = await preCheckCameraRef.current.takePictureAsync({
+          quality: 0.2,
+          shutterSound: false,
+          skipProcessing: false,
+        });
+
+        if (photo?.uri) {
+          const res = await FaceProctorNative.detectFaces(photo.uri, true);
+          const count = Number(res?.faceCount || 0);
+          if (count === 1) {
+            setPreCheckFaceStatus('ok');
+            setPreCheckStatusNote('Wajah terdeteksi jelas! Kamera AI Proctoring siap mengawasi.');
+          } else if (count > 1) {
+            setPreCheckFaceStatus('multiple');
+            setPreCheckStatusNote(`Terdeteksi ${count} wajah di kamera! Pastikan hanya Anda seorang diri.`);
+          } else {
+            setPreCheckFaceStatus('no_face');
+            setPreCheckStatusNote('Wajah belum terdeteksi! Arahkan wajah ke kamera di tempat terang.');
+          }
+        }
+      } catch (e) {
+        // Jangan error-kan UI saat transisi kamera
+      } finally {
+        isPreCheckScanningRef.current = false;
+      }
+    };
+
+    const initDelay = setTimeout(runPreCheck, 700);
+    const interval = setInterval(runPreCheck, 1800);
+
+    return () => {
+      clearTimeout(initDelay);
+      clearInterval(interval);
+      isPreCheckScanningRef.current = false;
+    };
+  }, [isPreExamModalOpen, preExamTarget, cameraPermission?.granted]);
+
   const startExamArena = async (exam: Exam) => {
+    // Validasi terakhir sebelum buka soal: larang jika Split Screen
+    if (Platform.OS === 'android' && FaceProctorNative?.checkWindowSecurity) {
+      try {
+        const winSec = await FaceProctorNative.checkWindowSecurity();
+        if (winSec?.isMultiWindow || winSec?.isPiP) {
+          showToast('Tidak dapat memulai ujian dalam mode Split Screen!', 'error');
+          return;
+        }
+      } catch {}
+    }
+
     setLoading(true);
     try {
       // Request camera permission if proctoring enabled
       if (exam.proctor_enabled && !cameraPermission?.granted) {
         const perm = await requestCameraPermission();
         if (!perm.granted) {
-          showToast('Ujian ini mewajibkan kamera depan aktif untuk pengawasan proctoring!', 'warning');
+          showToast('Ujian ini mewajibkan kamera depan aktif untuk pengawasan proctoring!', 'error');
+          setLoading(false);
+          return;
         }
       }
 
       const res = await axios.get(`${apiUrl}/api/exams/student/${exam.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-App-Version': '1.0.27',
+          'X-Client-Platform': Platform.OS,
+        },
       });
 
       const loadedQuestions = res.data?.questions || res.data?.shuffledQuestions || [];
@@ -1477,28 +1816,193 @@ Format JSON array murni tanpa pembuka/penutup markdown:
         return;
       }
 
-      // Reset camera position to default
+      const mergedExam: Exam = {
+        ...exam,
+        ...(res.data?.exam || {}),
+        subject: res.data?.exam?.subject || exam.subject,
+      };
+
+      const studentId = user?.student_id || user?.id;
+
+      // Reset camera position & proctor states
       cameraPan.setValue({ x: 0, y: 0 });
       cameraPan.setOffset({ x: 0, y: 0 });
+      initialWindowHeightRef.current = Dimensions.get('window').height;
+      examJustStartedUntilRef.current = Date.now() + 2500;
+      missedFaceStreakRef.current = 0;
+      isFaceScanningRef.current = false;
+      isHandlingLockViolationRef.current = false;
+      setIsCameraBoxMinimized(false);
+      setProctorFaceStatus('ok');
+      setProctorAlertBanner(null);
 
-      setActiveStudentExam(exam);
+      // Aktifkan FLAG_SECURE (blokir screenshot & screen recording) + KEEP_SCREEN_ON
+      if (Platform.OS === 'android' && FaceProctorNative?.setSecureExamMode) {
+        FaceProctorNative.setSecureExamMode(true);
+      }
+
+      // Restore jawaban tersimpan dari server (current_answers) atau backup lokal HP
+      let savedAns: { [key: string]: any } = {};
+      if (res.data?.current_answers && typeof res.data.current_answers === 'object') {
+        savedAns = res.data.current_answers;
+      } else if (res.data?.result?.answers) {
+        try {
+          savedAns = typeof res.data.result.answers === 'string'
+            ? JSON.parse(res.data.result.answers)
+            : res.data.result.answers;
+        } catch {}
+      }
+      if (Object.keys(savedAns).length === 0 && studentId) {
+        try {
+          const localBackup = await AsyncStorage.getItem(`sipena_backup_ans_${mergedExam.id}_${studentId}`);
+          if (localBackup) savedAns = JSON.parse(localBackup);
+        } catch {}
+      }
+
+      studentAnswersRef.current = savedAns;
+      examStartedAtRef.current = res.data?.started_at || new Date().toISOString();
+
+      // Simpan penanda sesi aktif di AsyncStorage (untuk deteksi Force Close / Kill App)
+      if (studentId) {
+        await AsyncStorage.setItem(
+          `sipena_active_exam_session_${studentId}`,
+          JSON.stringify({
+            examId: String(mergedExam.id),
+            title: mergedExam.title,
+            tabLock: mergedExam.proctor_tab_lock !== false,
+            startedAt: examStartedAtRef.current,
+          })
+        ).catch(() => {});
+      }
+
+      // Hitung sisa durasi ujian yang akurat (memperhitungkan jika resume)
+      const totalDurationSecs = (mergedExam.duration || 60) * 60;
+      let remainingSecs = totalDurationSecs;
+      if (res.data?.started_at) {
+        const elapsed = Math.floor((Date.now() - new Date(res.data.started_at).getTime()) / 1000);
+        if (elapsed > 0 && elapsed < totalDurationSecs) {
+          remainingSecs = Math.max(60, totalDurationSecs - elapsed);
+        }
+      }
+
+      setActiveStudentExam(mergedExam);
       setStudentQuestions(loadedQuestions);
       setCurrentQuestionIndex(0);
-
-      // Load existing saved answers if any
-      const savedAns = res.data.result?.answers ? JSON.parse(res.data.result.answers) : {};
       setStudentAnswers(savedAns);
+      setTimeLeftSeconds(remainingSecs);
 
-      // Duration setup
-      const durationSecs = (exam.duration || 60) * 60;
-      setTimeLeftSeconds(durationSecs);
-      setProctorWarningCount(0);
+      const prevViolCount = studentId
+        ? parseInt((await AsyncStorage.getItem(`sipena_violations_v6_${mergedExam.id}_${studentId}`)) || '0', 10) || 0
+        : 0;
+      setProctorWarningCount(prevViolCount);
+
+      setIsPreExamModalOpen(false);
       setIsStudentExamModalOpen(true);
     } catch (err: any) {
       console.error('Start exam error:', err);
       showToast(err.response?.data?.message || 'Gagal memulai ujian: ' + err.message, 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fungsi Terpusat: Kunci Ujian Otomatis saat Keluar App / Split Screen / Floating App (persis Web ExamPanel)
+  const triggerSecurityLockViolation = async (violationType: string, reasonMessage: string) => {
+    if (isHandlingLockViolationRef.current || !activeStudentExam || !isStudentExamModalOpen) return;
+    isHandlingLockViolationRef.current = true;
+
+    const targetExam = activeStudentExam;
+    const studentId = user?.student_id || user?.id;
+
+    try {
+      if (focusLostTimerRef.current) {
+        clearTimeout(focusLostTimerRef.current);
+        focusLostTimerRef.current = null;
+      }
+      if (saveProgressTimerRef.current) {
+        clearTimeout(saveProgressTimerRef.current);
+        saveProgressTimerRef.current = null;
+      }
+
+      // Matikan FLAG_SECURE & tutup arena ujian segera agar siswa tidak bisa melihat soal lagi
+      if (Platform.OS === 'android' && FaceProctorNative?.setSecureExamMode) {
+        FaceProctorNative.setSecureExamMode(false);
+      }
+      setIsStudentExamModalOpen(false);
+      setIsNavDrawerOpen(false);
+      setIsAnswerCameraModalOpen(false);
+
+      let nextCount = proctorWarningCount + 1;
+      if (studentId) {
+        await AsyncStorage.removeItem(`sipena_active_exam_session_${studentId}`).catch(() => {});
+        const violKey = `sipena_violations_v6_${targetExam.id}_${studentId}`;
+        const lockKey = `sipena_locked_v6_${targetExam.id}_${studentId}`;
+        const storedViol = parseInt((await AsyncStorage.getItem(violKey)) || '0', 10) || 0;
+        nextCount = Math.max(storedViol, proctorWarningCount) + 1;
+        await AsyncStorage.setItem(violKey, String(nextCount));
+        await AsyncStorage.setItem(lockKey, nextCount >= 3 ? 'permanent' : 'true');
+      }
+
+      setProctorWarningCount(nextCount);
+      const isPermanent = nextCount >= 3;
+
+      // Getar + Alarm Suara Keras Bahasa Indonesia
+      try {
+        Vibration.vibrate([0, 450, 150, 450, 150, 450]);
+        const spoken = isPermanent
+          ? 'Pelanggaran berat! Akses ujian Anda telah diblokir secara permanen.'
+          : 'Peringatan! Anda terdeteksi melanggar keamanan layar ujian. Akses terkunci, silakan lapor ke pengawas.';
+        FaceProctorNative?.playWarningAlarm(spoken);
+      } catch {}
+
+      // Kunci jawaban secara diam-diam di backend (persis Web ExamPanel!)
+      if (token && apiUrl) {
+        await axios.post(
+          `${apiUrl}/api/exams/${targetExam.id}/submit`,
+          {
+            student_id: studentId,
+            answers: studentAnswersRef.current,
+            started_at: examStartedAtRef.current,
+            is_violation: !isPermanent,
+            violation_count: nextCount,
+            is_permanent: isPermanent,
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        ).catch(() => {});
+
+        await axios.post(
+          `${apiUrl}/api/exams/${targetExam.id}/proctor-logs`,
+          {
+            student_id: studentId,
+            type: violationType,
+            details: `Pelanggaran ${nextCount}/3: ${reasonMessage}`,
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        ).catch(() => {});
+      }
+
+      let modalTitle = 'Akses Ujian Terkunci!';
+      let modalMessage = '';
+      if (nextCount === 1) {
+        modalMessage = `${reasonMessage} (Pelanggaran 1/3).\n\nUjian dihentikan paksa dan dikunci otomatis. Anda WAJIB melapor ke Pengawas untuk meminta Reset Akses.`;
+      } else if (nextCount === 2) {
+        modalMessage = `${reasonMessage} (Pelanggaran 2/3).\n\nPERINGATAN KERAS: Lapor ke Pengawas untuk Reset Akses. Jika terjadi 1 kali pelanggaran lagi, Anda akan DIBLOKIR PERMANEN!`;
+      } else {
+        modalTitle = 'BLOKIR PERMANEN!';
+        modalMessage = `${reasonMessage} (Pelanggaran 3/3).\n\nUjian Anda dihentikan permanen dan dikumpulkan paksa. Anda tidak dapat mengikuti ujian ini lagi.`;
+      }
+
+      setLockedModalInfo({
+        visible: true,
+        title: modalTitle,
+        message: modalMessage,
+        isPermanent,
+        count: nextCount,
+      });
+
+      fetchStudentExamsList();
+    } catch (e) {
+      console.error('Lock violation error:', e);
     }
   };
 
@@ -1520,39 +2024,245 @@ Format JSON array murni tanpa pembuka/penutup markdown:
     return () => clearInterval(timer);
   }, [isStudentExamModalOpen, timeLeftSeconds]);
 
-  // Anti-Cheat: AppState Tab Lock Listener
+  // Intercept tombol Hardware Back Android selama ruang ujian aktif (tanpa memicu Alert yang mengambil fokus jendela)
   useEffect(() => {
-    if (!isStudentExamModalOpen || !activeStudentExam?.proctor_tab_lock) return;
+    if (!isStudentExamModalOpen) return;
 
-    const subscription = AppState.addEventListener('change', async (nextAppState) => {
+    const backSub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (isNavDrawerOpen) {
+        setIsNavDrawerOpen(false);
+        return true;
+      }
+      if (isAnswerCameraModalOpen) {
+        setIsAnswerCameraModalOpen(false);
+        return true;
+      }
+      showToast('Selesaikan lembar ujian Anda terlebih dahulu sebelum keluar.', 'warning');
+      return true;
+    });
+
+    const kbShowSub = Keyboard.addListener('keyboardDidShow', () => {
+      isKeyboardVisibleRef.current = true;
+    });
+    const kbHideSub = Keyboard.addListener('keyboardDidHide', () => {
+      isKeyboardVisibleRef.current = false;
+    });
+
+    return () => {
+      backSub.remove();
+      kbShowSub.remove();
+      kbHideSub.remove();
+      isKeyboardVisibleRef.current = false;
+    };
+  }, [isStudentExamModalOpen, isNavDrawerOpen, isAnswerCameraModalOpen]);
+
+  // Anti-Cheat Layer 1: AppState Tab/Background Lock Listener (Kunci Paksa saat Keluar App!)
+  useEffect(() => {
+    if (!isStudentExamModalOpen || activeStudentExam?.proctor_tab_lock === false) return;
+
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (isAnswerCameraModalOpen || isSubmittingExam) return;
       if (nextAppState === 'background' || nextAppState === 'inactive') {
-        setProctorWarningCount((prev) => {
-          const nextCount = prev + 1;
-          // Log violation to backend
-          if (activeStudentExam && token && apiUrl) {
-            axios.post(
-              `${apiUrl}/api/exams/${activeStudentExam.id}/proctor-logs`,
-              {
-                type: 'TAB_LOCK',
-                details: `Peringatan #${nextCount}: Siswa meninggalkan aplikasi / berganti layar pada ${new Date().toLocaleTimeString()}`,
-              },
-              { headers: { Authorization: `Bearer ${token}` } }
-            ).catch(() => {});
-          }
-
-          Alert.alert(
-            '⚠️ PERINGATAN INTEGRITAS UJIAN!',
-            `Anda terdeteksi meninggalkan aplikasi ujian (Peringatan ke-${nextCount} dari ${activeStudentExam.proctor_max_warnings || 5}). Tindakan ini dicatat oleh pengawas!`,
-            [{ text: 'Lanjutkan Ujian', style: 'default' }]
-          );
-
-          return nextCount;
-        });
+        triggerSecurityLockViolation(
+          'TAB_SWITCH_VIOLATION',
+          'Anda terdeteksi keluar dari aplikasi ujian / berpindah layar'
+        );
       }
     });
 
     return () => subscription.remove();
-  }, [isStudentExamModalOpen, activeStudentExam]);
+  }, [isStudentExamModalOpen, activeStudentExam, isAnswerCameraModalOpen, isSubmittingExam]);
+
+  // Anti-Cheat Layer 2: Native Split-Screen, Multi-Window & Floating Pop-Up Window Detector
+  useEffect(() => {
+    if (!isStudentExamModalOpen) return;
+
+    const nativeSub = DeviceEventEmitter.addListener('CBT_WINDOW_SECURITY', (evt: any) => {
+      if (!evt || isAnswerCameraModalOpen || isSubmittingExam) return;
+
+      if (evt.type === 'SPLIT_SCREEN') {
+        triggerSecurityLockViolation(
+          'SPLIT_SCREEN_VIOLATION',
+          evt.details || 'Anda terdeteksi membelah layar (Split Screen / Multi-Window)'
+        );
+      } else if (evt.type === 'WINDOW_FOCUS_LOST') {
+        if (activeStudentExam?.proctor_tab_lock === false) return;
+        if (isConfirmationAlertOpenRef.current) return;
+        if (Date.now() < examJustStartedUntilRef.current) return;
+        // Beri jeda 1.4 detik untuk menghindari false positive dialog sistem sesaat;
+        // jika fokus tetap hilang > 1.4 detik (Floating WA/Browser/Notifikasi) -> KUNCI!
+        if (focusLostTimerRef.current) clearTimeout(focusLostTimerRef.current);
+        focusLostTimerRef.current = setTimeout(() => {
+          if (!isAnswerCameraModalOpen && !isConfirmationAlertOpenRef.current && !isSubmittingExam) {
+            triggerSecurityLockViolation(
+              'FLOATING_WINDOW_VIOLATION',
+              'Terdeteksi membuka jendela mengambang (Floating App) atau panel notifikasi di atas layar ujian'
+            );
+          }
+        }, 1400);
+      } else if (evt.type === 'WINDOW_FOCUS_GAINED') {
+        if (focusLostTimerRef.current) {
+          clearTimeout(focusLostTimerRef.current);
+          focusLostTimerRef.current = null;
+        }
+      }
+    });
+
+    // Anti-Cheat Layer 3: Dimensions Listener (deteksi paksa layar menyusut / Freeform / Split Screen, aman terhadap rotasi & keyboard)
+    const dimSub = Dimensions.addEventListener('change', async ({ window, screen }) => {
+      if (isAnswerCameraModalOpen || isSubmittingExam) return;
+      const screenArea = (screen?.width || SCREEN_WIDTH) * (screen?.height || SCREEN_HEIGHT);
+      const winArea = (window?.width || 0) * (window?.height || 0);
+      if (screenArea > 0 && winArea > 0 && winArea < screenArea * 0.72) {
+        if (Platform.OS === 'android' && FaceProctorNative?.checkWindowSecurity) {
+          try {
+            const winSec = await FaceProctorNative.checkWindowSecurity();
+            if (winSec?.isMultiWindow || winSec?.isPiP) {
+              triggerSecurityLockViolation(
+                'SPLIT_SCREEN_VIOLATION',
+                'Ukuran layar ujian terdeteksi dalam mode Split Screen / Multi-Window'
+              );
+              return;
+            }
+          } catch {}
+        }
+        // Jika keyboard sedang tidak terbuka (misal Freeform / Pop-Up window yang memaksa resize)
+        if (!isKeyboardVisibleRef.current && window.width < (screen?.width || SCREEN_WIDTH) * 0.88) {
+          triggerSecurityLockViolation(
+            'SPLIT_SCREEN_VIOLATION',
+            'Ukuran layar ujian terdeteksi menyusut (Split Screen / Jendela Mengambang)'
+          );
+        }
+      }
+    });
+
+    return () => {
+      nativeSub.remove();
+      dimSub?.remove?.();
+      if (focusLostTimerRef.current) {
+        clearTimeout(focusLostTimerRef.current);
+        focusLostTimerRef.current = null;
+      }
+    };
+  }, [isStudentExamModalOpen, activeStudentExam, isAnswerCameraModalOpen, isSubmittingExam]);
+
+  // Anti-Cheat Layer 4: Active On-Device AI Face Proctoring Loop (Google ML Kit!)
+  useEffect(() => {
+    if (!isStudentExamModalOpen || !activeStudentExam?.proctor_enabled) return;
+    if (activeStudentExam.proctor_face_detect === false) return;
+
+    const intervalMs = Math.max(3000, (Number(activeStudentExam.proctor_face_interval) || 3) * 1000);
+
+    const runActiveFaceMonitor = async () => {
+      if (isFaceScanningRef.current || isAnswerCameraModalOpen || isSubmittingExam || isHandlingLockViolationRef.current) {
+        return;
+      }
+      isFaceScanningRef.current = true;
+
+      try {
+        // Cek juga multi-window secara berkala
+        if (Platform.OS === 'android' && FaceProctorNative?.checkWindowSecurity) {
+          const winSec = await FaceProctorNative.checkWindowSecurity();
+          if (winSec?.isMultiWindow || winSec?.isPiP) {
+            triggerSecurityLockViolation(
+              'SPLIT_SCREEN_VIOLATION',
+              'Terdeteksi mode Split Screen / Multi-Window saat ujian berlangsung'
+            );
+            return;
+          }
+        }
+
+        if (!cameraPermission?.granted || !FaceProctorNative?.detectFaces || !proctorCameraRef.current) {
+          return;
+        }
+
+        const photo = await proctorCameraRef.current.takePictureAsync({
+          quality: 0.2,
+          shutterSound: false,
+          skipProcessing: false,
+        });
+
+        if (!photo?.uri) return;
+
+        const detection = await FaceProctorNative.detectFaces(photo.uri, true);
+        const faceCount = Number(detection?.faceCount || 0);
+        const studentId = user?.student_id || user?.id;
+
+        if (faceCount === 0) {
+          missedFaceStreakRef.current += 1;
+          const streak = missedFaceStreakRef.current;
+
+          setProctorFaceStatus('no_face');
+          setIsCameraBoxMinimized(false);
+          setProctorAlertBanner('⚠️ PERINGATAN AI PROCTORING: Wajah Anda tidak terdeteksi di kamera depan! Segera hadapkan wajah ke kamera.');
+
+          try {
+            Vibration.vibrate([0, 350, 120, 350]);
+            FaceProctorNative.playWarningAlarm('Peringatan! Wajah Anda tidak terdeteksi di depan kamera. Segera kembali ke posisi ujian.');
+          } catch {}
+
+          // Catat pelanggaran ke server mulai deteksi ke-2 beruntun (~6-7 detik hilang) dan setiap 3 siklus berikutnya
+          if (streak === 2 || (streak > 2 && (streak - 2) % 3 === 0)) {
+            if (token && apiUrl && activeStudentExam) {
+              axios.post(
+                `${apiUrl}/api/exams/${activeStudentExam.id}/proctor-logs`,
+                {
+                  student_id: studentId,
+                  type: 'NO_FACE',
+                  details: `Wajah siswa tidak terdeteksi di kamera depan (${streak * Math.round(intervalMs / 1000)} detik berturut-turut) pada ${new Date().toLocaleTimeString('id-ID')}.`,
+                },
+                { headers: { Authorization: `Bearer ${token}` } }
+              ).catch(() => {});
+            }
+          }
+        } else if (faceCount > 1) {
+          missedFaceStreakRef.current = 0;
+          setProctorFaceStatus('multiple');
+          setIsCameraBoxMinimized(false);
+          setProctorAlertBanner(`⚠️ PERINGATAN AI PROCTORING: Terdeteksi ${faceCount} wajah di depan kamera! Pastikan Anda mengerjakan ujian sendirian.`);
+
+          try {
+            Vibration.vibrate([0, 350, 120, 350]);
+            FaceProctorNative.playWarningAlarm('Peringatan! Terdeteksi lebih dari satu wajah di depan kamera.');
+          } catch {}
+
+          if (token && apiUrl && activeStudentExam) {
+            axios.post(
+              `${apiUrl}/api/exams/${activeStudentExam.id}/proctor-logs`,
+              {
+                student_id: studentId,
+                type: 'MULTIPLE_FACES',
+                details: `Terdeteksi ${faceCount} wajah secara bersamaan di depan kamera pada ${new Date().toLocaleTimeString('id-ID')}.`,
+              },
+              { headers: { Authorization: `Bearer ${token}` } }
+            ).catch(() => {});
+          }
+        } else {
+          // faceCount === 1 -> Normal! Hentikan alarm & bersihkan peringatan
+          missedFaceStreakRef.current = 0;
+          setProctorFaceStatus('ok');
+          setProctorAlertBanner(null);
+          try {
+            FaceProctorNative?.stopWarningAlarm();
+          } catch {}
+        }
+      } catch (err) {
+        // Lewati frame jika kamera sedang sibuk
+      } finally {
+        isFaceScanningRef.current = false;
+      }
+    };
+
+    const initialTimer = setTimeout(runActiveFaceMonitor, 2200);
+    const monitorTimer = setInterval(runActiveFaceMonitor, intervalMs);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(monitorTimer);
+      isFaceScanningRef.current = false;
+      try { FaceProctorNative?.stopWarningAlarm(); } catch {}
+    };
+  }, [isStudentExamModalOpen, activeStudentExam, cameraPermission?.granted, isAnswerCameraModalOpen, isSubmittingExam]);
 
   const formatTimer = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -1564,22 +2274,40 @@ Format JSON array murni tanpa pembuka/penutup markdown:
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  const handleSelectAnswer = (questionId: string, optionKey: string) => {
-    const updated = { ...studentAnswers, [questionId]: optionKey };
-    setStudentAnswers(updated);
-
-    // Save progress to backend in background
-    if (activeStudentExam) {
-      axios.post(
-        `${apiUrl}/api/exams/${activeStudentExam.id}/save-progress`,
-        { answers: updated },
-        { headers: { Authorization: `Bearer ${token}` } }
+  // Dual-Layer Auto-Save: 0ms ke AsyncStorage lokal + Debounced 3.5 detik ke server (anti spam 1.500 siswa!)
+  const scheduleDebouncedSaveProgress = (updatedAnswers: { [questionId: string]: any }) => {
+    studentAnswersRef.current = updatedAnswers;
+    const studentId = user?.student_id || user?.id;
+    if (activeStudentExam && studentId) {
+      AsyncStorage.setItem(
+        `sipena_backup_ans_${activeStudentExam.id}_${studentId}`,
+        JSON.stringify(updatedAnswers)
       ).catch(() => {});
+    }
+
+    if (saveProgressTimerRef.current) {
+      clearTimeout(saveProgressTimerRef.current);
+    }
+    if (activeStudentExam && token && apiUrl) {
+      const targetExamId = activeStudentExam.id;
+      saveProgressTimerRef.current = setTimeout(() => {
+        axios.post(
+          `${apiUrl}/api/exams/${targetExamId}/save-progress`,
+          { answers: studentAnswersRef.current },
+          { headers: { Authorization: `Bearer ${token}` } }
+        ).catch(() => {});
+      }, 3500);
     }
   };
 
+  const handleSelectAnswer = (questionId: string, optionKey: string) => {
+    const updated = { ...studentAnswersRef.current, [questionId]: optionKey };
+    setStudentAnswers(updated);
+    scheduleDebouncedSaveProgress(updated);
+  };
+
   const handleTogglePgkAnswer = (questionId: string, optionKey: string) => {
-    const current = studentAnswers[questionId];
+    const current = studentAnswersRef.current[questionId];
     let list: string[] = [];
     if (typeof current === 'string' && current.length > 0) {
       list = current.split(',').map((s) => s.trim().toUpperCase());
@@ -1592,32 +2320,20 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       list.push(optionKey);
     }
     list.sort();
-    const updated = { ...studentAnswers, [questionId]: list.join(',') };
+    const updated = { ...studentAnswersRef.current, [questionId]: list.join(',') };
     setStudentAnswers(updated);
-    if (activeStudentExam) {
-      axios.post(
-        `${apiUrl}/api/exams/${activeStudentExam.id}/save-progress`,
-        { answers: updated },
-        { headers: { Authorization: `Bearer ${token}` } }
-      ).catch(() => {});
-    }
+    scheduleDebouncedSaveProgress(updated);
   };
 
   const handleEssayChangeMobile = (questionId: string, text: string) => {
-    const current = studentAnswers[questionId];
+    const current = studentAnswersRef.current[questionId];
     let updatedVal: any = { answer: text, image_url: null };
     if (typeof current === 'object' && current !== null && !Array.isArray(current)) {
       updatedVal = { ...current, answer: text };
     }
-    const updated = { ...studentAnswers, [questionId]: updatedVal };
+    const updated = { ...studentAnswersRef.current, [questionId]: updatedVal };
     setStudentAnswers(updated);
-    if (activeStudentExam) {
-      axios.post(
-        `${apiUrl}/api/exams/${activeStudentExam.id}/save-progress`,
-        { answers: updated },
-        { headers: { Authorization: `Bearer ${token}` } }
-      ).catch(() => {});
-    }
+    scheduleDebouncedSaveProgress(updated);
   };
 
   const openAnswerCameraModal = (questionId: string) => {
@@ -1643,18 +2359,12 @@ Format JSON array murni tanpa pembuka/penutup markdown:
         );
 
         if (uploadRes.data?.success) {
-          const current = studentAnswers[targetEssayQuestionId];
+          const current = studentAnswersRef.current[targetEssayQuestionId];
           const text = typeof current === 'object' && current !== null ? (current.answer || '') : (current || '');
           const updatedVal = { answer: text, image_url: uploadRes.data.image_url };
-          const updated = { ...studentAnswers, [targetEssayQuestionId]: updatedVal };
+          const updated = { ...studentAnswersRef.current, [targetEssayQuestionId]: updatedVal };
           setStudentAnswers(updated);
-          if (activeStudentExam) {
-            axios.post(
-              `${apiUrl}/api/exams/${activeStudentExam.id}/save-progress`,
-              { answers: updated },
-              { headers: { Authorization: `Bearer ${token}` } }
-            ).catch(() => {});
-          }
+          scheduleDebouncedSaveProgress(updated);
           showToast('Foto jawaban berhasil dilampirkan!', 'success');
           setIsAnswerCameraModalOpen(false);
         } else {
@@ -1670,20 +2380,14 @@ Format JSON array murni tanpa pembuka/penutup markdown:
   };
 
   const handleRemoveEssayImageMobile = (questionId: string) => {
-    const current = studentAnswers[questionId];
+    const current = studentAnswersRef.current[questionId];
     let updatedVal: any = '';
     if (typeof current === 'object' && current !== null) {
       updatedVal = { ...current, image_url: null };
     }
-    const updated = { ...studentAnswers, [questionId]: updatedVal };
+    const updated = { ...studentAnswersRef.current, [questionId]: updatedVal };
     setStudentAnswers(updated);
-    if (activeStudentExam) {
-      axios.post(
-        `${apiUrl}/api/exams/${activeStudentExam.id}/save-progress`,
-        { answers: updated },
-        { headers: { Authorization: `Bearer ${token}` } }
-      ).catch(() => {});
-    }
+    scheduleDebouncedSaveProgress(updated);
   };
 
   const toggleDoubtful = (questionId: string) => {
@@ -1700,46 +2404,87 @@ Format JSON array murni tanpa pembuka/penutup markdown:
 
   const handleConfirmSubmit = () => {
     const totalQ = studentQuestions.length;
-    const answeredCount = Object.keys(studentAnswers).length;
+    const answeredCount = Object.keys(studentAnswersRef.current).length;
     const unansweredCount = totalQ - answeredCount;
 
+    isConfirmationAlertOpenRef.current = true;
     Alert.alert(
       'Selesaikan Ujian?',
       `Anda telah menjawab ${answeredCount} dari ${totalQ} butir soal.${
         unansweredCount > 0 ? ` Terdapat ${unansweredCount} soal yang belum dijawab!` : ''
       }\n\nApakah Anda yakin ingin mengumpulkan lembar jawaban sekarang?`,
       [
-        { text: 'Periksa Kembali', style: 'cancel' },
+        {
+          text: 'Periksa Kembali',
+          style: 'cancel',
+          onPress: () => { isConfirmationAlertOpenRef.current = false; },
+        },
         {
           text: 'Ya, Kumpulkan',
           style: 'default',
-          onPress: () => finalizeSubmitExam(),
+          onPress: () => {
+            isConfirmationAlertOpenRef.current = false;
+            finalizeSubmitExam();
+          },
         },
-      ]
+      ],
+      {
+        onDismiss: () => { isConfirmationAlertOpenRef.current = false; },
+      }
     );
   };
 
   const finalizeSubmitExam = async () => {
-    if (!activeStudentExam) return;
+    if (!activeStudentExam || isSubmittingExam) return;
     setIsSubmittingExam(true);
 
     try {
+      if (saveProgressTimerRef.current) {
+        clearTimeout(saveProgressTimerRef.current);
+        saveProgressTimerRef.current = null;
+      }
+
+      const studentId = user?.student_id || user?.id;
+      const finalAnswersObj = studentAnswersRef.current || studentAnswers;
+
+      // KIRIM OBJEK answers LANGSUNG (BUKAN JSON.stringify!) agar penilaian skor PG 100% akurat
       const res = await axios.post(
         `${apiUrl}/api/exams/${activeStudentExam.id}/submit`,
         {
-          answers: JSON.stringify(studentAnswers),
-          start_time: new Date().toISOString(),
+          student_id: studentId,
+          answers: finalAnswersObj,
+          started_at: examStartedAtRef.current,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
+      // Bersihkan FLAG_SECURE, alarm, & penanda sesi aktif
+      try {
+        FaceProctorNative?.setSecureExamMode(false);
+        FaceProctorNative?.stopWarningAlarm();
+      } catch {}
+
+      if (studentId) {
+        await Promise.all([
+          AsyncStorage.removeItem(`sipena_active_exam_session_${studentId}`),
+          AsyncStorage.removeItem(`sipena_backup_ans_${activeStudentExam.id}_${studentId}`),
+          AsyncStorage.removeItem(`sipena_violations_v6_${activeStudentExam.id}_${studentId}`),
+          AsyncStorage.removeItem(`sipena_locked_v6_${activeStudentExam.id}_${studentId}`),
+        ]).catch(() => {});
+      }
+
+      setProctorAlertBanner(null);
       setIsStudentExamModalOpen(false);
+      const computedScore = res.data?.score_pg !== undefined
+        ? res.data.score_pg
+        : (res.data?.score_total !== undefined ? res.data.score_total : 0);
+
       setExamResultSummary({
         title: activeStudentExam.title,
         subjectName: activeStudentExam.subject?.name,
-        scoreTotal: res.data?.score_total !== undefined ? res.data.score_total : 0,
-        scorePg: res.data?.score_pg !== undefined ? res.data.score_pg : 0,
-        answeredCount: Object.keys(studentAnswers).length,
+        scoreTotal: computedScore,
+        scorePg: computedScore,
+        answeredCount: Object.keys(finalAnswersObj).length,
         totalQuestions: studentQuestions.length,
       });
 
@@ -2060,7 +2805,29 @@ Format JSON array murni tanpa pembuka/penutup markdown:
               ) : (
                 exams.map((exam) => {
                   const studentResult = exam.results && exam.results.length > 0 ? exam.results[0] : null;
-                  const isFinished = !!studentResult?.finished_at || studentResult?.status === 'Selesai';
+                  const statusLower = String(studentResult?.status || '').toLowerCase();
+                  const isPermanentBlocked = statusLower.includes('blokir permanen');
+                  const isViolationLocked = statusLower.includes('terkunci');
+                  const isFinished = !isPermanentBlocked && !isViolationLocked && (
+                    !!studentResult?.finished_at || statusLower === 'selesai' || statusLower.includes('menunggu koreksi')
+                  );
+                  const isResuming = !isFinished && !isPermanentBlocked && !isViolationLocked && !!studentResult?.started_at;
+
+                  const nowMs = Date.now();
+                  const startDateObj = exam.start_time ? new Date(exam.start_time) : null;
+                  const endDateObj = exam.end_time ? new Date(exam.end_time) : null;
+                  const isNotStartedYet = !!(startDateObj && !isNaN(startDateObj.getTime()) && nowMs < startDateObj.getTime());
+                  const isExpired = !!(endDateObj && !isNaN(endDateObj.getTime()) && nowMs > endDateObj.getTime());
+
+                  const dateLabel = startDateObj && !isNaN(startDateObj.getTime())
+                    ? startDateObj.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+                    : '';
+                  const startTimeStr = startDateObj && !isNaN(startDateObj.getTime())
+                    ? startDateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':')
+                    : '';
+                  const endTimeStr = endDateObj && !isNaN(endDateObj.getTime())
+                    ? endDateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':')
+                    : '';
 
                   return (
                     <View key={exam.id} style={styles.examCard}>
@@ -2076,6 +2843,16 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                         </View>
                       </View>
 
+                      {/* Schedule Time Bar */}
+                      {Boolean(dateLabel || startTimeStr) && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, backgroundColor: '#F8FAFC', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                          <Ionicons name="time-outline" size={14} color="#475569" style={{ marginRight: 6 }} />
+                          <Text style={{ fontSize: 12, color: '#334155', fontWeight: '600' }}>
+                            Jadwal: {dateLabel} • {startTimeStr}{endTimeStr ? ` – ${endTimeStr} WIB` : ' WIB'}
+                          </Text>
+                        </View>
+                      )}
+
                       {/* Proctor Badges */}
                       <View style={[styles.proctorBadgesRow, { marginTop: 10 }]}>
                         {exam.proctor_enabled && (
@@ -2087,34 +2864,72 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                         {exam.proctor_tab_lock && (
                           <View style={[styles.proctorBadge, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
                             <Ionicons name="lock-closed" size={12} color="#2563EB" />
-                            <Text style={[styles.proctorBadgeText, { color: '#1E40AF' }]}>Kunci Aplikasi</Text>
+                            <Text style={[styles.proctorBadgeText, { color: '#1E40AF' }]}>Kunci Aplikasi & Layar</Text>
                           </View>
                         )}
                       </View>
 
                       <View style={styles.cardDivider} />
 
-                      {/* Student Action: Start or Result */}
-                      {isFinished ? (
+                      {/* Student Action: Blocked / Locked / Finished / Not Started / Expired / Start */}
+                      {isPermanentBlocked ? (
+                        <View style={{ backgroundColor: '#FEF2F2', borderColor: '#FCA5A5', borderWidth: 1, borderRadius: 10, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
+                          <Ionicons name="ban" size={20} color="#DC2626" style={{ marginRight: 8 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ color: '#991B1B', fontWeight: '800', fontSize: 13 }}>DIBLOKIR PERMANEN (3/3)</Text>
+                            <Text style={{ color: '#B91C1C', fontSize: 11, marginTop: 2 }}>
+                              Akses ujian dihentikan karena pelanggaran keamanan. Hubungi Pengawas / Admin.
+                            </Text>
+                          </View>
+                        </View>
+                      ) : isViolationLocked ? (
+                        <View style={{ backgroundColor: '#FFF7ED', borderColor: '#FDBA74', borderWidth: 1, borderRadius: 10, padding: 12, flexDirection: 'row', alignItems: 'center' }}>
+                          <Ionicons name="lock-closed" size={20} color="#EA580C" style={{ marginRight: 8 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ color: '#9A3412', fontWeight: '800', fontSize: 13 }}>
+                              AKSES TERKUNCI ({studentResult?.status})
+                            </Text>
+                            <Text style={{ color: '#C2410C', fontSize: 11, marginTop: 2 }}>
+                              Wajib lapor ke Pengawas untuk meminta Reset Akses, lalu ketuk tombol Segarkan (↻) di kanan atas.
+                            </Text>
+                          </View>
+                        </View>
+                      ) : isFinished ? (
                         <View style={styles.studentCompletedRow}>
                           <View style={styles.scorePill}>
                             <Ionicons name="trophy" size={16} color="#F59E0B" />
                             <Text style={styles.scorePillText}>
-                              Nilai Anda: {studentResult.score_total !== undefined ? studentResult.score_total : studentResult.score_pg} / 100
+                              Nilai Anda: {studentResult?.score_total !== undefined ? studentResult.score_total : (studentResult?.score_pg ?? 0)} / 100
                             </Text>
                           </View>
                           <View style={styles.finishedStatusTag}>
                             <Text style={styles.finishedStatusText}>Selesai Dikerjakan</Text>
                           </View>
                         </View>
+                      ) : isNotStartedYet ? (
+                        <TouchableOpacity
+                          style={[styles.startExamBtn, { backgroundColor: '#94A3B8' }]}
+                          onPress={() => showToast(`Ujian belum dimulai! Jadwal dimulai pukul ${startTimeStr} WIB.`, 'warning')}
+                          activeOpacity={0.9}
+                        >
+                          <Ionicons name="hourglass-outline" size={18} color="#FFFFFF" />
+                          <Text style={styles.startExamBtnText}>Belum Dimulai ({startTimeStr} WIB)</Text>
+                        </TouchableOpacity>
+                      ) : isExpired ? (
+                        <View style={{ backgroundColor: '#F1F5F9', borderColor: '#CBD5E1', borderWidth: 1, borderRadius: 10, padding: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                          <Ionicons name="close-circle-outline" size={18} color="#64748B" style={{ marginRight: 6 }} />
+                          <Text style={{ color: '#475569', fontWeight: '700', fontSize: 13 }}>Waktu Ujian Telah Berakhir</Text>
+                        </View>
                       ) : (
                         <TouchableOpacity
-                          style={styles.startExamBtn}
+                          style={[styles.startExamBtn, isResuming && { backgroundColor: '#EA580C' }]}
                           onPress={() => handleStartExamPrompt(exam)}
                           activeOpacity={0.8}
                         >
                           <Ionicons name="play-circle" size={18} color="#FFFFFF" />
-                          <Text style={styles.startExamBtnText}>Masuk Ruang Ujian</Text>
+                          <Text style={styles.startExamBtnText}>
+                            {isResuming ? 'Lanjutkan Ujian' : 'Masuk Ruang Ujian'}
+                          </Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -4445,16 +5260,321 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       </Modal>
 
       {/* ======================================================== */}
-      {/* MODAL 6: STUDENT EXAM ARENA (FULLSCREEN)                 */}
+      {/* MODAL 5B: PRE-EXAM RULES & LIVE AI FACE CHECK            */}
       {/* ======================================================== */}
       <Modal
-        visible={isStudentExamModalOpen}
+        visible={isPreExamModalOpen}
         animationType="slide"
         onRequestClose={() => {
-          Alert.alert('Perhatian', 'Selesaikan lembar ujian Anda terlebih dahulu sebelum keluar.', [{ text: 'Mengerti' }]);
+          if (!loading) setIsPreExamModalOpen(false);
         }}
       >
-        <View style={[styles.examArenaContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <View style={[styles.preExamContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+          <View style={styles.preExamHeader}>
+            <View style={styles.preExamHeaderIcon}>
+              <Ionicons name="shield-checkmark" size={22} color="#0284C7" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.preExamHeaderTitle}>Tata Tertib & Verifikasi Ujian</Text>
+              <Text style={styles.preExamHeaderSub} numberOfLines={1}>
+                {preExamTarget?.title} • {preExamTarget?.subject?.name || 'CBT'} ({preExamTarget?.duration || 60} Menit)
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.preExamCloseBtn}
+              disabled={loading}
+              onPress={() => setIsPreExamModalOpen(false)}
+            >
+              <Ionicons name="close" size={22} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.preExamScroll} showsVerticalScrollIndicator={false}>
+            {/* Split Screen Blocker Banner */}
+            {preCheckFaceStatus === 'split_screen' && (
+              <View style={styles.preExamDangerBox}>
+                <Ionicons name="warning" size={22} color="#DC2626" />
+                <Text style={styles.preExamDangerText}>
+                  Terdeteksi mode Split Screen / Layar Terbelah! Tutup aplikasi lain dan kembalikan SIPENAFS ke layar penuh untuk melanjutkan ujian.
+                </Text>
+              </View>
+            )}
+
+            {/* Live AI Proctoring Camera Check Box */}
+            {preExamTarget?.proctor_enabled && (
+              <View style={styles.preExamCameraCard}>
+                <View style={styles.preExamCamTitleRow}>
+                  <Ionicons name="videocam" size={16} color="#0F172A" />
+                  <Text style={styles.preExamCamTitle}>Pemeriksaan Kamera AI Proctoring</Text>
+                  <View
+                    style={[
+                      styles.preExamStatusChip,
+                      preCheckFaceStatus === 'ok'
+                        ? { backgroundColor: '#DCFCE7' }
+                        : preCheckFaceStatus === 'checking'
+                        ? { backgroundColor: '#FEF3C7' }
+                        : { backgroundColor: '#FEE2E2' },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.preExamStatusChipText,
+                        preCheckFaceStatus === 'ok'
+                          ? { color: '#15803D' }
+                          : preCheckFaceStatus === 'checking'
+                          ? { color: '#B45309' }
+                          : { color: '#DC2626' },
+                      ]}
+                    >
+                      {preCheckFaceStatus === 'ok'
+                        ? 'SIAP'
+                        : preCheckFaceStatus === 'checking'
+                        ? 'MEMINDAI...'
+                        : preCheckFaceStatus === 'multiple'
+                        ? '>1 WAJAH'
+                        : preCheckFaceStatus === 'no_face'
+                        ? 'TIDAK TERDETEKSI'
+                        : 'PERLU IZIN'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View
+                  style={[
+                    styles.preExamCamFrame,
+                    preCheckFaceStatus === 'ok'
+                      ? { borderColor: '#16A34A' }
+                      : preCheckFaceStatus === 'checking'
+                      ? { borderColor: '#F59E0B' }
+                      : { borderColor: '#DC2626' },
+                  ]}
+                >
+                  {cameraPermission?.granted && isPreExamModalOpen && !isStudentExamModalOpen && !loading ? (
+                    <CameraView ref={preCheckCameraRef} style={StyleSheet.absoluteFill} facing="front" />
+                  ) : (
+                    <View style={styles.preExamCamPlaceholder}>
+                      {loading ? (
+                        <>
+                          <ActivityIndicator size="large" color="#38BDF8" />
+                          <Text style={styles.preExamCamPlaceholderText}>Menyiapkan soal ujian...</Text>
+                        </>
+                      ) : (
+                        <>
+                          <Ionicons name="camera-outline" size={34} color="#94A3B8" />
+                          <Text style={styles.preExamCamPlaceholderText}>
+                            Izin kamera depan diperlukan untuk pengawasan ujian.
+                          </Text>
+                          <TouchableOpacity
+                            style={styles.preExamGrantCamBtn}
+                            onPress={async () => {
+                              const res = await requestCameraPermission();
+                              if (res.granted) {
+                                setPreCheckFaceStatus('checking');
+                                setPreCheckStatusNote('Memindai wajah Anda di kamera depan...');
+                              }
+                            }}
+                          >
+                            <Text style={styles.preExamGrantCamBtnText}>Aktifkan Izin Kamera</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Subtle Oval Face Guide */}
+                  {cameraPermission?.granted && !loading && (
+                    <View pointerEvents="none" style={styles.preExamFaceGuideOverlay}>
+                      <View
+                        style={[
+                          styles.preExamFaceOval,
+                          preCheckFaceStatus === 'ok'
+                            ? { borderColor: 'rgba(34, 197, 94, 0.9)' }
+                            : { borderColor: 'rgba(255, 255, 255, 0.7)' },
+                        ]}
+                      />
+                    </View>
+                  )}
+                </View>
+
+                <View
+                  style={[
+                    styles.preExamNoteBar,
+                    preCheckFaceStatus === 'ok'
+                      ? { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }
+                      : preCheckFaceStatus === 'checking'
+                      ? { backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }
+                      : { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+                  ]}
+                >
+                  <Ionicons
+                    name={
+                      preCheckFaceStatus === 'ok'
+                        ? 'checkmark-circle'
+                        : preCheckFaceStatus === 'checking'
+                        ? 'scan-circle'
+                        : 'alert-circle'
+                    }
+                    size={18}
+                    color={
+                      preCheckFaceStatus === 'ok'
+                        ? '#16A34A'
+                        : preCheckFaceStatus === 'checking'
+                        ? '#D97706'
+                        : '#DC2626'
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.preExamNoteText,
+                      preCheckFaceStatus === 'ok'
+                        ? { color: '#166534' }
+                        : preCheckFaceStatus === 'checking'
+                        ? { color: '#92400E' }
+                        : { color: '#991B1B' },
+                    ]}
+                  >
+                    {preCheckStatusNote}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Strict CBT Security Rules Card */}
+            <View style={styles.preExamRulesCard}>
+              <View style={styles.preExamRulesHeader}>
+                <Ionicons name="lock-closed" size={16} color="#B91C1C" />
+                <Text style={styles.preExamRulesTitle}>PERATURAN KEAMANAN UJIAN (WAJIB DIPATUHI)</Text>
+              </View>
+
+              <View style={styles.preExamRuleRow}>
+                <Text style={styles.preExamRuleNum}>1.</Text>
+                <Text style={styles.preExamRuleText}>
+                  <Text style={{ fontWeight: '800' }}>Dilarang keluar aplikasi / berpindah layar:</Text> Menekan tombol Home, membuka Recent Apps, atau menutup paksa aplikasi akan langsung <Text style={{ fontWeight: '800', color: '#B91C1C' }}>mengunci akses ujian secara otomatis</Text>.
+                </Text>
+              </View>
+
+              <View style={styles.preExamRuleRow}>
+                <Text style={styles.preExamRuleNum}>2.</Text>
+                <Text style={styles.preExamRuleText}>
+                  <Text style={{ fontWeight: '800' }}>Dilarang Split Screen, Floating App, & Screenshot:</Text> Membelah layar, membuka jendela mengambang (WhatsApp/Browser pop-up), atau menarik panel notifikasi terlalu lama terdeteksi sebagai pelanggaran berat.
+                </Text>
+              </View>
+
+              <View style={styles.preExamRuleRow}>
+                <Text style={styles.preExamRuleNum}>3.</Text>
+                <Text style={styles.preExamRuleText}>
+                  <Text style={{ fontWeight: '800' }}>Batas Pelanggaran (Maks. 3 Kali):</Text> Pelanggaran ke-1 & ke-2 mengunci ujian hingga Pengawas memberikan <Text style={{ fontWeight: '800' }}>Reset Akses</Text>. Pelanggaran ke-3 menyebabkan <Text style={{ fontWeight: '800', color: '#B91C1C' }}>BLOKIR PERMANEN</Text>.
+                </Text>
+              </View>
+
+              {preExamTarget?.proctor_enabled && (
+                <View style={styles.preExamRuleRow}>
+                  <Text style={styles.preExamRuleNum}>4.</Text>
+                  <Text style={styles.preExamRuleText}>
+                    <Text style={{ fontWeight: '800' }}>Pengawasan Kamera AI Aktif:</Text> Pastikan wajah Anda selalu terlihat jelas di depan kamera depan dan tidak ada orang lain di sekitar layar. Jika wajah menghilang, alarm peringatan akan berbunyi dan tercatat di laporan Pengawas.
+                  </Text>
+                </View>
+              )}
+            </View>
+          </ScrollView>
+
+          <View style={styles.preExamFooter}>
+            <TouchableOpacity
+              style={styles.preExamCancelBtn}
+              disabled={loading}
+              onPress={() => setIsPreExamModalOpen(false)}
+            >
+              <Text style={styles.preExamCancelBtnText}>Batal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.preExamStartBtn,
+                (preCheckFaceStatus !== 'ok' || loading) && styles.preExamStartBtnDisabled,
+              ]}
+              disabled={preCheckFaceStatus !== 'ok' || loading}
+              onPress={() => preExamTarget && startExamArena(preExamTarget)}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="play-circle" size={19} color="#FFFFFF" />
+                  <Text style={styles.preExamStartBtnText}>
+                    {preCheckFaceStatus === 'ok' ? 'Mulai Ujian Sekarang' : 'Menunggu Verifikasi...'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ======================================================== */}
+      {/* MODAL 5C: BLOCKING VIOLATION / LOCKED EXAM ALERT         */}
+      {/* ======================================================== */}
+      <Modal
+        visible={Boolean(lockedModalInfo?.visible)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {}}
+      >
+        <View style={styles.modalOverlayCenter}>
+          <View style={styles.lockModalCard}>
+            <View
+              style={[
+                styles.lockModalIconCircle,
+                lockedModalInfo?.isPermanent && { backgroundColor: '#991B1B' },
+              ]}
+            >
+              <Ionicons
+                name={lockedModalInfo?.isPermanent ? 'ban' : 'lock-closed'}
+                size={34}
+                color="#FFFFFF"
+              />
+            </View>
+
+            <View style={styles.lockModalBadge}>
+              <Text style={styles.lockModalBadgeText}>
+                PELANGGARAN KEAMANAN ({lockedModalInfo?.count || 1}/3)
+              </Text>
+            </View>
+
+            <Text style={styles.lockModalTitle}>{lockedModalInfo?.title || 'Akses Ujian Terkunci!'}</Text>
+            <Text style={styles.lockModalMessage}>{lockedModalInfo?.message}</Text>
+
+            <TouchableOpacity
+              style={[
+                styles.lockModalBtn,
+                lockedModalInfo?.isPermanent && { backgroundColor: '#991B1B' },
+              ]}
+              onPress={() => {
+                try {
+                  FaceProctorNative?.stopWarningAlarm();
+                } catch {}
+                setLockedModalInfo(null);
+                fetchStudentExamsList();
+              }}
+            >
+              <Text style={styles.lockModalBtnText}>
+                {lockedModalInfo?.isPermanent ? 'Mengerti & Kembali' : 'Kembali ke Daftar Ujian'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ======================================================== */}
+      {/* FULLSCREEN OVERLAY 6: STUDENT EXAM ARENA (IN-ACTIVITY)   */}
+      {/* Dirender di dalam MainActivity agar FLAG_SECURE memblokir*/}
+      {/* screenshot & onWindowFocusChanged bebas false positive!  */}
+      {/* ======================================================== */}
+      {isStudentExamModalOpen && (
+        <View
+          style={[
+            styles.examArenaOverlayRoot,
+            { paddingTop: insets.top, paddingBottom: insets.bottom },
+          ]}
+        >
           {/* Top Arena Header: Title, Timer, Drawer Toggle */}
           <View style={styles.arenaHeader}>
             <View style={{ flex: 1 }}>
@@ -4480,7 +5600,15 @@ Format JSON array murni tanpa pembuka/penutup markdown:
             </TouchableOpacity>
           </View>
 
-          {/* Floating Draggable Camera Preview Box if Proctor Enabled */}
+          {/* Active Red Warning Banner when Face Lost or Multiple Faces */}
+          {Boolean(proctorAlertBanner) && (
+            <View style={styles.proctorAlertBannerBox}>
+              <Ionicons name="warning" size={18} color="#FFFFFF" />
+              <Text style={styles.proctorAlertBannerText}>{proctorAlertBanner}</Text>
+            </View>
+          )}
+
+          {/* Floating Draggable Camera Preview Box (CameraView tetap mounted walau minimize agar AI tetap scan!) */}
           {activeStudentExam?.proctor_enabled && (
             <Animated.View
               style={[
@@ -4495,42 +5623,95 @@ Format JSON array murni tanpa pembuka/penutup markdown:
               ]}
               {...cameraPanResponder.panHandlers}
             >
-              {!isCameraBoxMinimized ? (
-                <View style={styles.cameraBoxInner}>
-                  {cameraPermission?.granted ? (
-                    <CameraView style={StyleSheet.absoluteFill} facing="front" />
-                  ) : (
-                    <View style={styles.cameraOffOverlay}>
-                      <Ionicons name="videocam-off" size={20} color="#EF4444" />
-                      <Text style={styles.cameraOffText}>Izin Kamera Diperlukan</Text>
+              <View
+                style={[
+                  styles.cameraBoxInner,
+                  isCameraBoxMinimized && styles.cameraBoxInnerMinimized,
+                  (proctorFaceStatus === 'no_face' || proctorFaceStatus === 'multiple') && {
+                    borderColor: '#DC2626',
+                    borderWidth: 2.5,
+                  },
+                ]}
+              >
+                {cameraPermission?.granted && !isAnswerCameraModalOpen ? (
+                  <CameraView ref={proctorCameraRef} style={StyleSheet.absoluteFill} facing="front" />
+                ) : (
+                  <View style={styles.cameraOffOverlay}>
+                    <Ionicons name="videocam-off" size={18} color="#EF4444" />
+                    <Text style={styles.cameraOffText}>
+                      {isAnswerCameraModalOpen ? 'Kamera Soal Aktif' : 'Izin Kamera Diperlukan'}
+                    </Text>
+                  </View>
+                )}
+
+                {!isCameraBoxMinimized ? (
+                  <>
+                    {/* Top Drag Handle Bar so student knows it can be dragged */}
+                    <View style={styles.cameraDragHeader}>
+                      <Ionicons name="reorder-two-outline" size={13} color="#CBD5E1" />
+                      <Text style={styles.cameraDragText}>GESER</Text>
                     </View>
-                  )}
-                  {/* Top Drag Handle Bar so student knows it can be dragged */}
-                  <View style={styles.cameraDragHeader}>
-                    <Ionicons name="reorder-two-outline" size={13} color="#CBD5E1" />
-                    <Text style={styles.cameraDragText}>GESER</Text>
-                  </View>
-                  <View style={styles.cameraStatusPill}>
-                    <View style={styles.recDot} />
-                    <Text style={styles.cameraStatusText}>AKTIF</Text>
-                  </View>
+                    <View
+                      style={[
+                        styles.cameraStatusPill,
+                        proctorFaceStatus === 'ok'
+                          ? { backgroundColor: 'rgba(22, 163, 74, 0.88)' }
+                          : { backgroundColor: 'rgba(220, 38, 38, 0.92)' },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.recDot,
+                          proctorFaceStatus === 'ok' && { backgroundColor: '#BBF7D0' },
+                        ]}
+                      />
+                      <Text style={styles.cameraStatusText}>
+                        {proctorFaceStatus === 'ok'
+                          ? 'WAJAH OK'
+                          : proctorFaceStatus === 'multiple'
+                          ? '>1 WAJAH!'
+                          : 'WAJAH HILANG!'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.minimizeCameraBtn}
+                      onPress={() => setIsCameraBoxMinimized(true)}
+                    >
+                      <Ionicons name="chevron-up" size={14} color="#FFF" />
+                    </TouchableOpacity>
+                  </>
+                ) : (
                   <TouchableOpacity
-                    style={styles.minimizeCameraBtn}
-                    onPress={() => setIsCameraBoxMinimized(true)}
+                    style={[
+                      styles.restoreCameraOverlay,
+                      (proctorFaceStatus === 'no_face' || proctorFaceStatus === 'multiple') && {
+                        backgroundColor: '#FEF2F2',
+                      },
+                    ]}
+                    onPress={() => setIsCameraBoxMinimized(false)}
                   >
-                    <Ionicons name="chevron-up" size={14} color="#FFF" />
+                    <View
+                      style={[
+                        styles.recDot,
+                        proctorFaceStatus === 'ok' && { backgroundColor: '#16A34A' },
+                      ]}
+                    />
+                    <Ionicons
+                      name="videocam"
+                      size={13}
+                      color={proctorFaceStatus === 'ok' ? '#059669' : '#DC2626'}
+                    />
+                    <Text
+                      style={[
+                        styles.restoreCameraText,
+                        proctorFaceStatus !== 'ok' && { color: '#DC2626' },
+                      ]}
+                    >
+                      {proctorFaceStatus === 'ok' ? 'AI OK ⠿' : 'CEK WAJAH!'}
+                    </Text>
                   </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={styles.restoreCameraBtn}
-                  onPress={() => setIsCameraBoxMinimized(false)}
-                >
-                  <View style={styles.recDot} />
-                  <Ionicons name="videocam" size={14} color="#059669" />
-                  <Text style={styles.restoreCameraText}>Kamera ⠿</Text>
-                </TouchableOpacity>
-              )}
+                )}
+              </View>
             </Animated.View>
           )}
 
@@ -4789,9 +5970,9 @@ Format JSON array murni tanpa pembuka/penutup markdown:
             )}
           </View>
 
-          {/* Question Grid Navigator Modal / Drawer */}
-          <Modal visible={isNavDrawerOpen} transparent animationType="slide" onRequestClose={() => setIsNavDrawerOpen(false)}>
-            <View style={styles.modalOverlay}>
+          {/* Question Grid Navigator Overlay (In-Activity agar tidak mengganggu fokus jendela utama) */}
+          {isNavDrawerOpen && (
+            <View style={[StyleSheet.absoluteFill, styles.modalOverlay, { zIndex: 9999, elevation: 99 }]}>
               <View style={[styles.modalCard, { maxHeight: '80%' }]}>
                 <View style={styles.modalHeader}>
                   <Text style={styles.modalTitle}>Daftar Nomor Soal</Text>
@@ -4862,9 +6043,9 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                 </TouchableOpacity>
               </View>
             </View>
-          </Modal>
+          )}
         </View>
-      </Modal>
+      )}
 
       {/* MODAL: ANSWER PHOTO CAPTURE FOR ESSAY */}
       <Modal visible={isAnswerCameraModalOpen} animationType="slide" onRequestClose={() => setIsAnswerCameraModalOpen(false)}>
@@ -7065,5 +8246,347 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  // -------------------------------------------------------------
+  // PRE-EXAM RULES, AI FACE CHECK, LOCK MODAL & IN-ACTIVITY ARENA
+  // -------------------------------------------------------------
+  examArenaOverlayRoot: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 500,
+    elevation: 50,
+    backgroundColor: '#F8FAFC',
+  },
+  proctorAlertBannerBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#991B1B',
+  },
+  proctorAlertBannerText: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '800',
+    lineHeight: 16,
+  },
+  cameraBoxInnerMinimized: {
+    width: 116,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1.5,
+  },
+  restoreCameraOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    gap: 4,
+  },
+  preExamContainer: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  preExamHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  preExamHeaderIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#E0F2FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  preExamHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  preExamHeaderSub: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  preExamCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  preExamScroll: {
+    padding: 16,
+    paddingBottom: 28,
+    gap: 14,
+  },
+  preExamDangerBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: '#FCA5A5',
+    borderRadius: 12,
+    padding: 12,
+  },
+  preExamDangerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#991B1B',
+    lineHeight: 17,
+  },
+  preExamCameraCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+  },
+  preExamCamTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  preExamCamTitle: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  preExamStatusChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  preExamStatusChipText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  preExamCamFrame: {
+    width: '100%',
+    height: 210,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#0F172A',
+    borderWidth: 2.5,
+    position: 'relative',
+  },
+  preExamCamPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 18,
+    gap: 8,
+  },
+  preExamCamPlaceholderText: {
+    color: '#CBD5E1',
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 17,
+  },
+  preExamGrantCamBtn: {
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  preExamGrantCamBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  preExamFaceGuideOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  preExamFaceOval: {
+    width: 126,
+    height: 158,
+    borderRadius: 72,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+  },
+  preExamNoteBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    marginTop: 10,
+  },
+  preExamNoteText: {
+    flex: 1,
+    fontSize: 11.5,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
+  preExamRulesCard: {
+    backgroundColor: '#FFF1F2',
+    borderWidth: 1.5,
+    borderColor: '#FECDD3',
+    borderRadius: 14,
+    padding: 14,
+    gap: 8,
+  },
+  preExamRulesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  preExamRulesTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#9F1239',
+    letterSpacing: 0.3,
+  },
+  preExamRuleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  preExamRuleNum: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#9F1239',
+    width: 16,
+  },
+  preExamRuleText: {
+    flex: 1,
+    fontSize: 11.8,
+    color: '#4C0519',
+    lineHeight: 17.5,
+  },
+  preExamFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  preExamCancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  preExamCancelBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  preExamStartBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#16A34A',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+  preExamStartBtnDisabled: {
+    backgroundColor: '#94A3B8',
+  },
+  preExamStartBtnText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  lockModalCard: {
+    width: '90%',
+    maxWidth: 370,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 22,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FCA5A5',
+  },
+  lockModalIconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#DC2626',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  lockModalBadge: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  lockModalBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '900',
+    color: '#B91C1C',
+    letterSpacing: 0.4,
+  },
+  lockModalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  lockModalMessage: {
+    fontSize: 13,
+    color: '#334155',
+    textAlign: 'center',
+    lineHeight: 19.5,
+    marginBottom: 20,
+  },
+  lockModalBtn: {
+    width: '100%',
+    backgroundColor: '#DC2626',
+    paddingVertical: 13,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  lockModalBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '800',
   },
 });

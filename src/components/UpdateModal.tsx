@@ -9,6 +9,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  BackHandler,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -193,26 +194,51 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
     setDownloadProgress(0);
   };
 
+  const handleForceExitApp = () => {
+    Alert.alert(
+      'Pembaruan Wajib Diperlukan',
+      'Aplikasi SIPENAFS wajib diperbarui ke versi terbaru sebelum digunakan. Jika tidak diperbarui sekarang, aplikasi akan ditutup otomatis.',
+      [
+        {
+          text: 'Perbarui Sekarang',
+          onPress: () => {
+            if (downloadSuccess && downloadedFileUri) {
+              triggerInstallation(downloadedFileUri);
+            } else {
+              handleStartDownload();
+            }
+          },
+        },
+        {
+          text: 'Keluar Aplikasi',
+          style: 'destructive',
+          onPress: () => BackHandler.exitApp(),
+        },
+      ],
+      { cancelable: false }
+    );
+  };
+
   const handleDismissModal = () => {
     if (isDownloading && !downloadSuccess) {
       Alert.alert(
         'Batalkan Unduhan?',
-        'Proses pengunduhan pembaruan sedang berjalan. Yakin ingin membatalkannya?',
+        'Pembaruan ini wajib dipasang. Jika unduhan dibatalkan, Anda tidak dapat masuk ke aplikasi.',
         [
           { text: 'Lanjutkan Unduh', style: 'cancel' },
           {
-            text: 'Batalkan',
+            text: 'Batalkan & Keluar',
             style: 'destructive',
-            onPress: () => {
-              handleCancelDownload();
-              onDismiss();
+            onPress: async () => {
+              await handleCancelDownload();
+              BackHandler.exitApp();
             },
           },
         ]
       );
       return;
     }
-    onDismiss();
+    handleForceExitApp();
   };
 
   const percentage = Math.round(downloadProgress * 100);
@@ -242,15 +268,15 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
               ? 'Unduhan Siap Dipasang!'
               : isDownloading
               ? 'Mengunduh Pembaruan...'
-              : 'Pembaruan Tersedia!'}
+              : 'Pembaruan Wajib Tersedia!'}
           </Text>
 
           <Text style={styles.subtitle}>
             {downloadSuccess
-              ? 'Berkas telah selesai diunduh. Ketuk tombol pasang untuk memperbarui aplikasi.'
+              ? 'Berkas telah selesai diunduh. Ketuk tombol pasang sekarang untuk memperbarui aplikasi.'
               : isDownloading
               ? 'Harap tunggu, proses unduh sedang berjalan tanpa keluar dari aplikasi.'
-              : 'Versi terbaru aplikasi SIPENAFS telah dirilis.'}
+              : 'Demi kelancaran sistem & keamanan terbaik, versi terbaru SIPENAFS wajib dipasang untuk melanjutkan.'}
           </Text>
 
           {/* Version Comparison Badge */}
@@ -338,16 +364,16 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
 
                 <TouchableOpacity
                   style={styles.dismissBtn}
-                  onPress={onDismiss}
+                  onPress={handleForceExitApp}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.dismissBtnText}>Tutup</Text>
+                  <Text style={[styles.dismissBtnText, { color: '#EF4444' }]}>Keluar Aplikasi</Text>
                 </TouchableOpacity>
               </>
             ) : isDownloading ? (
               <TouchableOpacity
                 style={styles.cancelBtn}
-                onPress={handleCancelDownload}
+                onPress={handleDismissModal}
                 activeOpacity={0.7}
               >
                 <Ionicons name="close-circle-outline" size={18} color="#EF4444" style={{ marginRight: 6 }} />
@@ -366,10 +392,10 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
 
                 <TouchableOpacity
                   style={styles.dismissBtn}
-                  onPress={onDismiss}
+                  onPress={handleForceExitApp}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.dismissBtnText}>Nanti Saja</Text>
+                  <Text style={[styles.dismissBtnText, { color: '#EF4444' }]}>Keluar Aplikasi</Text>
                 </TouchableOpacity>
               </>
             )}
