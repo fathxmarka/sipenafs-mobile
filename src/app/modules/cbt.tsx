@@ -32,6 +32,7 @@ import Colors from '../../constants/Colors';
 import { Toast, ToastType } from '../../components/ui/Toast';
 import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
+import { io } from 'socket.io-client';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { formatCbtText } from '../../utils/cbtFormatter';
 
@@ -336,11 +337,16 @@ export default function CbtScreen() {
   const [proctorAlertBanner, setProctorAlertBanner] = useState<string | null>(null);
   const [lockedModalInfo, setLockedModalInfo] = useState<{
     visible: boolean;
+    examId?: string;
     title: string;
     message: string;
     isPermanent: boolean;
     count: number;
   } | null>(null);
+  const lockedModalInfoRef = useRef<any>(null);
+  useEffect(() => {
+    lockedModalInfoRef.current = lockedModalInfo;
+  }, [lockedModalInfo]);
 
   const missedFaceStreakRef = useRef(0);
   const isFaceScanningRef = useRef(false);
@@ -563,6 +569,12 @@ export default function CbtScreen() {
           const r = ex.results && ex.results.length > 0 ? ex.results[0] : null;
           if (r && !r.finished_at && String(r.status || '').toLowerCase() === 'sedang mengerjakan') {
             await AsyncStorage.removeItem(`sipena_locked_v6_${ex.id}_${studentId}`).catch(() => {});
+            const curLock = lockedModalInfoRef.current;
+            if (curLock?.visible && !curLock?.isPermanent && (!curLock.examId || String(curLock.examId) === String(ex.id))) {
+              try { FaceProctorNative?.stopWarningAlarm(); } catch {}
+              setLockedModalInfo(null);
+              showToast('Akses ujian dibuka oleh Pengawas! Anda dapat langsung melanjutkan ujian.', 'success');
+            }
           }
         }
 
@@ -635,10 +647,11 @@ export default function CbtScreen() {
 
               setLockedModalInfo({
                 visible: true,
+                examId: String(targetEx.id),
                 title: isPermanent ? 'BLOKIR PERMANEN!' : 'Akses Ujian Terkunci!',
                 message: isPermanent
                   ? `Anda menutup paksa aplikasi ujian (Pelanggaran 3/3). Ujian "${targetEx.title}" dihentikan permanen dan dikumpulkan otomatis.`
-                  : `Anda terdeteksi menutup paksa (Force Close) aplikasi saat mengerjakan "${targetEx.title}" (Pelanggaran ${nextCount}/3). Akses ujian dikunci otomatis. Anda WAJIB lapor ke Pengawas untuk meminta Reset Akses.`,
+                  : `Anda terdeteksi menutup paksa (Force Close) aplikasi saat mengerjakan "${targetEx.title}" (Pelanggaran ${nextCount}/3). Akses ujian dikunci otomatis. Silakan lapor ke Pengawas — akses akan terbuka otomatis begitu di-reset.`,
                 isPermanent,
                 count: nextCount,
               });
@@ -1611,8 +1624,9 @@ Format JSON array murni tanpa pembuka/penutup markdown:
     if (statusLower.includes('terkunci')) {
       setLockedModalInfo({
         visible: true,
+        examId: String(exam.id),
         title: 'Akses Ujian Terkunci!',
-        message: `Ujian "${exam.title}" sedang dikunci (${studentResult?.status}). Anda WAJIB melapor ke Pengawas untuk meminta Reset Akses, lalu tekan tombol segarkan (↻) di pojok kanan atas.`,
+        message: `Ujian "${exam.title}" sedang dikunci (${studentResult?.status}). Silakan melapor ke Pengawas untuk meminta Reset Akses — layar akan terbuka otomatis begitu Pengawas membuka akses.`,
         isPermanent: false,
         count: 1,
       });
@@ -1624,6 +1638,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       if (localLock === 'permanent') {
         setLockedModalInfo({
           visible: true,
+          examId: String(exam.id),
           title: 'BLOKIR PERMANEN!',
           message: `Akses Anda pada ujian "${exam.title}" telah diblokir permanen karena 3 kali pelanggaran keamanan.`,
           isPermanent: true,
@@ -1634,8 +1649,9 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       if (localLock === 'true' && studentResult?.finished_at) {
         setLockedModalInfo({
           visible: true,
+          examId: String(exam.id),
           title: 'Akses Ujian Terkunci!',
-          message: `Ujian "${exam.title}" terkunci karena pelanggaran keamanan. Lapor ke Pengawas untuk Reset Akses lalu tekan segarkan (↻).`,
+          message: `Ujian "${exam.title}" terkunci karena pelanggaran keamanan. Lapor ke Pengawas untuk Reset Akses — akses akan terbuka otomatis tanpa perlu refresh.`,
           isPermanent: false,
           count: 1,
         });
@@ -1766,8 +1782,8 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       }
     };
 
-    const initDelay = setTimeout(runPreCheck, 700);
-    const interval = setInterval(runPreCheck, 1800);
+    const initDelay = setTimeout(runPreCheck, 900);
+    const interval = setInterval(runPreCheck, 2400);
 
     return () => {
       clearTimeout(initDelay);
@@ -1803,7 +1819,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       const res = await axios.get(`${apiUrl}/api/exams/student/${exam.id}`, {
         headers: {
           Authorization: `Bearer ${token}`,
-          'X-App-Version': '1.0.27',
+          'X-App-Version': '1.0.28',
           'X-Client-Platform': Platform.OS,
         },
       });
@@ -1994,6 +2010,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
 
       setLockedModalInfo({
         visible: true,
+        examId: String(targetExam.id),
         title: modalTitle,
         message: modalMessage,
         isPermanent,
@@ -2005,6 +2022,57 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       console.error('Lock violation error:', e);
     }
   };
+
+  // Real-Time Socket.io Auto-Unlock (langsung buka kunci begitu Pengawas klik Reset Akses, tanpa perlu refresh!)
+  const hasLockedStudentExam = exams.some((ex) => {
+    const st = String(ex.results?.[0]?.status || '').toLowerCase();
+    return st.includes('terkunci') && !st.includes('blokir permanen');
+  });
+
+  useEffect(() => {
+    if (role !== 'siswa' || !token || !apiUrl || isStudentExamModalOpen) return;
+
+    const socketBaseUrl = String(apiUrl).replace(/\/api\/?$/, '');
+    const socket = io(socketBaseUrl, {
+      auth: { token },
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
+    });
+
+    socket.on('notification', async (data: any) => {
+      if (data?.type === 'EXAM_RESET') {
+        const studentId = user?.student_id || user?.id;
+        const resetExamId = data?.exam_id ? String(data.exam_id) : null;
+        if (studentId && resetExamId) {
+          await AsyncStorage.removeItem(`sipena_locked_v6_${resetExamId}_${studentId}`).catch(() => {});
+          await AsyncStorage.removeItem(`sipena_active_exam_session_${studentId}`).catch(() => {});
+        }
+        try {
+          FaceProctorNative?.stopWarningAlarm();
+        } catch {}
+        setLockedModalInfo(null);
+        showToast('Akses ujian dibuka oleh Pengawas! Anda dapat langsung melanjutkan ujian.', 'success');
+        fetchStudentExamsList();
+      }
+    });
+
+    // Safety net khusus siswa terkunci (mengantisipasi PM2 multi-worker cluster agar tetap auto-unlock <= 4 detik)
+    let fallbackInterval: any = null;
+    if ((lockedModalInfo?.visible && !lockedModalInfo?.isPermanent) || hasLockedStudentExam) {
+      fallbackInterval = setInterval(() => {
+        fetchStudentExamsList();
+      }, 4000);
+    }
+
+    return () => {
+      try {
+        socket.disconnect();
+      } catch {}
+      if (fallbackInterval) clearInterval(fallbackInterval);
+    };
+  }, [role, token, apiUrl, isStudentExamModalOpen, lockedModalInfo?.visible, lockedModalInfo?.isPermanent, hasLockedStudentExam]);
 
   // Timer countdown hook for student
   useEffect(() => {
@@ -2890,7 +2958,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                               AKSES TERKUNCI ({studentResult?.status})
                             </Text>
                             <Text style={{ color: '#C2410C', fontSize: 11, marginTop: 2 }}>
-                              Wajib lapor ke Pengawas untuk meminta Reset Akses, lalu ketuk tombol Segarkan (↻) di kanan atas.
+                              Wajib lapor ke Pengawas untuk Reset Akses. Tombol ujian akan terbuka otomatis begitu Pengawas membuka kunci.
                             </Text>
                           </View>
                         </View>
@@ -5350,7 +5418,14 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   ]}
                 >
                   {cameraPermission?.granted && isPreExamModalOpen && !isStudentExamModalOpen && !loading ? (
-                    <CameraView ref={preCheckCameraRef} style={StyleSheet.absoluteFill} facing="front" />
+                    <CameraView
+                      ref={preCheckCameraRef}
+                      style={StyleSheet.absoluteFill}
+                      facing="front"
+                      flash="off"
+                      animateShutter={false}
+                      mute={true}
+                    />
                   ) : (
                     <View style={styles.preExamCamPlaceholder}>
                       {loading ? (
@@ -5634,7 +5709,14 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                 ]}
               >
                 {cameraPermission?.granted && !isAnswerCameraModalOpen ? (
-                  <CameraView ref={proctorCameraRef} style={StyleSheet.absoluteFill} facing="front" />
+                  <CameraView
+                    ref={proctorCameraRef}
+                    style={StyleSheet.absoluteFill}
+                    facing="front"
+                    flash="off"
+                    animateShutter={false}
+                    mute={true}
+                  />
                 ) : (
                   <View style={styles.cameraOffOverlay}>
                     <Ionicons name="videocam-off" size={18} color="#EF4444" />

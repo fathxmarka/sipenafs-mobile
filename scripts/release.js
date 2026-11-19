@@ -66,10 +66,10 @@ Tautan Permanen Versi Terbaru:
 - Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
 Apa yang Baru di Versi ${version}:
-• Penilaian CBT Lebih Akurat & Instan: Perbaikan sistem pengiriman dan penyimpanan otomatis jawaban siswa agar skor akhir tampil 100% akurat seketika.
-• Verifikasi Kamera & Tata Tertib Ujian: Tampilan pengecekan kamera AI Proctoring interaktif dan panduan ujian sebelum mulai mengerjakan soal.
-• Pengawasan Kamera AI Aktif & Peringatan Cerdas: Deteksi wajah langsung di perangkat dengan respons cepat, stabil, dan hemat kuota internet.
-• Perlindungan Keamanan & Jadwal Otomatis: Sinkronisasi jadwal ujian akurat secara real-time serta pembaruan sistem keamanan ruang ujian penuh.`;
+• Kamera AI Proctoring Mulus Tanpa Kedipan: Layar Tata Tertib dan Ruang Ujian kini tampil tenang, jernih, dan bebas kedip saat kamera memindai.
+• Suara Peringatan Bahasa Indonesia Jernih: Audio pengawasan ujian kini menggunakan suara Bahasa Indonesia yang jelas dan alami di semua tipe HP Android.
+• Buka Kunci Ujian Otomatis Real-Time: Begitu Pengawas memberikan Reset Akses, layar siswa langsung terbuka otomatis via Socket tanpa perlu refresh manual.
+• Penilaian CBT Akurat & Sinkronisasi Jadwal: Penyimpanan otomatis jawaban siswa, skor akhir, serta validasi jadwal ujian berjalan akurat dan instan.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
