@@ -110,6 +110,12 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
 
       const result = await downloadResumable.downloadAsync();
       if (result && result.uri) {
+        // Validasi integritas: pastikan berkas APK utuh (minimal 10 MB) dan bukan berkas HTML/corrupt
+        const downloadedInfo = await FileSystem.getInfoAsync(result.uri);
+        if (!downloadedInfo.exists || (downloadedInfo.size || 0) < 10 * 1024 * 1024) {
+          throw new Error('Berkas unduhan tidak lengkap atau format paket tidak valid.');
+        }
+
         setDownloadedFileUri(result.uri);
         setDownloadSuccess(true);
         setDownloadProgress(1);

@@ -66,6 +66,8 @@ Tautan Permanen Versi Terbaru:
 - Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
 Apa yang Baru di Versi ${version}:
+• Proctoring Dinamis Sesuai Pengaturan Ujian: Pengawasan kamera AI dan kunci tab/layar sepenuhnya mengikuti pengaturan masing-masing ujian (tidak di-hardcode). Ujian tanpa proctoring tidak akan meminta izin kamera atau mengunci layar.
+• Perbaikan Sistem In-App Auto-Update: Pengunduhan berkas APK kini lebih stabil dan dilengkapi validasi integritas untuk mencegah kendala parsing package saat memasang pembaruan.
 • Penyempurnaan Pendaftaran Face ID Biometrik: Penangkapan foto wajah lebih jernih dan menunggu izin kamera aktif agar ekstraksi biometrik 128-d akurat serta bebas bentrok di pendaftaran massal.
 • Sinkronisasi Face ID Otomatis Web & Android: Data biometrik wajah dari Android maupun Web 100% seragam dan langsung tersinkron otomatis.
 • Verifikasi Biometrik Anti-Joki On-Device & Audio Bahasa Indonesia Jernih: Pengawasan kamera bebas kedip, cepat, offline, dan ringan.
@@ -121,19 +123,25 @@ function githubRequest(method, endpoint, data = null, headers = {}) {
 
 async function uploadAsset(uploadUrl, filePath, fileName, maxRetries = 3) {
     const cleanUploadUrl = uploadUrl.replace(/\{.*\}/, '') + `?name=${encodeURIComponent(fileName)}`;
-    const fileBuffer = fs.readFileSync(filePath);
-    console.log(`Mengunggah ${fileName} (${(fileBuffer.length / (1024 * 1024)).toFixed(2)} MB)...`);
+    const stats = fs.statSync(filePath);
+    const sizeMb = (stats.size / (1024 * 1024)).toFixed(2);
+    console.log(`Mengunggah ${fileName} (${sizeMb} MB)...`);
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-            return await githubRequest('POST', cleanUploadUrl, fileBuffer, {
-                'Content-Type': 'application/vnd.android.package-archive',
-                'Content-Length': fileBuffer.length
-            });
+            // Gunakan curl.exe native untuk streaming upload yang cepat, bebas hang 408, dan stabil
+            const normalizedPath = filePath.replace(/\\/g, '/');
+            const curlCmd = `curl.exe -f -s -S --retry 2 --retry-delay 3 -X POST -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Content-Type: application/vnd.android.package-archive" --data-binary "@${normalizedPath}" "${cleanUploadUrl}"`;
+            const out = execSync(curlCmd, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 600000 });
+            try {
+                return JSON.parse(out);
+            } catch (_) {
+                return { success: true };
+            }
         } catch (e) {
             console.warn(`Upaya ${attempt}/${maxRetries} gagal mengunggah ${fileName}: ${e.message}`);
             if (attempt === maxRetries) throw e;
-            await new Promise(res => setTimeout(res, 2500));
+            await new Promise(res => setTimeout(res, 3000));
         }
     }
 }
@@ -175,53 +183,48 @@ async function main() {
 
     const assetsToUpload = [];
 
-    // 1. Siapkan file APK UNIVERSAL (Sangat kompatibel untuk semua HP)
-    if (fs.existsSync(universalApk)) {
-        const destUniversal = path.join(releaseDir, `sipenafs-mobile-${tagName}-universal.apk`);
-        fs.copyFileSync(universalApk, destUniversal);
-        assetsToUpload.push({ path: destUniversal, name: `sipenafs-mobile-${tagName}-universal.apk` });
-
-        // Asset statis permanen Universal
-        const destStaticUniversal = path.join(releaseDir, 'sipenafs-mobile-universal.apk');
-        fs.copyFileSync(universalApk, destStaticUniversal);
-        assetsToUpload.push({ path: destStaticUniversal, name: 'sipenafs-mobile-universal.apk' });
-    }
-
-    // 2. Siapkan file APK 64-bit arm64-v8a (Untuk HP modern 64-bit)
+    // 1. Siapkan file APK 64-bit arm64-v8a (Prioritas 1: Digunakan oleh >90% ponsel modern, ukuran ~80 MB cepat terunggah)
     if (fs.existsSync(arm64Apk)) {
-        const destArm64 = path.join(releaseDir, `sipenafs-mobile-${tagName}-arm64.apk`);
-        fs.copyFileSync(arm64Apk, destArm64);
-        assetsToUpload.push({ path: destArm64, name: `sipenafs-mobile-${tagName}-arm64.apk` });
-
-        // Asset statis permanen 64-bit
         const destStatic64 = path.join(releaseDir, 'sipenafs-mobile-64bit.apk');
         fs.copyFileSync(arm64Apk, destStatic64);
         assetsToUpload.push({ path: destStatic64, name: 'sipenafs-mobile-64bit.apk' });
+
+        const destArm64 = path.join(releaseDir, `sipenafs-mobile-${tagName}-arm64.apk`);
+        fs.copyFileSync(arm64Apk, destArm64);
+        assetsToUpload.push({ path: destArm64, name: `sipenafs-mobile-${tagName}-arm64.apk` });
     }
 
-    // 3. Siapkan file APK 32-bit armeabi-v7a (Khusus HP jadul 32-bit)
+    // 2. Siapkan file APK 32-bit armeabi-v7a (Prioritas 2: Khusus HP entry-level 32-bit, ukuran ~68 MB cepat terunggah)
     if (fs.existsSync(armeabiApk)) {
-        const destV7a = path.join(releaseDir, `sipenafs-mobile-${tagName}-armeabi-v7a.apk`);
-        fs.copyFileSync(armeabiApk, destV7a);
-        assetsToUpload.push({ path: destV7a, name: `sipenafs-mobile-${tagName}-armeabi-v7a.apk` });
-
-        // Asset statis permanen 32-bit
         const destStatic32 = path.join(releaseDir, 'sipenafs-mobile-32bit.apk');
         fs.copyFileSync(armeabiApk, destStatic32);
         assetsToUpload.push({ path: destStatic32, name: 'sipenafs-mobile-32bit.apk' });
+
+        const destV7a = path.join(releaseDir, `sipenafs-mobile-${tagName}-armeabi-v7a.apk`);
+        fs.copyFileSync(armeabiApk, destV7a);
+        assetsToUpload.push({ path: destV7a, name: `sipenafs-mobile-${tagName}-armeabi-v7a.apk` });
     }
 
-    // 4. File APK Utama (Default untuk download manual: utamakan universal agar aman 100% untuk semua HP)
+    // 3. File APK Utama / Universal (Prioritas 3: Kompatibel semua HP)
     const primarySrc = fs.existsSync(universalApk) ? universalApk : (fs.existsSync(arm64Apk) ? arm64Apk : (fs.existsSync(releaseApk) ? releaseApk : null));
     if (primarySrc) {
-        const dest = path.join(releaseDir, `sipenafs-mobile-${tagName}.apk`);
-        fs.copyFileSync(primarySrc, dest);
-        assetsToUpload.push({ path: dest, name: `sipenafs-mobile-${tagName}.apk` });
-
-        // Asset statis utama sipenafs-mobile.apk (Universal)
         const destStaticMain = path.join(releaseDir, 'sipenafs-mobile.apk');
         fs.copyFileSync(primarySrc, destStaticMain);
         assetsToUpload.push({ path: destStaticMain, name: 'sipenafs-mobile.apk' });
+
+        const dest = path.join(releaseDir, `sipenafs-mobile-${tagName}.apk`);
+        fs.copyFileSync(primarySrc, dest);
+        assetsToUpload.push({ path: dest, name: `sipenafs-mobile-${tagName}.apk` });
+    }
+
+    if (fs.existsSync(universalApk)) {
+        const destStaticUniversal = path.join(releaseDir, 'sipenafs-mobile-universal.apk');
+        fs.copyFileSync(universalApk, destStaticUniversal);
+        assetsToUpload.push({ path: destStaticUniversal, name: 'sipenafs-mobile-universal.apk' });
+
+        const destUniversal = path.join(releaseDir, `sipenafs-mobile-${tagName}-universal.apk`);
+        fs.copyFileSync(universalApk, destUniversal);
+        assetsToUpload.push({ path: destUniversal, name: `sipenafs-mobile-${tagName}-universal.apk` });
     }
 
     if (assetsToUpload.length === 0) {

@@ -123,9 +123,17 @@ export async function checkForAppUpdate(): Promise<AppUpdateInfo | null> {
       }
     }
 
-    // Fallback jika belum upload asset, buka halaman rilis
-    if (!apkDownloadUrl) {
-      apkDownloadUrl = data.html_url || `https://github.com/${GITHUB_REPO}/releases/latest`;
+    // Pastikan berkas APK benar-benar sudah tersedia di aset rilis GitHub
+    if (!apkDownloadUrl || !apkDownloadUrl.toLowerCase().includes('.apk')) {
+      console.log('[UpdateService] Rilis baru terdeteksi tetapi berkas APK belum selesai diunggah di GitHub.');
+      return {
+        hasUpdate: false,
+        currentVersion,
+        latestVersion,
+        releaseName: data.name || latestVersion,
+        releaseNotes: data.body || '',
+        downloadUrl: '',
+      };
     }
 
     return {
