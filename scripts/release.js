@@ -67,12 +67,13 @@ Tautan Permanen Versi Terbaru:
 - Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
 Apa yang Baru di Versi ${version}:
+• Sistem Rilis Aman (Draft-First Release): Notifikasi update di aplikasi kini hanya muncul SETELAH semua berkas APK 100% selesai diunggah ke GitHub. Tidak akan ada lagi error "Problem parsing the package" karena unduhan belum siap.
 • Proctoring Dinamis Sesuai Pengaturan Ujian: Pengawasan kamera AI dan kunci tab/layar sepenuhnya mengikuti pengaturan masing-masing ujian (tidak di-hardcode). Ujian tanpa proctoring tidak akan meminta izin kamera atau mengunci layar.
-• Perbaikan Sistem In-App Auto-Update: Pengunduhan berkas APK kini lebih stabil dan dilengkapi validasi integritas untuk mencegah kendala parsing package saat memasang pembaruan.
-• Penyempurnaan Pendaftaran Face ID Biometrik: Penangkapan foto wajah lebih jernih dan menunggu izin kamera aktif agar ekstraksi biometrik 128-d akurat serta bebas bentrok di pendaftaran massal.
-• Sinkronisasi Face ID Otomatis Web & Android: Data biometrik wajah dari Android maupun Web 100% seragam dan langsung tersinkron otomatis.
-• Verifikasi Biometrik Anti-Joki On-Device & Audio Bahasa Indonesia Jernih: Pengawasan kamera bebas kedip, cepat, offline, dan ringan.
-• Auto-Unlock Real-Time & Penilaian CBT Akurat: Pembukaan kunci otomatis via Socket serta penyimpanan dan skor akhir berjalan instan.`;
+• Validasi Integritas APK: Sebelum install, aplikasi memverifikasi ukuran dan format berkas unduhan untuk memastikan APK valid dan utuh.
+• Penyempurnaan Pendaftaran Face ID Biometrik: Penangkapan foto wajah lebih jernih dan ekstraksi biometrik 128-d akurat serta bebas bentrok di pendaftaran massal.
+• Sinkronisasi Face ID Otomatis Web dan Android: Data biometrik wajah dari Android maupun Web 100% seragam dan langsung tersinkron otomatis.
+• Verifikasi Biometrik Anti-Joki On-Device: Pengawasan kamera bebas kedip, cepat, offline, dan ringan.
+• Auto-Unlock Real-Time dan Penilaian CBT Akurat: Pembukaan kunci otomatis via Socket serta penyimpanan dan skor akhir berjalan instan.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {
@@ -152,20 +153,35 @@ async function main() {
     
     // 1. Cek atau Buat Release di GitHub
     let release;
+    let createdAsDraft = false;
     try {
-        console.log(`Membuat rilis GitHub untuk tag ${tagName}...`);
+        console.log(`Membuat rilis GitHub untuk tag ${tagName} (DRAFT)...`);
         release = await githubRequest('POST', `/repos/${GITHUB_REPO}/releases`, {
             tag_name: tagName,
             name: releaseName,
             body: releaseNotes,
-            draft: false,
+            draft: true,
             prerelease: false
         });
-        console.log(`Rilis ${tagName} berhasil dibuat! ID: ${release.id}`);
+        createdAsDraft = true;
+        console.log(`Rilis DRAFT ${tagName} berhasil dibuat! ID: ${release.id}`);
     } catch (err) {
         if (err.message && (err.message.includes('already_exists') || err.message.includes('Validation Failed') || err.message.includes('422'))) {
             console.log(`Rilis ${tagName} sudah ada, mengambil data rilis...`);
-            release = await githubRequest('GET', `/repos/${GITHUB_REPO}/releases/tags/${tagName}`);
+            // Coba ambil rilis non-draft dulu
+            try {
+                release = await githubRequest('GET', `/repos/${GITHUB_REPO}/releases/tags/${tagName}`);
+            } catch (e2) {
+                // Jika gagal, kemungkinan rilis masih draft — cari dari daftar semua rilis
+                console.log('Mencari rilis draft...');
+                const allReleases = await githubRequest('GET', `/repos/${GITHUB_REPO}/releases`);
+                release = allReleases.find(r => r.tag_name === tagName);
+                if (!release) throw new Error(`Rilis ${tagName} tidak ditemukan.`);
+            }
+            if (release.draft) {
+                createdAsDraft = true;
+                console.log(`Rilis ${tagName} ditemukan sebagai DRAFT (ID: ${release.id})`);
+            }
         } else {
             throw err;
         }
@@ -248,6 +264,20 @@ async function main() {
         }
         await uploadAsset(release.upload_url, asset.path, asset.name);
         console.log(`Berhasil mengunggah ${asset.name}!`);
+    }
+
+    // 4. Publikasikan rilis (un-draft) SETELAH semua asset berhasil terunggah
+    if (createdAsDraft) {
+        console.log(`\nSemua asset berhasil diunggah. Mempublikasikan rilis ${tagName}...`);
+        try {
+            await githubRequest('PATCH', `/repos/${GITHUB_REPO}/releases/${release.id}`, {
+                draft: false
+            });
+            console.log(`Rilis ${tagName} berhasil dipublikasikan (un-draft)!`);
+        } catch (pubErr) {
+            console.error(`PERINGATAN: Gagal mempublikasikan rilis: ${pubErr.message}`);
+            console.error('Rilis masih dalam status DRAFT. Publikasikan secara manual di GitHub.');
+        }
     }
 
     console.log(`\n🎉 SUKSES: Rilis ${tagName} telah dipublikasikan di:`);
