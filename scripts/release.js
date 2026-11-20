@@ -66,10 +66,10 @@ Tautan Permanen Versi Terbaru:
 - Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
 Apa yang Baru di Versi ${version}:
-• Pendaftaran Face ID Biometrik Asli (Sinkron 100% Web & Android): Daftar wajah lewat HP Android kini mengekstrak vektor biometrik 128-d asli yang kompatibel penuh dengan portal Web dan ujian CBT.
-• Sinkronisasi Status Face ID Otomatis: Status pendaftaran wajah langsung tersinkronisasi otomatis antar Web dan Android tanpa diminta mendaftar ulang.
-• Verifikasi Biometrik Anti-Joki On-Device & Suara Bahasa Indonesia Jernih: Pengawasan kamera berjalan mulus tanpa kedip, cepat, offline, dan bebas membebani server.
-• Auto-Unlock Real-Time & Penilaian CBT Akurat: Pembukaan kunci otomatis via Socket serta penyimpanan dan penilaian jawaban berjalan instan.`;
+• Penyempurnaan Pendaftaran Face ID Biometrik: Penangkapan foto wajah lebih jernih dan menunggu izin kamera aktif agar ekstraksi biometrik 128-d akurat serta bebas bentrok di pendaftaran massal.
+• Sinkronisasi Face ID Otomatis Web & Android: Data biometrik wajah dari Android maupun Web 100% seragam dan langsung tersinkron otomatis.
+• Verifikasi Biometrik Anti-Joki On-Device & Audio Bahasa Indonesia Jernih: Pengawasan kamera bebas kedip, cepat, offline, dan ringan.
+• Auto-Unlock Real-Time & Penilaian CBT Akurat: Pembukaan kunci otomatis via Socket serta penyimpanan dan skor akhir berjalan instan.`;
 
 function githubRequest(method, endpoint, data = null, headers = {}) {
     return new Promise((resolve, reject) => {

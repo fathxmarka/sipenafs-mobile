@@ -87,6 +87,7 @@ export const StudentFaceModal: React.FC<StudentFaceModalProps> = ({
 
       if (!cameraPermission?.granted) {
         requestCameraPermission();
+        return;
       }
 
       // Start Location Tracking
@@ -194,7 +195,7 @@ export const StudentFaceModal: React.FC<StudentFaceModalProps> = ({
       if (cameraRef.current) {
         const photoPromise = cameraRef.current.takePictureAsync({
           base64: true,
-          quality: 0.6,
+          quality: 0.65,
           skipProcessing: false,
           shutterSound: false,
         });
