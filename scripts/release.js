@@ -67,10 +67,11 @@ Tautan Permanen Versi Terbaru:
 - Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
 Apa yang Baru di Versi ${version}:
+• Optimalisasi Biometrik Wajah Anti-False Alarm: Ambang batas jarak pencocokan wajah disesuaikan (0.74) dan toleransi sudut menunduk saat menatap layar HP ditingkatkan agar siswa tidak terkena peringatan keliru saat posisi kepala menunduk wajar.
+• Deteksi Joki Ujian Lebih Akurat: Pemisahan ambang deteksi antara variasi sudut wajah (streak 5 kali / ~30 detik) dan wajah orang lain yang berbeda total (streak 3 kali / ~18 detik).
 • Sistem Rilis Aman (Draft-First Release): Notifikasi update di aplikasi kini hanya muncul SETELAH semua berkas APK 100% selesai diunggah ke GitHub. Tidak akan ada lagi error "Problem parsing the package" karena unduhan belum siap.
 • Proctoring Dinamis Sesuai Pengaturan Ujian: Pengawasan kamera AI dan kunci tab/layar sepenuhnya mengikuti pengaturan masing-masing ujian (tidak di-hardcode). Ujian tanpa proctoring tidak akan meminta izin kamera atau mengunci layar.
 • Validasi Integritas APK: Sebelum install, aplikasi memverifikasi ukuran dan format berkas unduhan untuk memastikan APK valid dan utuh.
-• Penyempurnaan Pendaftaran Face ID Biometrik: Penangkapan foto wajah lebih jernih dan ekstraksi biometrik 128-d akurat serta bebas bentrok di pendaftaran massal.
 • Sinkronisasi Face ID Otomatis Web dan Android: Data biometrik wajah dari Android maupun Web 100% seragam dan langsung tersinkron otomatis.
 • Verifikasi Biometrik Anti-Joki On-Device: Pengawasan kamera bebas kedip, cepat, offline, dan ringan.
 • Auto-Unlock Real-Time dan Penilaian CBT Akurat: Pembukaan kunci otomatis via Socket serta penyimpanan dan skor akhir berjalan instan.`;

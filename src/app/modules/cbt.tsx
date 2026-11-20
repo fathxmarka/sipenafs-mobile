@@ -2365,17 +2365,23 @@ Format JSON array murni tanpa pembuka/penutup markdown:
           if (shouldRunBiometric) {
             let bioRes: any = null;
             try {
-              bioRes = await FaceProctorNative.verifyFaceIdentity(photo.uri, 0.68, true);
+              // Ambang batas 0.74 toleran terhadap sudut pandang HP saat menunduk & variasi pencahayaan
+              bioRes = await FaceProctorNative.verifyFaceIdentity(photo.uri, 0.74, true);
             } catch {
               FaceProctorNative?.deleteTempFile?.(photo.uri);
             }
 
             if (bioRes?.checked === true && bioRes?.isMatch === false) {
+              const dist = typeof bioRes.distance === 'number' && bioRes.distance > 0 ? bioRes.distance : 1.0;
               wrongPersonStreakRef.current += 1;
               const jokiStreak = wrongPersonStreakRef.current;
 
-              // Toleransi 2 kali scan biometrik beruntun (~12 detik) agar bebas false alarm dari 1 frame buram
-              if (jokiStreak >= 2) {
+              // Bedakan ambang batas streak:
+              // 1. Orang lain / Joki Asli (dist >= 0.84): butuh 3 scan berturut-turut (~18 detik)
+              // 2. Zona Variasi Wajah / Sudut Menunduk (dist < 0.84): butuh 5 scan berturut-turut (~30 detik)
+              const requiredStreak = dist >= 0.84 ? 3 : 5;
+
+              if (jokiStreak >= requiredStreak) {
                 setProctorFaceStatus('wrong_person');
                 setIsCameraBoxMinimized(false);
                 setProctorAlertBanner('⚠️ PERINGATAN JOKI UJIAN: Wajah Anda tidak cocok dengan data siswa terdaftar! Kejadian ini dicatat ke Pengawas.');
@@ -2385,12 +2391,10 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   FaceProctorNative.playWarningAlarm('Peringatan! Wajah Anda tidak cocok dengan data pendaftaran! Joki ujian terdeteksi.');
                 } catch {}
 
-                // Log ke backend pada pelanggaran ke-2, lalu tiap 2 siklus berikutnya
-                if (jokiStreak === 2 || (jokiStreak > 2 && (jokiStreak - 2) % 2 === 0)) {
+                // Log ke backend pada batas pelanggaran, lalu tiap 2 siklus berikutnya
+                if (jokiStreak === requiredStreak || (jokiStreak > requiredStreak && (jokiStreak - requiredStreak) % 2 === 0)) {
                   if (token && apiUrl && activeStudentExam) {
-                    const distTxt = typeof bioRes.distance === 'number' && bioRes.distance > 0
-                      ? ` (jarak kemiripan: ${bioRes.distance.toFixed(2)})`
-                      : '';
+                    const distTxt = ` (jarak kemiripan: ${dist.toFixed(2)})`;
                     axios.post(
                       `${apiUrl}/api/exams/${activeStudentExam.id}/proctor-logs`,
                       {
@@ -2410,14 +2414,14 @@ Format JSON array murni tanpa pembuka/penutup markdown:
               try {
                 FaceProctorNative?.stopWarningAlarm();
               } catch {}
-            } else if (wrongPersonStreakRef.current < 2) {
+            } else if (wrongPersonStreakRef.current === 0) {
               setProctorFaceStatus('ok');
               setProctorAlertBanner(null);
               try {
                 FaceProctorNative?.stopWarningAlarm();
               } catch {}
             }
-          } else if (wrongPersonStreakRef.current < 2) {
+          } else if (wrongPersonStreakRef.current === 0) {
             setProctorFaceStatus('ok');
             setProctorAlertBanner(null);
             try {
