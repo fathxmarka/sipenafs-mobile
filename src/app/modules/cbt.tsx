@@ -154,6 +154,7 @@ export default function CbtScreen() {
   const [classes, setClasses] = useState<Array<{ id: number; name: string; level: number }>>([]);
   const [teacherSubjects, setTeacherSubjects] = useState<Array<{ id: number; name: string }>>([]);
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<number | 'ALL'>('ALL');
+  const [examSearchKeyword, setExamSearchKeyword] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
   // Toast Notification
@@ -2684,8 +2685,14 @@ Format JSON array murni tanpa pembuka/penutup markdown:
 
   // Filtered exams for teacher
   const filteredExams = exams.filter((e) => {
-    if (selectedSubjectFilter === 'ALL') return true;
-    return Number(e.subject_id) === Number(selectedSubjectFilter);
+    const matchSubject = selectedSubjectFilter === 'ALL' || Number(e.subject_id) === Number(selectedSubjectFilter);
+    const q = examSearchKeyword.toLowerCase().trim();
+    const matchSearch = !q ||
+      (e.title || '').toLowerCase().includes(q) ||
+      (e.subject?.name || '').toLowerCase().includes(q) ||
+      (e.token || '').toLowerCase().includes(q) ||
+      (e.type || '').toLowerCase().includes(q);
+    return matchSubject && matchSearch;
   });
 
   // Current active question in student arena
@@ -2825,6 +2832,23 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   </ScrollView>
                 </View>
               )}
+
+              {/* Exam Search Bar */}
+              <View style={[styles.bankSearchBox, { marginBottom: 12 }]}>
+                <Ionicons name="search" size={16} color="#94A3B8" />
+                <TextInput
+                  style={styles.bankSearchInput}
+                  placeholder="Cari ujian (judul, token, atau mapel)..."
+                  placeholderTextColor="#94A3B8"
+                  value={examSearchKeyword}
+                  onChangeText={setExamSearchKeyword}
+                />
+                {examSearchKeyword ? (
+                  <TouchableOpacity onPress={() => setExamSearchKeyword('')}>
+                    <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
 
               {/* List of Exams for Teacher */}
               <View style={styles.sectionHeaderRow}>

@@ -477,28 +477,39 @@ export default function SarprasModuleScreen() {
   };
 
   // Filters
+  const qSarpras = searchQuery.toLowerCase().trim();
   const filteredAssets = assets.filter(a => {
-    const matchesSearch =
-      a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.roomName.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = !qSarpras ||
+      (a.name || '').toLowerCase().includes(qSarpras) ||
+      (a.code || '').toLowerCase().includes(qSarpras) ||
+      (a.roomName || '').toLowerCase().includes(qSarpras);
     const matchesCondition = conditionFilter === 'all' || a.condition === conditionFilter;
     return matchesSearch && matchesCondition;
   });
 
-  const filteredRooms = rooms.filter(r =>
-    r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    r.description.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredRooms = rooms.filter(r => {
+    if (!qSarpras) return true;
+    return (
+      (r.name || '').toLowerCase().includes(qSarpras) ||
+      (r.description || '').toLowerCase().includes(qSarpras)
+    );
+  });
 
   const filteredMaintenances = maintenances.filter(m => {
-    if (maintenanceFilter === 'all') return true;
-    if (maintenanceFilter === 'Terlewat') {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return (m.status === 'Terjadwal' || m.status === 'Dalam Pengerjaan') && new Date(m.scheduled_date) < today;
-    }
-    return m.status === maintenanceFilter;
+    const matchesFilter =
+      maintenanceFilter === 'all' ||
+      (maintenanceFilter === 'Terlewat'
+        ? (m.status === 'Terjadwal' || m.status === 'Dalam Pengerjaan') && new Date(m.scheduled_date) < new Date()
+        : m.status === maintenanceFilter);
+
+    const matchesSearch = !qSarpras ||
+      (m.title || '').toLowerCase().includes(qSarpras) ||
+      (m.asset_name || '').toLowerCase().includes(qSarpras) ||
+      (m.location_name || '').toLowerCase().includes(qSarpras) ||
+      (m.serial_number || '').toLowerCase().includes(qSarpras) ||
+      (m.pic_name || '').toLowerCase().includes(qSarpras);
+
+    return matchesFilter && matchesSearch;
   });
 
   const goodConditionCount = assets.filter(a => a.condition === 'Baik').length;
@@ -638,6 +649,11 @@ export default function SarprasModuleScreen() {
                   onChangeText={setSearchQuery}
                   placeholderTextColor={Colors.textLight}
                 />
+                {searchQuery ? (
+                  <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Ionicons name="close-circle" size={16} color={Colors.textLight} />
+                  </TouchableOpacity>
+                ) : null}
               </View>
 
               {/* Condition Filter Pills */}
@@ -756,6 +772,11 @@ export default function SarprasModuleScreen() {
                   onChangeText={setSearchQuery}
                   placeholderTextColor={Colors.textLight}
                 />
+                {searchQuery ? (
+                  <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Ionicons name="close-circle" size={16} color={Colors.textLight} />
+                  </TouchableOpacity>
+                ) : null}
               </View>
 
               {filteredRooms.length === 0 ? (
@@ -799,6 +820,23 @@ export default function SarprasModuleScreen() {
                   <Ionicons name="qr-code-outline" size={14} color="#0284C7" />
                   <Text style={styles.scanQrBtnSmallText}>Scan QR</Text>
                 </TouchableOpacity>
+              </View>
+
+              {/* Search Box */}
+              <View style={styles.searchBox}>
+                <Ionicons name="search" size={18} color={Colors.textLight} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Cari agenda servis, aset, ruangan, teknisi..."
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholderTextColor={Colors.textLight}
+                />
+                {searchQuery ? (
+                  <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Ionicons name="close-circle" size={16} color={Colors.textLight} />
+                  </TouchableOpacity>
+                ) : null}
               </View>
 
               {/* Maintenance Filter Pills */}

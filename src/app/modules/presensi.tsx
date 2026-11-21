@@ -214,7 +214,7 @@ export default function PresensiScreen() {
         axios.get(`${apiUrl}/api/teacher-attendance/school-summary`, { headers }),
         axios.get(`${apiUrl}/api/bk/violations`, { headers }),
         axios.get(`${apiUrl}/api/bk/violation-types`, { headers }),
-        axios.get(`${apiUrl}/api/students?perPage=1000`, { headers }),
+        axios.get(`${apiUrl}/api/students?perPage=all`, { headers }),
         axios.get(`${apiUrl}/api/teachers?perPage=all`, { headers }),
       ]);
 
@@ -463,11 +463,37 @@ export default function PresensiScreen() {
     return { total, hadir, sakit, izin, alpa, pctHadir };
   }, [studentsAttendance]);
 
+  // Dynamic server search for student modal
+  useEffect(() => {
+    const q = studentSearchInModal.trim();
+    if (!q || q.length < 2) return;
+    const timer = setTimeout(async () => {
+      try {
+        const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
+        const token = await SecureStore.getItemAsync('sipena_token');
+        if (!apiUrl || !token) return;
+        const res = await axios.get(`${apiUrl}/api/students?search=${encodeURIComponent(q)}&perPage=50`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.data?.data && Array.isArray(res.data.data)) {
+          setAllStudents(prev => {
+            const existingIds = new Set(prev.map(p => String(p.id)));
+            const newOnes = res.data.data.filter((item: any) => !existingIds.has(String(item.id)));
+            return newOnes.length > 0 ? [...prev, ...newOnes] : prev;
+          });
+        }
+      } catch (err) {
+        console.warn('Modal student search error:', err);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [studentSearchInModal]);
+
   const filteredKbmStudents = useMemo(() => {
     if (!searchKbmQuery.trim()) return studentsAttendance;
-    const q = searchKbmQuery.toLowerCase();
+    const q = searchKbmQuery.toLowerCase().trim();
     return studentsAttendance.filter(s => 
-      s.name.toLowerCase().includes(q) || s.nis.toLowerCase().includes(q)
+      (s.name || '').toLowerCase().includes(q) || ((s.nis || '')).toLowerCase().includes(q)
     );
   }, [studentsAttendance, searchKbmQuery]);
 
@@ -520,8 +546,8 @@ export default function PresensiScreen() {
     return enrichedStaff.filter(s => {
       if (staffFilter !== 'all' && s.statusType !== staffFilter) return false;
       if (searchStaffQuery.trim()) {
-        const q = searchStaffQuery.toLowerCase();
-        return s.name.toLowerCase().includes(q) || (s.nip && s.nip.toLowerCase().includes(q));
+        const q = searchStaffQuery.toLowerCase().trim();
+        return (s.name || '').toLowerCase().includes(q) || ((s.nip || '')).toLowerCase().includes(q);
       }
       return true;
     });
@@ -530,11 +556,11 @@ export default function PresensiScreen() {
   // Violations filtered & stats
   const filteredViolations = useMemo(() => {
     if (!searchViolationQuery.trim()) return violations;
-    const q = searchViolationQuery.toLowerCase();
+    const q = searchViolationQuery.toLowerCase().trim();
     return violations.filter(v => 
-      v.student?.name?.toLowerCase().includes(q) ||
-      v.student?.nisn?.toLowerCase().includes(q) ||
-      v.type?.name?.toLowerCase().includes(q)
+      (v.student?.name || '').toLowerCase().includes(q) ||
+      (v.student?.nisn || '').toLowerCase().includes(q) ||
+      (v.type?.name || '').toLowerCase().includes(q)
     );
   }, [violations, searchViolationQuery]);
 
@@ -548,10 +574,12 @@ export default function PresensiScreen() {
   // Modal Student Filter
   const filteredStudentsInModal = useMemo(() => {
     if (!studentSearchInModal.trim()) return allStudents.slice(0, 15);
-    const q = studentSearchInModal.toLowerCase();
+    const q = studentSearchInModal.toLowerCase().trim();
     return allStudents.filter(s => 
-      s.name.toLowerCase().includes(q) || (s.nisn && s.nisn.toLowerCase().includes(q))
-    ).slice(0, 20);
+      (s.name || '').toLowerCase().includes(q) ||
+      ((s.nisn || '')).toLowerCase().includes(q) ||
+      ((s.nis || '')).toLowerCase().includes(q)
+    ).slice(0, 30);
   }, [allStudents, studentSearchInModal]);
 
   const isStudentUser = Boolean(

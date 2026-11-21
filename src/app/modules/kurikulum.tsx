@@ -1075,6 +1075,23 @@ export default function KurikulumScreen() {
                 </View>
               </View>
 
+              {/* Search Bar Mapel */}
+              <View style={[styles.searchContainer, { marginHorizontal: 16, marginBottom: 12 }]}>
+                <Feather name="search" size={16} color={Colors.textLight} style={{ marginRight: 8 }} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Cari mata pelajaran atau kode mapel..."
+                  placeholderTextColor={Colors.textLight}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+                {searchQuery ? (
+                  <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Feather name="x" size={16} color={Colors.textLight} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
               <FlatList
                 data={filteredSubjects}
                 keyExtractor={(item: SubjectItem) => String(item.id)}

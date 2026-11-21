@@ -1000,12 +1000,24 @@ export default function ElearningModuleScreen() {
     }
   };
 
+  const qTask = searchQuery.toLowerCase().trim();
   const filteredAssignments = assignments.filter(a =>
-    a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    a.subjectName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (a.className && a.className.toLowerCase().includes(searchQuery.toLowerCase()))
+    !qTask ||
+    (a.title || '').toLowerCase().includes(qTask) ||
+    (a.subjectName || '').toLowerCase().includes(qTask) ||
+    (a.className && a.className.toLowerCase().includes(qTask)) ||
+    (a.teacherName && a.teacherName.toLowerCase().includes(qTask))
   );
 
+  const filteredMaterials = materials.filter(m =>
+    !qTask ||
+    (m.title || '').toLowerCase().includes(qTask) ||
+    (m.subjectName || '').toLowerCase().includes(qTask) ||
+    (m.className && m.className.toLowerCase().includes(qTask)) ||
+    (m.teacherName && m.teacherName.toLowerCase().includes(qTask))
+  );
+
+  const qSub = studentSearchQuery.toLowerCase().trim();
   const filteredSubmissions = studentSubmissions.filter(sub => {
     const matchesFilter =
       submissionFilter === 'ALL'
@@ -1017,8 +1029,9 @@ export default function ElearningModuleScreen() {
         : sub.status === 'pending';
 
     const matchesSearch =
-      sub.studentName.toLowerCase().includes(studentSearchQuery.toLowerCase()) ||
-      sub.nisn.toLowerCase().includes(studentSearchQuery.toLowerCase());
+      !qSub ||
+      (sub.studentName || '').toLowerCase().includes(qSub) ||
+      (sub.nisn || '').toLowerCase().includes(qSub);
 
     return matchesFilter && matchesSearch;
   });
@@ -1201,6 +1214,11 @@ export default function ElearningModuleScreen() {
                   onChangeText={setSearchQuery}
                   placeholderTextColor={Colors.textLight}
                 />
+                {searchQuery ? (
+                  <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Ionicons name="close-circle" size={16} color={Colors.textLight} />
+                  </TouchableOpacity>
+                ) : null}
               </View>
 
               {filteredAssignments.length === 0 ? (
@@ -1402,7 +1420,33 @@ export default function ElearningModuleScreen() {
                 )}
               </View>
 
-              {materials.map(mat => {
+              {/* Search Bar Bahan Ajar */}
+              <View style={styles.searchBox}>
+                <Ionicons name="search" size={18} color={Colors.textLight} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Cari materi, judul dokumen, atau mapel..."
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholderTextColor={Colors.textLight}
+                />
+                {searchQuery ? (
+                  <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Ionicons name="close-circle" size={16} color={Colors.textLight} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              {filteredMaterials.length === 0 ? (
+                <View style={styles.emptyStateContainer}>
+                  <Ionicons name="library-outline" size={44} color="#CBD5E1" />
+                  <Text style={styles.emptyStateTitle}>Tidak ada bahan ajar ditemukan</Text>
+                  <Text style={styles.emptyStateSubtitle}>
+                    Coba sesuaikan kata kunci pencarian Anda.
+                  </Text>
+                </View>
+              ) : (
+                filteredMaterials.map(mat => {
                 const iconInfo = getFileIcon(mat.type);
                 return (
                   <View key={mat.id} style={styles.materialCard}>
@@ -1443,7 +1487,8 @@ export default function ElearningModuleScreen() {
                     </View>
                   </View>
                 );
-              })}
+              })
+            )}
             </View>
           )}
 

@@ -309,10 +309,11 @@ export default function BillingModuleScreen() {
   };
 
   const filteredBills = bills.filter(b => {
-    const matchesSearch =
-      b.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.nisn.includes(searchQuery);
+    const q = searchQuery.toLowerCase().trim();
+    const matchesSearch = !q ||
+      (b.title || '').toLowerCase().includes(q) ||
+      (b.studentName || '').toLowerCase().includes(q) ||
+      (b.nisn || '').includes(q);
 
     if (!matchesSearch) return false;
     if (statusFilter === 'all') return true;

@@ -591,24 +591,22 @@ export default function BkModuleScreen() {
             );
           })()}
 
-          {/* Search bar for Wali Kelas / Guru / BK */}
-          {!isStudentOrParent && (
-            <View style={styles.searchBarWrapper}>
-              <Ionicons name="search" size={16} color="#94A3B8" />
-              <TextInput
-                style={styles.searchBarInput}
-                placeholder="Cari siswa, kelas (contoh: XII), kasus, prestasi..."
-                placeholderTextColor="#94A3B8"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => setSearchQuery('')}>
-                  <Ionicons name="close-circle" size={16} color="#94A3B8" />
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
+          {/* Search bar for all users */}
+          <View style={styles.searchBarWrapper}>
+            <Ionicons name="search" size={16} color="#94A3B8" />
+            <TextInput
+              style={styles.searchBarInput}
+              placeholder="Cari siswa, kelas (contoh: XII), kasus, prestasi..."
+              placeholderTextColor="#94A3B8"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Ionicons name="close-circle" size={16} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
+          </View>
 
           {/* Filtered Data Prep */}
           {(() => {

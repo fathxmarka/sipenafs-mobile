@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   View, Text, StyleSheet, ScrollView, TouchableOpacity, 
   ActivityIndicator, RefreshControl, Image, TextInput, Platform, Modal, FlatList 
@@ -79,7 +79,7 @@ export default function KesiswaanScreen() {
 
       // Load Students (all), Classes, and Mutations in parallel
       const [resStudents, resClasses, resMutations] = await Promise.allSettled([
-        axios.get(`${apiUrl}/api/students?perPage=1000`, { headers }),
+        axios.get(`${apiUrl}/api/students?perPage=all`, { headers }),
         axios.get(`${apiUrl}/api/classes?perPage=all`, { headers }),
         axios.get(`${apiUrl}/api/mutations`, { headers })
       ]);
@@ -107,6 +107,31 @@ export default function KesiswaanScreen() {
     setIsRefreshing(true);
     fetchAllData();
   };
+
+  // Dynamic server-side student search when user types query
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q || q.length < 2) return;
+    const timer = setTimeout(async () => {
+      try {
+        const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
+        const token = await SecureStore.getItemAsync('sipena_token');
+        if (!apiUrl || !token) return;
+        const headers = { Authorization: `Bearer ${token}` };
+        const res = await axios.get(`${apiUrl}/api/students?search=${encodeURIComponent(q)}&perPage=100`, { headers });
+        if (res.data?.data && Array.isArray(res.data.data)) {
+          setStudentsList(prev => {
+            const existingIds = new Set(prev.map(p => String(p.id)));
+            const newOnes = res.data.data.filter((item: any) => !existingIds.has(String(item.id)));
+            return newOnes.length > 0 ? [...prev, ...newOnes] : prev;
+          });
+        }
+      } catch (err) {
+        console.warn('Server student search error:', err);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Helper to extract student class name reliably
   const getStudentClassName = (student: any): string => {
@@ -170,19 +195,45 @@ export default function KesiswaanScreen() {
   };
 
   // Filter students based on search and selected class
-  const filteredStudents = studentsList.filter(s => {
+  const filteredStudents = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    const nameMatch = (s.name || '').toLowerCase().includes(q);
-    const nisnMatch = (s.nisn || '').toLowerCase().includes(q);
-    const matchesSearch = !q || nameMatch || nisnMatch;
+    return studentsList.filter(s => {
+      const nameMatch = (s.name || '').toLowerCase().includes(q);
+      const nisnMatch = (s.nisn || '').toLowerCase().includes(q);
+      const nisMatch = (s.nis || '').toLowerCase().includes(q);
+      const matchesSearch = !q || nameMatch || nisnMatch || nisMatch;
 
-    if (selectedClassId !== 'all') {
-      const activeEnrollment = s.enrollments?.find((e: any) => !e.deleted_at) || s.enrollments?.[0];
-      const studentClassId = String(activeEnrollment?.class_id || activeEnrollment?.class?.id || s.class_id || '');
-      return matchesSearch && studentClassId === selectedClassId;
-    }
-    return matchesSearch;
-  });
+      if (selectedClassId !== 'all') {
+        const activeEnrollment = s.enrollments?.find((e: any) => !e.deleted_at) || s.enrollments?.[0];
+        const studentClassId = String(activeEnrollment?.class_id || activeEnrollment?.class?.id || s.class_id || '');
+        return matchesSearch && studentClassId === selectedClassId;
+      }
+      return matchesSearch;
+    });
+  }, [studentsList, searchQuery, selectedClassId]);
+
+  // Filter classes based on search
+  const filteredClasses = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return classesList;
+    return classesList.filter(cls =>
+      (cls.name || '').toLowerCase().includes(q) ||
+      String(cls.level || '').includes(q) ||
+      (cls.teacher?.name || '').toLowerCase().includes(q)
+    );
+  }, [classesList, searchQuery]);
+
+  // Filter mutations based on search
+  const filteredMutations = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return mutationsList;
+    return mutationsList.filter(m =>
+      (m.student?.name || m.student_name || '').toLowerCase().includes(q) ||
+      (m.school_destination || '').toLowerCase().includes(q) ||
+      (m.school_origin || '').toLowerCase().includes(q) ||
+      (m.type || '').toLowerCase().includes(q)
+    );
+  }, [mutationsList, searchQuery]);
 
   const renderStudentItem = ({ item }: { item: any }) => {
     const isMale = item.gender === 'L' || (item.gender || '').toLowerCase().startsWith('l');
@@ -387,87 +438,123 @@ export default function KesiswaanScreen() {
 
           {/* TAB 2: MANAJEMEN ROMBEL (KELAS) */}
           {activeTab === 'classes' && (
-            <ScrollView 
-              contentContainerStyle={{ padding: 20, paddingBottom: 50, gap: 12 }}
-              refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
-              showsVerticalScrollIndicator={false}
-            >
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.cardHeaderTitle}>Daftar Rombel Aktif</Text>
-                <Text style={{ fontSize: 12, color: Colors.textLight }}>Total: {classesList.length} Rombongan Belajar</Text>
+            <View style={{ flex: 1 }}>
+              <View style={[styles.searchBox, { marginHorizontal: 20, marginTop: 14 }]}>
+                <Feather name="search" size={18} color={Colors.textLight} style={{ marginRight: 8 }} />
+                <TextInput 
+                  style={styles.searchInput}
+                  placeholder="Cari rombel / wali kelas..."
+                  placeholderTextColor="#94A3B8"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+                {searchQuery ? (
+                  <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Feather name="x" size={16} color={Colors.textLight} />
+                  </TouchableOpacity>
+                ) : null}
               </View>
 
-              {classesList.length === 0 ? (
-                <View style={styles.emptyContainer}>
-                  <MaterialCommunityIcons name="google-classroom" size={44} color="#CBD5E1" />
-                  <Text style={styles.emptyText}>Belum ada rombel yang terdaftar</Text>
+              <ScrollView 
+                contentContainerStyle={{ padding: 20, paddingBottom: 50, gap: 12 }}
+                refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.cardHeaderTitle}>Daftar Rombel Aktif</Text>
+                  <Text style={{ fontSize: 12, color: Colors.textLight }}>Total: {filteredClasses.length} Rombel</Text>
                 </View>
-              ) : (
-                classesList.map((cls, idx) => {
-                  const studentCount = cls._count?.enrollments ?? studentsList.filter(s => {
-                    const activeEnrollment = s.enrollments?.find((e: any) => !e.deleted_at) || s.enrollments?.[0];
-                    const sClassId = String(activeEnrollment?.class_id || activeEnrollment?.class?.id || s.class_id || '');
-                    return sClassId === String(cls.id);
-                  }).length;
-                  return (
-                    <View key={cls.id || idx} style={styles.classCard}>
-                      <View style={styles.classIconBg}>
-                        <MaterialCommunityIcons name="google-classroom" size={24} color={Colors.primary} />
+
+                {filteredClasses.length === 0 ? (
+                  <View style={styles.emptyContainer}>
+                    <MaterialCommunityIcons name="google-classroom" size={44} color="#CBD5E1" />
+                    <Text style={styles.emptyText}>Tidak ada rombel yang sesuai</Text>
+                  </View>
+                ) : (
+                  filteredClasses.map((cls, idx) => {
+                    const studentCount = cls._count?.enrollments ?? studentsList.filter(s => {
+                      const activeEnrollment = s.enrollments?.find((e: any) => !e.deleted_at) || s.enrollments?.[0];
+                      const sClassId = String(activeEnrollment?.class_id || activeEnrollment?.class?.id || s.class_id || '');
+                      return sClassId === String(cls.id);
+                    }).length;
+                    return (
+                      <View key={cls.id || idx} style={styles.classCard}>
+                        <View style={styles.classIconBg}>
+                          <MaterialCommunityIcons name="google-classroom" size={24} color={Colors.primary} />
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 14 }}>
+                          <Text style={styles.classNameText}>{cls.name}</Text>
+                          <Text style={styles.classLevelText}>
+                            Tingkat: <Text style={{ fontWeight: '700', color: Colors.secondary }}>{cls.level || '-'}</Text>
+                            {cls.teacher?.name ? <Text style={{ color: '#64748B' }}> • Wali: {cls.teacher.name}</Text> : null}
+                          </Text>
+                        </View>
+                        <View style={styles.studentCountBadge}>
+                          <Text style={styles.studentCountNumber}>{studentCount}</Text>
+                          <Text style={styles.studentCountLabel}>Siswa</Text>
+                        </View>
                       </View>
-                      <View style={{ flex: 1, marginLeft: 14 }}>
-                        <Text style={styles.classNameText}>{cls.name}</Text>
-                        <Text style={styles.classLevelText}>
-                          Tingkat: <Text style={{ fontWeight: '700', color: Colors.secondary }}>{cls.level || '-'}</Text>
-                          {cls.teacher?.name ? <Text style={{ color: '#64748B' }}> • Wali: {cls.teacher.name}</Text> : null}
-                        </Text>
-                      </View>
-                      <View style={styles.studentCountBadge}>
-                        <Text style={styles.studentCountNumber}>{studentCount}</Text>
-                        <Text style={styles.studentCountLabel}>Siswa</Text>
-                      </View>
-                    </View>
-                  );
-                })
-              )}
-            </ScrollView>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </View>
           )}
 
           {/* TAB 3: MUTASI SISWA */}
           {activeTab === 'mutations' && (
-            <ScrollView 
-              contentContainerStyle={{ padding: 20, paddingBottom: 50, gap: 12 }}
-              refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
-              showsVerticalScrollIndicator={false}
-            >
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.cardHeaderTitle}>Riwayat Mutasi Masuk / Keluar</Text>
-                <Text style={{ fontSize: 12, color: Colors.textLight }}>{mutationsList.length} Pengajuan</Text>
+            <View style={{ flex: 1 }}>
+              <View style={[styles.searchBox, { marginHorizontal: 20, marginTop: 14 }]}>
+                <Feather name="search" size={18} color={Colors.textLight} style={{ marginRight: 8 }} />
+                <TextInput 
+                  style={styles.searchInput}
+                  placeholder="Cari siswa / sekolah tujuan..."
+                  placeholderTextColor="#94A3B8"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+                {searchQuery ? (
+                  <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Feather name="x" size={16} color={Colors.textLight} />
+                  </TouchableOpacity>
+                ) : null}
               </View>
 
-              {mutationsList.length === 0 ? (
-                <View style={styles.emptyContainer}>
-                  <Ionicons name="swap-horizontal" size={44} color="#CBD5E1" />
-                  <Text style={styles.emptyText}>Tidak ada riwayat mutasi siswa</Text>
+              <ScrollView 
+                contentContainerStyle={{ padding: 20, paddingBottom: 50, gap: 12 }}
+                refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.cardHeaderTitle}>Riwayat Mutasi Masuk / Keluar</Text>
+                  <Text style={{ fontSize: 12, color: Colors.textLight }}>{filteredMutations.length} Pengajuan</Text>
                 </View>
-              ) : (
-                mutationsList.map((m, idx) => (
-                  <View key={m.id || idx} style={styles.mutationCard}>
-                    <View style={styles.mutationHeader}>
-                      <View style={[styles.mutationTypeBadge, { backgroundColor: m.type === 'MASUK' ? '#E8F5E9' : '#FFF3E0' }]}>
-                        <Text style={[styles.mutationTypeText, { color: m.type === 'MASUK' ? '#2E7D32' : '#E65100' }]}>
-                          MUTASI {m.type || 'KELUAR'}
+
+                {filteredMutations.length === 0 ? (
+                  <View style={styles.emptyContainer}>
+                    <Ionicons name="swap-horizontal" size={44} color="#CBD5E1" />
+                    <Text style={styles.emptyText}>Tidak ada riwayat mutasi yang sesuai</Text>
+                  </View>
+                ) : (
+                  filteredMutations.map((m, idx) => (
+                    <View key={m.id || idx} style={styles.mutationCard}>
+                      <View style={styles.mutationHeader}>
+                        <View style={[styles.mutationTypeBadge, { backgroundColor: m.type === 'MASUK' ? '#E8F5E9' : '#FFF3E0' }]}>
+                          <Text style={[styles.mutationTypeText, { color: m.type === 'MASUK' ? '#2E7D32' : '#E65100' }]}>
+                            MUTASI {m.type || 'KELUAR'}
+                          </Text>
+                        </View>
+                        <Text style={styles.mutationDate}>
+                          {m.created_at ? new Date(m.created_at).toLocaleDateString('id-ID') : '-'}
                         </Text>
                       </View>
-                      <Text style={styles.mutationDate}>
-                        {m.created_at ? new Date(m.created_at).toLocaleDateString('id-ID') : '-'}
-                      </Text>
+                      <Text style={styles.mutationStudentName}>{m.student?.name || m.student_name || 'Nama Siswa'}</Text>
+                      <Text style={styles.mutationDetail}>Sekolah Tujuan/Asal: <Text style={{ fontWeight: '600', color: Colors.secondary }}>{m.school_destination || m.school_origin || '-'}</Text></Text>
                     </View>
-                    <Text style={styles.mutationStudentName}>{m.student?.name || m.student_name || 'Nama Siswa'}</Text>
-                    <Text style={styles.mutationDetail}>Sekolah Tujuan/Asal: <Text style={{ fontWeight: '600', color: Colors.secondary }}>{m.school_destination || m.school_origin || '-'}</Text></Text>
-                  </View>
-                ))
-              )}
-            </ScrollView>
+                  ))
+                )}
+              </ScrollView>
+            </View>
           )}
 
         </View>

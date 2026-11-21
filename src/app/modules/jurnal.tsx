@@ -770,9 +770,11 @@ export default function JurnalMengajarScreen() {
   const countI = students.filter(s => s.status === 'I').length;
   const countA = students.filter(s => s.status === 'A').length;
 
-  const filteredStudents = students.filter(s => 
-    !searchStudent || s.name.toLowerCase().includes(searchStudent.toLowerCase()) || s.nis.includes(searchStudent)
-  );
+  const filteredStudents = students.filter(s => {
+    if (!searchStudent.trim()) return true;
+    const q = searchStudent.toLowerCase().trim();
+    return (s.name || '').toLowerCase().includes(q) || (s.nis || '').includes(q);
+  });
 
   const scanTranslateY = scanAnim.interpolate({
     inputRange: [0, 1],
