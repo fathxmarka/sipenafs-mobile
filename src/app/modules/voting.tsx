@@ -61,18 +61,7 @@ export default function VotingModuleScreen() {
   };
 
   // State
-  const [session, setSession] = useState<VotingSession>({
-    id: '1',
-    title: 'Pemilihan Ketua & Wakil OSIS Periode 2026/2027',
-    academicYear: '2026/2027',
-    startDate: '30 Sep 2026, 07:00 WIB',
-    endDate: '30 Sep 2026, 15:00 WIB',
-    status: 'active',
-    hasVoted: false,
-    totalVoters: 720,
-    votesIn: 548,
-  });
-
+  const [session, setSession] = useState<VotingSession | null>(null);
   const [candidates, setCandidates] = useState<CandidateItem[]>([]);
 
   useEffect(() => {
@@ -93,17 +82,22 @@ export default function VotingModuleScreen() {
           ]);
 
           if (resSessions.status === 'fulfilled' && resSessions.value.data?.data) {
-            const active = resSessions.value.data.data.find((s: any) => s.status === 'active') || resSessions.value.data.data[0];
+            const list = Array.isArray(resSessions.value.data.data) ? resSessions.value.data.data : [];
+            const active = list.find((s: any) => s.status === 'active') || list[0];
             if (active) {
-              setSession(prev => ({
-                ...prev,
-                id: active.id?.toString() || prev.id,
-                title: active.title || prev.title,
-                status: active.status || prev.status,
+              setSession({
+                id: active.id?.toString() || '1',
+                title: active.title || 'Pemilihan Ketua & Wakil OSIS',
+                academicYear: active.academic_year || active.academicYear || '-',
+                startDate: active.start_date || active.startDate || '-',
+                endDate: active.end_date || active.endDate || '-',
+                status: active.status || 'closed',
                 hasVoted: Boolean(active.has_voted),
-              }));
+                totalVoters: Number(active.total_voters || active.totalVoters || 0),
+                votesIn: Number(active.votes_in || active.votesIn || 0),
+              });
 
-              if (Array.isArray(active.candidates)) {
+              if (Array.isArray(active.candidates) && active.candidates.length > 0) {
                 const apiCands = active.candidates.map((c: any, idx: number) => ({
                   id: c.id?.toString() || Math.random().toString(),
                   candidateNumber: c.candidate_number || idx + 1,
@@ -115,45 +109,22 @@ export default function VotingModuleScreen() {
                   percentage: Number(c.percentage || 0),
                 }));
                 setCandidates(apiCands);
+              } else {
+                setCandidates([]);
               }
+            } else {
+              setSession(null);
+              setCandidates([]);
             }
+          } else {
+            setSession(null);
+            setCandidates([]);
           }
         } catch (_) {}
+      } else {
+        setSession(null);
+        setCandidates([]);
       }
-
-      // Default high-fidelity candidates data
-      const defaultCandidates: CandidateItem[] = [
-        {
-          id: 'c1',
-          candidateNumber: 1,
-          chairName: 'Muhammad Rizky Pratama (XI MIPA 2)',
-          viceChairName: 'Nadia Az-Zahra (X-1)',
-          vision: 'Menjadikan OSIS sebagai wadah inovasi digital, inklusif, dan pelopor prestasi berwawasan lingkungan.',
-          missions: [
-            'Digitalisasi seluruh kegiatan ekstrakurikuler dan mading sekolah.',
-            'Program mentoring akademik antar-tingkatan kelas.',
-            'Penyelenggaraan Pekan Seni & Turnamen E-Sport tahunan.',
-          ],
-          votesCount: 298,
-          percentage: 54.4,
-        },
-        {
-          id: 'c2',
-          candidateNumber: 2,
-          chairName: 'Fajar Nugraha (XI IPS 1)',
-          viceChairName: 'Alya Syahrani (X-4)',
-          vision: 'Terwujudnya siswa yang mandiri, berkarakter mulia, serta tanggap terhadap isu sosial dan literasi.',
-          missions: [
-            'Optimalisasi peran OSIS dalam advokasi aspirasi siswa ke pihak sekolah.',
-            'Gerakan literasi harian 15 menit dan bedah buku inspiratif.',
-            'Bakti sosial peduli masyarakat sekitar dan penghijauan taman sekolah.',
-          ],
-          votesCount: 250,
-          percentage: 45.6,
-        },
-      ];
-      setCandidates(prev => (prev.length > 0 ? prev : defaultCandidates));
-
     } catch (e: any) {
       console.warn('Voting load error:', e.message);
     } finally {
@@ -168,6 +139,10 @@ export default function VotingModuleScreen() {
   };
 
   const handleVoteCandidate = (cand: CandidateItem) => {
+    if (!session) {
+      showToast('Belum ada sesi pemilihan aktif.', 'warning');
+      return;
+    }
     if (session.hasVoted) {
       showToast('Anda sudah menggunakan hak suara dalam sesi pemilihan ini.', 'warning');
       return;
@@ -177,7 +152,7 @@ export default function VotingModuleScreen() {
   };
 
   const handleConfirmVote = async () => {
-    if (!selectedCandidate) return;
+    if (!selectedCandidate || !session) return;
     setIsSubmittingVote(true);
     try {
       const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
@@ -193,11 +168,11 @@ export default function VotingModuleScreen() {
         } catch (_) {}
       }
 
-      setSession(prev => ({
+      setSession(prev => (prev ? {
         ...prev,
         hasVoted: true,
         votesIn: prev.votesIn + 1,
-      }));
+      } : null));
 
       setCandidates(prev =>
         prev.map(c =>
@@ -216,7 +191,9 @@ export default function VotingModuleScreen() {
     }
   };
 
-  const turnoutPercentage = Math.round((session.votesIn / (session.totalVoters || 1)) * 100);
+  const turnoutPercentage = session && session.totalVoters > 0
+    ? Math.round((session.votesIn / session.totalVoters) * 100)
+    : 0;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -244,13 +221,17 @@ export default function VotingModuleScreen() {
             <Ionicons name="pie-chart" size={18} color="#D946EF" />
           </View>
           <Text style={styles.kpiValue}>{turnoutPercentage}% Suara</Text>
-          <Text style={styles.kpiLabel}>{session.votesIn} dari {session.totalVoters} Pemilih</Text>
+          <Text style={styles.kpiLabel}>
+            {session ? `${session.votesIn} dari ${session.totalVoters} Pemilih` : 'Belum Ada Pemilih'}
+          </Text>
         </View>
         <View style={[styles.kpiCard, { backgroundColor: '#ECFDF5' }]}>
           <View style={[styles.kpiIconWrapper, { backgroundColor: '#D1FAE5' }]}>
             <Ionicons name="shield-checkmark" size={18} color="#10B981" />
           </View>
-          <Text style={styles.kpiValue}>{session.hasVoted ? 'Sudah Memilih' : 'Belum Memilih'}</Text>
+          <Text style={styles.kpiValue}>
+            {!session ? 'Tidak Ada Sesi' : session.hasVoted ? 'Sudah Memilih' : 'Belum Memilih'}
+          </Text>
           <Text style={styles.kpiLabel}>Status Hak Suara</Text>
         </View>
       </View>
@@ -314,7 +295,7 @@ export default function VotingModuleScreen() {
           {/* TAB 1: BILIK SUARA */}
           {activeTab === 'bilik' && (
             <View>
-              {session.hasVoted && (
+              {session?.hasVoted && (
                 <View style={styles.votedNoticeBox}>
                   <Ionicons name="checkmark-circle" size={24} color="#10B981" />
                   <View style={{ flex: 1 }}>
@@ -329,65 +310,75 @@ export default function VotingModuleScreen() {
                 Kenali visi, misi, serta program kerja kandidat sebelum menentukan pilihan Anda.
               </Text>
 
-              {candidates.map(cand => (
-                <View key={cand.id} style={styles.candidateCard}>
-                  {/* Nomor Urut Banner */}
-                  <View style={styles.candHeader}>
-                    <View style={styles.candNumberBadge}>
-                      <Text style={styles.candNumberText}>PASLON {cand.candidateNumber}</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.candBody}>
-                    <View style={styles.candAvatarPair}>
-                      <View style={styles.candAvatar}>
-                        <Ionicons name="person" size={24} color="#D946EF" />
-                        <Text style={styles.candAvatarLabel}>Ketua</Text>
-                      </View>
-                      <View style={styles.candAvatar}>
-                        <Ionicons name="person" size={24} color="#A855F7" />
-                        <Text style={styles.candAvatarLabel}>Wakil</Text>
-                      </View>
-                    </View>
-
-                    <Text style={styles.candNameMain}>{cand.chairName}</Text>
-                    <Text style={styles.candViceName}>& {cand.viceChairName}</Text>
-
-                    <View style={styles.visionBox}>
-                      <Text style={styles.visionHeading}>VISI:</Text>
-                      <Text style={styles.visionText}>{cand.vision}</Text>
-                    </View>
-
-                    <Text style={styles.missionHeading}>MISI UTAMA:</Text>
-                    {cand.missions.map((m, idx) => (
-                      <View key={idx} style={styles.missionItem}>
-                        <Ionicons name="checkmark-circle-outline" size={14} color="#D946EF" />
-                        <Text style={styles.missionText}>{m}</Text>
-                      </View>
-                    ))}
-                  </View>
-
-                  <View style={styles.candFooter}>
-                    <TouchableOpacity
-                      style={[
-                        styles.voteBtn,
-                        session.hasVoted && styles.voteBtnDisabled,
-                      ]}
-                      onPress={() => handleVoteCandidate(cand)}
-                      disabled={session.hasVoted}
-                    >
-                      <Ionicons
-                        name={session.hasVoted ? 'checkmark-circle' : 'finger-print-outline'}
-                        size={18}
-                        color="#FFFFFF"
-                      />
-                      <Text style={styles.voteBtnText}>
-                        {session.hasVoted ? 'Suara Telah Diberikan' : `Coblos Paslon No. ${cand.candidateNumber}`}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
+              {!session || candidates.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="file-tray-full-outline" size={44} color={Colors.textLight} />
+                  <Text style={styles.emptyTitle}>Belum Ada Sesi Pemilihan Aktif</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Saat ini belum ada agenda pemilihan atau kandidat yang terdaftar dalam sistem.
+                  </Text>
                 </View>
-              ))}
+              ) : (
+                candidates.map(cand => (
+                  <View key={cand.id} style={styles.candidateCard}>
+                    {/* Nomor Urut Banner */}
+                    <View style={styles.candHeader}>
+                      <View style={styles.candNumberBadge}>
+                        <Text style={styles.candNumberText}>PASLON {cand.candidateNumber}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.candBody}>
+                      <View style={styles.candAvatarPair}>
+                        <View style={styles.candAvatar}>
+                          <Ionicons name="person" size={24} color="#D946EF" />
+                          <Text style={styles.candAvatarLabel}>Ketua</Text>
+                        </View>
+                        <View style={styles.candAvatar}>
+                          <Ionicons name="person" size={24} color="#A855F7" />
+                          <Text style={styles.candAvatarLabel}>Wakil</Text>
+                        </View>
+                      </View>
+
+                      <Text style={styles.candNameMain}>{cand.chairName}</Text>
+                      <Text style={styles.candViceName}>& {cand.viceChairName}</Text>
+
+                      <View style={styles.visionBox}>
+                        <Text style={styles.visionHeading}>VISI:</Text>
+                        <Text style={styles.visionText}>{cand.vision}</Text>
+                      </View>
+
+                      <Text style={styles.missionHeading}>MISI UTAMA:</Text>
+                      {cand.missions.map((m, idx) => (
+                        <View key={idx} style={styles.missionItem}>
+                          <Ionicons name="checkmark-circle-outline" size={14} color="#D946EF" />
+                          <Text style={styles.missionText}>{m}</Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    <View style={styles.candFooter}>
+                      <TouchableOpacity
+                        style={[
+                          styles.voteBtn,
+                          session?.hasVoted && styles.voteBtnDisabled,
+                        ]}
+                        onPress={() => handleVoteCandidate(cand)}
+                        disabled={session?.hasVoted}
+                      >
+                        <Ionicons
+                          name={session?.hasVoted ? 'checkmark-circle' : 'finger-print-outline'}
+                          size={18}
+                          color="#FFFFFF"
+                        />
+                        <Text style={styles.voteBtnText}>
+                          {session?.hasVoted ? 'Suara Telah Diberikan' : `Coblos Paslon No. ${cand.candidateNumber}`}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))
+              )}
             </View>
           )}
 
@@ -399,58 +390,70 @@ export default function VotingModuleScreen() {
                 Data dihitung langsung secara real-time dari TPS Digital siswa dan guru.
               </Text>
 
-              {candidates.map(cand => {
-                const percent = cand.percentage || 50;
-                return (
-                  <View key={cand.id} style={styles.qcCard}>
-                    <View style={styles.qcHeader}>
-                      <View style={styles.qcLeft}>
-                        <View style={styles.qcNumber}>
-                          <Text style={styles.qcNumberText}>0{cand.candidateNumber}</Text>
-                        </View>
-                        <View>
-                          <Text style={styles.qcName}>{cand.chairName.split('(')[0]}</Text>
-                          <Text style={styles.qcVice}>& {cand.viceChairName.split('(')[0]}</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.qcPercent}>{percent}%</Text>
-                    </View>
-
-                    {/* Progress Bar */}
-                    <View style={styles.progressBarTrack}>
-                      <View
-                        style={[
-                          styles.progressBarFill,
-                          {
-                            width: `${percent}%`,
-                            backgroundColor: cand.candidateNumber === 1 ? '#D946EF' : '#8B5CF6',
-                          },
-                        ]}
-                      />
-                    </View>
-
-                    <Text style={styles.qcTotalText}>{cand.votesCount} Total Suara Masuk</Text>
-                  </View>
-                );
-              })}
-
-              <View style={styles.tpsSummaryCard}>
-                <Text style={styles.tpsSummaryTitle}>Statistik Partisipasi TPS</Text>
-                <View style={styles.tpsRow}>
-                  <Text style={styles.tpsLabel}>Daftar Pemilih Tetap (DPT)</Text>
-                  <Text style={styles.tpsValue}>{session.totalVoters} Siswa/Guru</Text>
-                </View>
-                <View style={styles.tpsRow}>
-                  <Text style={styles.tpsLabel}>Total Suara Masuk</Text>
-                  <Text style={[styles.tpsValue, { color: '#10B981' }]}>{session.votesIn} Suara</Text>
-                </View>
-                <View style={styles.tpsRow}>
-                  <Text style={styles.tpsLabel}>Belum Menggunakan Hak Suara</Text>
-                  <Text style={[styles.tpsValue, { color: '#EF4444' }]}>
-                    {session.totalVoters - session.votesIn} Orang
+              {!session || candidates.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="stats-chart-outline" size={44} color={Colors.textLight} />
+                  <Text style={styles.emptyTitle}>Belum Ada Data Hasil Suara</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Perolehan suara akan muncul otomatis setelah sesi pemilihan dimulai dan suara masuk.
                   </Text>
                 </View>
-              </View>
+              ) : (
+                <>
+                  {candidates.map(cand => {
+                    const percent = cand.percentage || 0;
+                    return (
+                      <View key={cand.id} style={styles.qcCard}>
+                        <View style={styles.qcHeader}>
+                          <View style={styles.qcLeft}>
+                            <View style={styles.qcNumber}>
+                              <Text style={styles.qcNumberText}>0{cand.candidateNumber}</Text>
+                            </View>
+                            <View>
+                              <Text style={styles.qcName}>{cand.chairName.split('(')[0]}</Text>
+                              <Text style={styles.qcVice}>& {cand.viceChairName.split('(')[0]}</Text>
+                            </View>
+                          </View>
+                          <Text style={styles.qcPercent}>{percent}%</Text>
+                        </View>
+
+                        {/* Progress Bar */}
+                        <View style={styles.progressBarTrack}>
+                          <View
+                            style={[
+                              styles.progressBarFill,
+                              {
+                                width: `${percent}%`,
+                                backgroundColor: cand.candidateNumber === 1 ? '#D946EF' : '#8B5CF6',
+                              },
+                            ]}
+                          />
+                        </View>
+
+                        <Text style={styles.qcTotalText}>{cand.votesCount || 0} Total Suara Masuk</Text>
+                      </View>
+                    );
+                  })}
+
+                  <View style={styles.tpsSummaryCard}>
+                    <Text style={styles.tpsSummaryTitle}>Statistik Partisipasi TPS</Text>
+                    <View style={styles.tpsRow}>
+                      <Text style={styles.tpsLabel}>Daftar Pemilih Tetap (DPT)</Text>
+                      <Text style={styles.tpsValue}>{session.totalVoters} Siswa/Guru</Text>
+                    </View>
+                    <View style={styles.tpsRow}>
+                      <Text style={styles.tpsLabel}>Total Suara Masuk</Text>
+                      <Text style={[styles.tpsValue, { color: '#10B981' }]}>{session.votesIn} Suara</Text>
+                    </View>
+                    <View style={styles.tpsRow}>
+                      <Text style={styles.tpsLabel}>Belum Menggunakan Hak Suara</Text>
+                      <Text style={[styles.tpsValue, { color: '#EF4444' }]}>
+                        {Math.max(0, session.totalVoters - session.votesIn)} Orang
+                      </Text>
+                    </View>
+                  </View>
+                </>
+              )}
             </View>
           )}
 
@@ -483,7 +486,9 @@ export default function VotingModuleScreen() {
                   <Ionicons name="time-outline" size={20} color="#D946EF" />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.ruleHeading}>Batas Waktu Pemilihan</Text>
-                    <Text style={styles.ruleBody}>{session.startDate} hingga {session.endDate}.</Text>
+                    <Text style={styles.ruleBody}>
+                      {session ? `${session.startDate} hingga ${session.endDate}.` : 'Jadwal belum ditentukan.'}
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -1032,5 +1037,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  emptyContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+    marginTop: 12,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.text,
+    marginTop: 12,
+  },
+  emptySubtitle: {
+    fontSize: 12,
+    color: Colors.textLight,
+    textAlign: 'center',
+    marginTop: 4,
+    lineHeight: 18,
+    paddingHorizontal: 20,
   },
 });

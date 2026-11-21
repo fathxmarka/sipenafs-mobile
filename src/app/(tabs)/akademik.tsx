@@ -100,22 +100,6 @@ const mapDayNumber = (val: any) => {
   return days[num] || 'Senin';
 };
 
-const DEFAULT_CALENDAR_EVENTS: CalendarEvent[] = [
-  { id: 'e1', title: 'Masa Pengenalan Lingkungan Sekolah (MPLS)', dateRange: '13 - 16 Juli 2026', type: 'academic', description: 'Kegiatan orientasi pengenalan budaya sekolah dan pembentukan karakter peserta didik baru.' },
-  { id: 'e2', title: 'Upacara HUT Kemerdekaan RI Ke-81', dateRange: '17 Agustus 2026', type: 'holiday', description: 'Upacara bendera peringatan hari kemerdekaan RI dan libur nasional resmi.' },
-  { id: 'e3', title: 'Penilaian Tengah Semester (PTS) Ganjil', dateRange: '05 - 10 Oktober 2026', type: 'exam', description: 'Pelaksanaan asesmen sumatif tengah semester berbasis aplikasi CBT SIPENAFS.' },
-  { id: 'e4', title: 'Pembagian Lembar Laporan Hasil Belajar (KTS)', dateRange: '17 Oktober 2026', type: 'academic', description: 'Pengambilan lembar laporan progres tengah semester oleh orang tua / wali murid.' },
-  { id: 'e5', title: 'Peringatan Hari Guru Nasional & Gelar Karya P5', dateRange: '25 November 2026', type: 'academic', description: 'Upacara bendera penghormatan guru dan pameran proyek inovasi siswa P5.' },
-  { id: 'e6', title: 'Penilaian Akhir Semester (PAS) Ganjil', dateRange: '01 - 12 Desember 2026', type: 'exam', description: 'Ujian akhir semester ganjil bagi seluruh jenjang kelas secara terpadu.' },
-  { id: 'e7', title: 'Pembagian Buku Rapor Semester Ganjil', dateRange: '19 Desember 2026', type: 'academic', description: 'Penyerahan e-rapor dan buku laporan hasil belajar semester ganjil kepada orang tua.' },
-  { id: 'e8', title: 'Libur Akhir Semester Ganjil 2026/2027', dateRange: '21 Des 2026 - 02 Jan 2027', type: 'holiday', description: 'Libur resmi kalender pendidikan semester ganjil Dinas Pendidikan.' },
-  { id: 'e9', title: 'Hari Pertama Masuk Sekolah Semester Genap', dateRange: '04 Januari 2027', type: 'academic', description: 'Awal kegiatan belajar mengajar (KBM) semester genap tahun ajaran 2026/2027.' },
-  { id: 'e10', title: 'Penilaian Tengah Semester (PTS) Genap', dateRange: '01 - 06 Maret 2027', type: 'exam', description: 'Asesmen sumatif tengah semester genap menggunakan sistem CBT.' },
-  { id: 'e11', title: 'Penilaian Akhir Tahun (PAT) & Asesmen Sumatif Akhir', dateRange: '07 - 18 Juni 2027', type: 'exam', description: 'Asesmen kenaikan kelas dan kelulusan peserta didik akhir tahun ajaran.' },
-  { id: 'e12', title: 'Pembagian Rapor Kenaikan Kelas & Kelulusan', dateRange: '25 Juni 2027', type: 'academic', description: 'Penyerahan rapor akhir tahun pelajaran dan penentuan kelulusan serta kenaikan kelas.' },
-  { id: 'e13', title: 'Libur Akhir Tahun Ajaran 2026/2027', dateRange: '28 Jun - 10 Jul 2027', type: 'holiday', description: 'Libur kenaikan kelas dan libur akhir tahun pelajaran bagi seluruh siswa.' },
-];
-
 export default function AkademikScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -126,7 +110,7 @@ export default function AkademikScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
-  const [events, setEvents] = useState<CalendarEvent[]>(DEFAULT_CALENDAR_EVENTS);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
 
   const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -211,8 +195,11 @@ export default function AkademikScreen() {
             setSubjects(apiSubj);
           }
 
-          if (resCal.status === 'fulfilled' && resCal.value.data?.data && Array.isArray(resCal.value.data.data)) {
-            const apiEvents: CalendarEvent[] = resCal.value.data.data.map((c: any) => ({
+          if (resCal.status === 'fulfilled' && resCal.value.data) {
+            const rawList = Array.isArray(resCal.value.data?.data)
+              ? resCal.value.data.data
+              : (Array.isArray(resCal.value.data) ? resCal.value.data : []);
+            const apiEvents: CalendarEvent[] = rawList.map((c: any) => ({
               id: c.id ? String(c.id) : Math.random().toString(),
               title: c.title || 'Agenda Pendidikan',
               dateRange: formatEventDateRange(c.start_date, c.end_date),
@@ -220,9 +207,7 @@ export default function AkademikScreen() {
               description: c.description || '',
               status: c.status || 'upcoming',
             }));
-            if (apiEvents.length > 0) {
-              setEvents(apiEvents);
-            }
+            setEvents(apiEvents);
           }
         } catch (_) {}
       }
@@ -255,8 +240,6 @@ export default function AkademikScreen() {
         { id: '18', day: 'Sabtu', subjectName: 'Proyek Penguatan Profil Pelajar Pancasila (P5)', teacherName: 'Fasilitator P5', startTime: '09:45', endTime: '12:00', roomName: 'Aula Sekolah', className: 'XII MIPA 1' },
       ];
       setSchedules(prev => (prev.length > 0 ? prev : defaultSchedules));
-
-      setEvents(prev => (prev && prev.length > 0 ? prev : DEFAULT_CALENDAR_EVENTS));
 
       const defaultSubjects: SubjectItem[] = [
         { id: 'sb1', name: 'Matematika Peminatan', category: 'Kelompok Peminatan Sains', teacherName: 'Bambang Kusuma, S.Pd', hoursPerWeek: 4, kkm: 75 },
