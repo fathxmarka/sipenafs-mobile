@@ -67,6 +67,12 @@ Tautan Permanen Versi Terbaru:
 - Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
 Apa yang Baru di Versi ${version}:
+• Peningkatan Stabilitas Sesi & Auto-Logout Bersih:
+  - Deteksi sesi kadaluarsa (401) otomatis mengarahkan ke halaman login secara bersih dan ramah pengguna.
+  - Multi-perangkat untuk Staf (Admin, Operator, Guru): Login di Web tidak akan menendang sesi di HP Android.
+  - Peningkatan durasi sesi login hingga 1 tahun.
+• Sinkronisasi Real-Time KPI Cards Dashboard Pimpinan & Operator:
+  - Jumlah siswa, guru, dan kelas terikat langsung ke data server tanpa keterlambatan.
 • Pembersihan & Sinkronisasi Real-Data E-Voting & Kalender Pendidikan:
   - Menghapus seluruh data mockup/dummy hardcoded pada modul E-Voting dan Kalender Pendidikan.
   - Tampilan E-Voting & TPS kini 100% membaca data real dari server atau menampilkan empty state yang rapi jika belum ada agenda pemilihan aktif.

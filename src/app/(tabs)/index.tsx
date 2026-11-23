@@ -161,15 +161,20 @@ export default function HomeScreen() {
               setMgmtStats(mData);
               setStats(prev => ({
                 ...prev,
-                guru: mData.hr?.teachers || prev.guru,
+                siswa: mData.totalStudents ?? prev.siswa,
+                guru: mData.hr?.teachers ?? mData.hr?.total ?? prev.guru,
+                kelas: mData.totalClasses ?? prev.kelas,
                 kehadiran: '96%',
               }));
             }
             if (resStudents.status === 'fulfilled' && resStudents.value.data?.total) {
               setStats(prev => ({ ...prev, siswa: resStudents.value.data.total }));
             }
-            if (resClasses.status === 'fulfilled' && resClasses.value.data?.data) {
-              setStats(prev => ({ ...prev, kelas: resClasses.value.data.data.length }));
+            if (resClasses.status === 'fulfilled') {
+              const totalClasses = resClasses.value.data?.total ?? (Array.isArray(resClasses.value.data?.data) ? resClasses.value.data.data.length : null);
+              if (totalClasses) {
+                setStats(prev => ({ ...prev, kelas: totalClasses }));
+              }
             }
 
             try {

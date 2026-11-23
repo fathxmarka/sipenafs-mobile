@@ -1,7 +1,9 @@
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState, useRef } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Alert } from 'react-native';
+import axios from 'axios';
+import * as SecureStore from 'expo-secure-store';
 import { requestAppPermissions, AppPermissionsStatus } from '../utils/permissions';
 import { PermissionModal } from '../components/PermissionModal';
 import { checkForAppUpdate, AppUpdateInfo } from '../services/updateService';
@@ -13,6 +15,37 @@ import {
   sendUpdateNotification,
   addNotificationResponseListener,
 } from '../services/notificationService';
+
+// Global 401 Session Expired Auto-Logout Handler
+let isSessionExpiringGlobal = false;
+axios.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error?.response?.status === 401) {
+      const url = String(error.config?.url || '');
+      const isAuthEndpoint = url.includes('/api/auth/login') || url.includes('/api/auth/student/login') || url.includes('/api/parent');
+      if (!isAuthEndpoint && !isSessionExpiringGlobal) {
+        isSessionExpiringGlobal = true;
+        await SecureStore.deleteItemAsync('sipena_token').catch(() => {});
+        Alert.alert(
+          'Sesi Login Berakhir',
+          'Sesi login Anda telah berakhir atau akun aktif di perangkat lain. Silakan masuk kembali.',
+          [
+            {
+              text: 'Login Ulang',
+              onPress: () => {
+                isSessionExpiringGlobal = false;
+                router.replace('/login');
+              }
+            }
+          ],
+          { cancelable: false }
+        );
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 // Konfigurasi agar notifikasi muncul saat app di foreground
 configureNotificationHandler();
