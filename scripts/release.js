@@ -67,6 +67,12 @@ Tautan Permanen Versi Terbaru:
 - Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
 Apa yang Baru di Versi ${version}:
+• Kompatibilitas Penuh HP Android 9 / Android 10 Go (Infinix Hot 9 Play, dsb.):
+  - Mengatasi kendala "Aplikasi tidak terinstal" dengan mengaktifkan ekstraksi pustaka native (extractNativeLibs & useLegacyPackaging).
+  - Skema Penandatanganan Ganda Resmi: Mengaktifkan v1 (JAR Signature) dan v2 (Full APK Signature) agar kompatibel dengan sistem verifikasi paket pada OS Infinix XOS / Android Go.
+  - Sinkronisasi Dinamis VersionCode Gradle: Memastikan versi versionCode (39) selalu lebih tinggi dari rilis sebelumnya untuk mencegah penolakan downgrade oleh Package Installer Android.
+  - Pustaka 32-bit (armeabi-v7a) dan 64-bit (arm64-v8a) disertakan secara lengkap baik pada APK Universal maupun APK khusus 32-bit.
+  - Catatan: Jika pada HP Anda sebelumnya terpasang versi aplikasi dengan kunci penandatanganan berbeda, harap copot pemasangan (uninstall) versi lama terlebih dahulu sebelum memasang file APK ini.
 • Peningkatan Stabilitas Sesi & Auto-Logout Bersih:
   - Deteksi sesi kadaluarsa (401) otomatis mengarahkan ke halaman login secara bersih dan ramah pengguna.
   - Multi-perangkat untuk Staf (Admin, Operator, Guru): Login di Web tidak akan menendang sesi di HP Android.
