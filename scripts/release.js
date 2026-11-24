@@ -67,6 +67,10 @@ Tautan Permanen Versi Terbaru:
 - Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
 Apa yang Baru di Versi ${version}:
+• Dukungan Penuh Soal PG Multi Jawaban (PGK / Pilihan Ganda Kompleks) untuk Siswa & Guru:
+  - Normalisasi tipe soal (PGK, pgk, PG Kompleks, PG_KOMPLEKS) dan pemulihan jawaban tersimpan baik format string maupun object dari server.
+  - Indikator badge "PG MULTI JAWABAN" serta status pilihan aktif ("Terpilih: A, C") dan penghapusan otomatis status terjawab jika semua opsi di-uncheck.
+  - Guru kini dapat membuat dan mengedit soal bertipe PG Tunggal, PGK (Multi Jawaban), maupun Esai langsung dari aplikasi Android (baik di Ujian maupun Bank Soal).
 • Dukungan Penuh Rumus Sains & Multibahasa CBT (Matematika, Fisika, Kimia, Biologi, Arab, Mandarin):
   - Rendering KaTeX Offline Hybrid untuk rumus bertingkat (pecahan, akar, integral, matriks, reaksi kimia) langsung di layar ujian Android tanpa koneksi internet luar.
   - Deteksi otomatis arah baca RTL (Right-to-Left) & line-height lega untuk Bahasa Arab berharakat serta Bahasa Mandarin/CJK agar tidak terpotong.

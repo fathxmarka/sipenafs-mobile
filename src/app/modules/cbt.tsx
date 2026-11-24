@@ -40,6 +40,9 @@ import {
   resolveCbtMediaUrl,
   hasArabicScript,
   hasCjkScript,
+  normalizeCbtQuestionType,
+  parseSelectedOptionKeys,
+  isCbtQuestionAnswered,
 } from '../../utils/cbtFormatter';
 import RichCbtContent from '../../components/RichCbtContent';
 import EssaySymbolToolbar from '../../components/EssaySymbolToolbar';
@@ -911,26 +914,42 @@ export default function CbtScreen() {
       showToast('Teks butir soal wajib diisi!', 'warning');
       return;
     }
-    if (!questionForm.optionA.trim() || !questionForm.optionB.trim()) {
+    const normalizedType = normalizeCbtQuestionType(questionForm.type);
+    const isEssay = normalizedType === 'ESAI';
+    const isPgk = normalizedType === 'PGK';
+
+    if (!isEssay && (!questionForm.optionA.trim() || !questionForm.optionB.trim())) {
       showToast('Opsi A dan B wajib diisi!', 'warning');
       return;
     }
 
+    const finalAnswer = isPgk
+      ? parseSelectedOptionKeys(questionForm.answer).join(',')
+      : isEssay
+      ? String(questionForm.answer || '').trim()
+      : String(questionForm.answer || 'A').trim().toUpperCase();
+
+    if (isPgk && !finalAnswer) {
+      showToast('Pilih minimal 1 kunci jawaban untuk PG Multi Jawaban!', 'warning');
+      return;
+    }
+
     try {
-      const optionsObj: { [key: string]: string } = {
-        A: questionForm.optionA.trim(),
-        B: questionForm.optionB.trim(),
-      };
-      if (questionForm.optionC.trim()) optionsObj.C = questionForm.optionC.trim();
-      if (questionForm.optionD.trim()) optionsObj.D = questionForm.optionD.trim();
-      if (questionForm.optionE.trim()) optionsObj.E = questionForm.optionE.trim();
+      const optionsObj: { [key: string]: string } = {};
+      if (!isEssay) {
+        optionsObj.A = questionForm.optionA.trim();
+        optionsObj.B = questionForm.optionB.trim();
+        if (questionForm.optionC.trim()) optionsObj.C = questionForm.optionC.trim();
+        if (questionForm.optionD.trim()) optionsObj.D = questionForm.optionD.trim();
+        if (questionForm.optionE.trim()) optionsObj.E = questionForm.optionE.trim();
+      }
 
       const payload = {
         exam_id: selectedExamForQuestions?.id,
         text: questionForm.text.trim(),
-        type: 'PG',
+        type: isEssay ? 'Esai' : isPgk ? 'PGK' : 'PG',
         options: JSON.stringify(optionsObj),
-        answer: questionForm.answer,
+        answer: finalAnswer,
         score_weight: Number(questionForm.score_weight) || 1,
         passage_id: questionForm.passage_id ? questionForm.passage_id : null,
       };
@@ -939,7 +958,10 @@ export default function CbtScreen() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      showToast('Soal Pilihan Ganda berhasil disimpan!', 'success');
+      showToast(
+        isEssay ? 'Soal Esai berhasil disimpan!' : isPgk ? 'Soal PG Multi Jawaban (PGK) berhasil disimpan!' : 'Soal Pilihan Ganda berhasil disimpan!',
+        'success'
+      );
       setQuestionForm({
         text: '',
         type: 'PG',
@@ -1229,19 +1251,20 @@ export default function CbtScreen() {
 
   const handleEditBankQuestion = (item: any) => {
     setEditingBankQuestionId(String(item.id));
-    const opts = typeof item.options === 'string' ? (() => { try { return JSON.parse(item.options); } catch { return {}; } })() : (item.options || {});
+    const opts = normalizeQuestionOptions(item.options);
+    const normType = normalizeCbtQuestionType(item.type, opts);
     setBankQuestionForm({
       subject_id: String(item.subject_id),
       level: item.level || '10',
       topic: item.topic || '',
       text: item.text || '',
-      type: item.type || 'PG',
+      type: normType === 'ESAI' ? 'Esai' : normType,
       optionA: opts.A || '',
       optionB: opts.B || '',
       optionC: opts.C || '',
       optionD: opts.D || '',
       optionE: opts.E || '',
-      answer: item.answer || 'A',
+      answer: item.answer || (normType === 'ESAI' ? '' : 'A'),
       score_weight: String(item.score_weight || 1),
       passage_id: item.passage_id ? String(item.passage_id) : '',
       academic_year: item.academic_year || item.term?.name || activeAcademicYear?.name || '',
@@ -1260,19 +1283,35 @@ export default function CbtScreen() {
       showToast('Pilih mata pelajaran terlebih dahulu!', 'warning');
       return;
     }
-    if (!bankQuestionForm.optionA.trim() || !bankQuestionForm.optionB.trim()) {
+    const normType = normalizeCbtQuestionType(bankQuestionForm.type);
+    const isEssay = normType === 'ESAI';
+    const isPgk = normType === 'PGK';
+
+    if (!isEssay && (!bankQuestionForm.optionA.trim() || !bankQuestionForm.optionB.trim())) {
       showToast('Opsi A dan B wajib diisi!', 'warning');
       return;
     }
 
+    const finalAnswer = isPgk
+      ? parseSelectedOptionKeys(bankQuestionForm.answer).join(',')
+      : isEssay
+      ? String(bankQuestionForm.answer || '').trim()
+      : String(bankQuestionForm.answer || 'A').trim().toUpperCase();
+
+    if (isPgk && !finalAnswer) {
+      showToast('Pilih minimal 1 kunci jawaban untuk PG Multi Jawaban!', 'warning');
+      return;
+    }
+
     try {
-      const optionsObj: { [key: string]: string } = {
-        A: bankQuestionForm.optionA.trim(),
-        B: bankQuestionForm.optionB.trim(),
-      };
-      if (bankQuestionForm.optionC.trim()) optionsObj.C = bankQuestionForm.optionC.trim();
-      if (bankQuestionForm.optionD.trim()) optionsObj.D = bankQuestionForm.optionD.trim();
-      if (bankQuestionForm.optionE.trim()) optionsObj.E = bankQuestionForm.optionE.trim();
+      const optionsObj: { [key: string]: string } = {};
+      if (!isEssay) {
+        optionsObj.A = bankQuestionForm.optionA.trim();
+        optionsObj.B = bankQuestionForm.optionB.trim();
+        if (bankQuestionForm.optionC.trim()) optionsObj.C = bankQuestionForm.optionC.trim();
+        if (bankQuestionForm.optionD.trim()) optionsObj.D = bankQuestionForm.optionD.trim();
+        if (bankQuestionForm.optionE.trim()) optionsObj.E = bankQuestionForm.optionE.trim();
+      }
 
       const payload = {
         id: editingBankQuestionId || undefined,
@@ -1280,9 +1319,9 @@ export default function CbtScreen() {
         level: bankQuestionForm.level,
         topic: bankQuestionForm.topic.trim(),
         text: bankQuestionForm.text.trim(),
-        type: 'PG',
+        type: isEssay ? 'Esai' : isPgk ? 'PGK' : 'PG',
         options: JSON.stringify(optionsObj),
-        answer: bankQuestionForm.answer,
+        answer: finalAnswer,
         score_weight: Number(bankQuestionForm.score_weight) || 1,
         passage_id: bankQuestionForm.passage_id ? bankQuestionForm.passage_id : null,
         academic_year: bankQuestionForm.academic_year || undefined,
@@ -2515,20 +2554,20 @@ Format JSON array murni tanpa pembuka/penutup markdown:
   };
 
   const handleTogglePgkAnswer = (questionId: string, optionKey: string) => {
-    const current = studentAnswersRef.current[questionId];
-    let list: string[] = [];
-    if (typeof current === 'string' && current.length > 0) {
-      list = current.split(',').map((s) => s.trim().toUpperCase());
-    } else if (Array.isArray(current)) {
-      list = [...current];
-    }
-    if (list.includes(optionKey)) {
-      list = list.filter((k) => k !== optionKey);
+    const normKey = String(optionKey).trim().toUpperCase();
+    let list = parseSelectedOptionKeys(studentAnswersRef.current[questionId]);
+    if (list.includes(normKey)) {
+      list = list.filter((k) => k !== normKey);
     } else {
-      list.push(optionKey);
+      list.push(normKey);
     }
     list.sort();
-    const updated = { ...studentAnswersRef.current, [questionId]: list.join(',') };
+    const updated = { ...studentAnswersRef.current };
+    if (list.length === 0) {
+      delete updated[questionId];
+    } else {
+      updated[questionId] = list.join(',');
+    }
     setStudentAnswers(updated);
     scheduleDebouncedSaveProgress(updated);
   };
@@ -2622,7 +2661,9 @@ Format JSON array murni tanpa pembuka/penutup markdown:
     }
 
     const totalQ = studentQuestions.length;
-    const answeredCount = Object.keys(studentAnswersRef.current).length;
+    const answeredCount = studentQuestions.filter((q) =>
+      isCbtQuestionAnswered(studentAnswersRef.current[q.id], q.type)
+    ).length;
     const unansweredCount = totalQ - answeredCount;
 
     isConfirmationAlertOpenRef.current = true;
@@ -2703,7 +2744,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
         subjectName: activeStudentExam.subject?.name,
         scoreTotal: computedScore,
         scorePg: computedScore,
-        answeredCount: Object.keys(finalAnswersObj).length,
+        answeredCount: studentQuestions.filter((q) => isCbtQuestionAnswered(finalAnswersObj[q.id], q.type)).length,
         totalQuestions: studentQuestions.length,
       });
 
@@ -3672,6 +3713,43 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   </ScrollView>
                 </View>
 
+                {/* Tipe Soal */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>TIPE SOAL:</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {[
+                      { val: 'PG', label: 'PG Tunggal' },
+                      { val: 'PGK', label: 'PGK (Multi Jawaban)' },
+                      { val: 'Esai', label: 'Esai / Uraian' },
+                    ].map((t) => {
+                      const isActive = normalizeCbtQuestionType(questionForm.type) === normalizeCbtQuestionType(t.val);
+                      return (
+                        <TouchableOpacity
+                          key={t.val}
+                          style={[styles.pickerChip, isActive && styles.pickerChipActive]}
+                          onPress={() => {
+                            const nextNorm = normalizeCbtQuestionType(t.val);
+                            let nextAns = questionForm.answer;
+                            if (nextNorm === 'PG') {
+                              nextAns = parseSelectedOptionKeys(questionForm.answer)[0] || 'A';
+                            } else if (nextNorm === 'PGK') {
+                              const keys = parseSelectedOptionKeys(questionForm.answer);
+                              nextAns = keys.length > 0 ? keys.join(',') : 'A';
+                            } else {
+                              nextAns = '';
+                            }
+                            setQuestionForm({ ...questionForm, type: t.val, answer: nextAns });
+                          }}
+                        >
+                          <Text style={[styles.pickerChipText, isActive && styles.pickerChipTextActive]}>
+                            {t.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
                 {/* Teks Soal */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>PERTANYAAN / TEKS SOAL: <Text style={styles.req}>*</Text></Text>
@@ -3685,30 +3763,67 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   />
                 </View>
 
-                {/* Pilihan Jawaban A - E */}
-                {['A', 'B', 'C', 'D', 'E'].map((optKey) => {
-                  const formKey = `option${optKey}` as keyof typeof questionForm;
-                  const isCorrect = questionForm.answer === optKey;
-                  return (
-                    <View key={optKey} style={styles.optionInputRow}>
-                      <TouchableOpacity
-                        style={[styles.correctAnswerRadio, isCorrect && styles.correctAnswerRadioActive]}
-                        onPress={() => setQuestionForm({ ...questionForm, answer: optKey })}
-                      >
-                        <Text style={[styles.radioLetter, isCorrect && styles.radioLetterActive]}>{optKey}</Text>
-                      </TouchableOpacity>
-                      <TextInput
-                        style={[styles.inputBox, { flex: 1, marginLeft: 10 }]}
-                        placeholder={`Teks Pilihan ${optKey}...`}
-                        placeholderTextColor="#94A3B8"
-                        value={questionForm[formKey]}
-                        onChangeText={(val) => setQuestionForm({ ...questionForm, [formKey]: val })}
-                      />
-                    </View>
-                  );
-                })}
+                {normalizeCbtQuestionType(questionForm.type) === 'ESAI' ? (
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>KUNCI JAWABAN / RUBRIK ESAI (OPSIONAL):</Text>
+                    <TextInput
+                      style={[styles.inputBox, { height: 80, textAlignVertical: 'top' }]}
+                      placeholder="Tuliskan poin kunci jawaban untuk referensi koreksi/AI..."
+                      placeholderTextColor="#94A3B8"
+                      multiline
+                      value={questionForm.answer}
+                      onChangeText={(val) => setQuestionForm({ ...questionForm, answer: val })}
+                    />
+                  </View>
+                ) : (
+                  <>
+                    {/* Pilihan Jawaban A - E */}
+                    {['A', 'B', 'C', 'D', 'E'].map((optKey) => {
+                      const formKey = `option${optKey}` as keyof typeof questionForm;
+                      const isPgkForm = normalizeCbtQuestionType(questionForm.type) === 'PGK';
+                      const selectedKeys = parseSelectedOptionKeys(questionForm.answer);
+                      const isCorrect = isPgkForm ? selectedKeys.includes(optKey) : questionForm.answer === optKey;
+                      return (
+                        <View key={optKey} style={styles.optionInputRow}>
+                          <TouchableOpacity
+                            style={[
+                              styles.correctAnswerRadio,
+                              isPgkForm && { borderRadius: 6 },
+                              isCorrect && styles.correctAnswerRadioActive,
+                            ]}
+                            onPress={() => {
+                              if (isPgkForm) {
+                                const next = selectedKeys.includes(optKey)
+                                  ? selectedKeys.filter((k) => k !== optKey)
+                                  : [...selectedKeys, optKey].sort();
+                                setQuestionForm({ ...questionForm, answer: next.join(',') });
+                              } else {
+                                setQuestionForm({ ...questionForm, answer: optKey });
+                              }
+                            }}
+                          >
+                            <Text style={[styles.radioLetter, isCorrect && styles.radioLetterActive]}>
+                              {isPgkForm && isCorrect ? '✓' : optKey}
+                            </Text>
+                          </TouchableOpacity>
+                          <TextInput
+                            style={[styles.inputBox, { flex: 1, marginLeft: 10 }]}
+                            placeholder={`Teks Pilihan ${optKey}...`}
+                            placeholderTextColor="#94A3B8"
+                            value={questionForm[formKey]}
+                            onChangeText={(val) => setQuestionForm({ ...questionForm, [formKey]: val })}
+                          />
+                        </View>
+                      );
+                    })}
 
-                <Text style={styles.inputHelpText}>Ketuk lingkaran huruf di sebelah kiri untuk menandai kunci jawaban yang benar.</Text>
+                    <Text style={styles.inputHelpText}>
+                      {normalizeCbtQuestionType(questionForm.type) === 'PGK'
+                        ? 'Ketuk kotak huruf di sebelah kiri untuk memilih lebih dari satu kunci jawaban benar.'
+                        : 'Ketuk lingkaran huruf di sebelah kiri untuk menandai kunci jawaban yang benar.'}
+                    </Text>
+                  </>
+                )}
 
                 <TouchableOpacity style={styles.saveSubmitBtn} onPress={handleSaveQuestionPG} activeOpacity={0.8}>
                   <Ionicons name="add-circle" size={18} color="#FFFFFF" />
@@ -4644,10 +4759,47 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   </ScrollView>
                 </View>
 
-                {/* 5. Teks Soal */}
+                {/* 5. Tipe Soal */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>5. TIPE SOAL:</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {[
+                      { val: 'PG', label: 'PG Tunggal' },
+                      { val: 'PGK', label: 'PGK (Multi Jawaban)' },
+                      { val: 'Esai', label: 'Esai / Uraian' },
+                    ].map((t) => {
+                      const isActive = normalizeCbtQuestionType(bankQuestionForm.type) === normalizeCbtQuestionType(t.val);
+                      return (
+                        <TouchableOpacity
+                          key={t.val}
+                          style={[styles.passageOptionChip, isActive && styles.passageOptionChipActive]}
+                          onPress={() => {
+                            const nextNorm = normalizeCbtQuestionType(t.val);
+                            let nextAns = bankQuestionForm.answer;
+                            if (nextNorm === 'PG') {
+                              nextAns = parseSelectedOptionKeys(bankQuestionForm.answer)[0] || 'A';
+                            } else if (nextNorm === 'PGK') {
+                              const keys = parseSelectedOptionKeys(bankQuestionForm.answer);
+                              nextAns = keys.length > 0 ? keys.join(',') : 'A';
+                            } else {
+                              nextAns = '';
+                            }
+                            setBankQuestionForm({ ...bankQuestionForm, type: t.val, answer: nextAns });
+                          }}
+                        >
+                          <Text style={[styles.passageOptionChipText, isActive && styles.passageOptionChipTextActive]}>
+                            {t.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* 6. Teks Soal */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>
-                    5. PERTANYAAN / TEKS SOAL: <Text style={styles.req}>*</Text>
+                    6. PERTANYAAN / TEKS SOAL: <Text style={styles.req}>*</Text>
                   </Text>
                   <TextInput
                     style={[styles.inputBox, { height: 80, textAlignVertical: 'top' }]}
@@ -4659,35 +4811,70 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   />
                 </View>
 
-                {/* 6. Pilihan Jawaban A - E */}
-                <Text style={[styles.inputLabel, { marginBottom: 8 }]}>
-                  6. PILIHAN JAWABAN & KUNCI: <Text style={styles.req}>*</Text>
-                </Text>
-                {['A', 'B', 'C', 'D', 'E'].map((optKey) => {
-                  const formKey = `option${optKey}` as keyof typeof bankQuestionForm;
-                  const isCorrect = bankQuestionForm.answer === optKey;
-                  return (
-                    <View key={optKey} style={styles.optionInputRow}>
-                      <TouchableOpacity
-                        style={[styles.correctAnswerRadio, isCorrect && styles.correctAnswerRadioActive]}
-                        onPress={() => setBankQuestionForm({ ...bankQuestionForm, answer: optKey })}
-                      >
-                        <Text style={[styles.radioLetter, isCorrect && styles.radioLetterActive]}>{optKey}</Text>
-                      </TouchableOpacity>
-                      <TextInput
-                        style={[styles.inputBox, { flex: 1, marginLeft: 10 }]}
-                        placeholder={`Teks Pilihan ${optKey}...`}
-                        placeholderTextColor="#94A3B8"
-                        value={String(bankQuestionForm[formKey])}
-                        onChangeText={(val) => setBankQuestionForm({ ...bankQuestionForm, [formKey]: val })}
-                      />
-                    </View>
-                  );
-                })}
+                {/* 7. Pilihan Jawaban A - E atau Rubrik Esai */}
+                {normalizeCbtQuestionType(bankQuestionForm.type) === 'ESAI' ? (
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>7. KUNCI JAWABAN / RUBRIK ESAI (OPSIONAL):</Text>
+                    <TextInput
+                      style={[styles.inputBox, { height: 85, textAlignVertical: 'top' }]}
+                      placeholder="Tuliskan poin kunci jawaban esai..."
+                      placeholderTextColor="#94A3B8"
+                      multiline
+                      value={bankQuestionForm.answer}
+                      onChangeText={(val) => setBankQuestionForm({ ...bankQuestionForm, answer: val })}
+                    />
+                  </View>
+                ) : (
+                  <>
+                    <Text style={[styles.inputLabel, { marginBottom: 8 }]}>
+                      7. PILIHAN JAWABAN & KUNCI: <Text style={styles.req}>*</Text>
+                    </Text>
+                    {['A', 'B', 'C', 'D', 'E'].map((optKey) => {
+                      const formKey = `option${optKey}` as keyof typeof bankQuestionForm;
+                      const isPgkBank = normalizeCbtQuestionType(bankQuestionForm.type) === 'PGK';
+                      const selectedKeys = parseSelectedOptionKeys(bankQuestionForm.answer);
+                      const isCorrect = isPgkBank ? selectedKeys.includes(optKey) : bankQuestionForm.answer === optKey;
+                      return (
+                        <View key={optKey} style={styles.optionInputRow}>
+                          <TouchableOpacity
+                            style={[
+                              styles.correctAnswerRadio,
+                              isPgkBank && { borderRadius: 6 },
+                              isCorrect && styles.correctAnswerRadioActive,
+                            ]}
+                            onPress={() => {
+                              if (isPgkBank) {
+                                const next = selectedKeys.includes(optKey)
+                                  ? selectedKeys.filter((k) => k !== optKey)
+                                  : [...selectedKeys, optKey].sort();
+                                setBankQuestionForm({ ...bankQuestionForm, answer: next.join(',') });
+                              } else {
+                                setBankQuestionForm({ ...bankQuestionForm, answer: optKey });
+                              }
+                            }}
+                          >
+                            <Text style={[styles.radioLetter, isCorrect && styles.radioLetterActive]}>
+                              {isPgkBank && isCorrect ? '✓' : optKey}
+                            </Text>
+                          </TouchableOpacity>
+                          <TextInput
+                            style={[styles.inputBox, { flex: 1, marginLeft: 10 }]}
+                            placeholder={`Teks Pilihan ${optKey}...`}
+                            placeholderTextColor="#94A3B8"
+                            value={String(bankQuestionForm[formKey])}
+                            onChangeText={(val) => setBankQuestionForm({ ...bankQuestionForm, [formKey]: val })}
+                          />
+                        </View>
+                      );
+                    })}
 
-                <Text style={styles.inputHelpText}>
-                  Ketuk lingkaran huruf di sebelah kiri untuk menandai kunci jawaban yang benar.
-                </Text>
+                    <Text style={styles.inputHelpText}>
+                      {normalizeCbtQuestionType(bankQuestionForm.type) === 'PGK'
+                        ? 'Ketuk kotak huruf di sebelah kiri untuk memilih lebih dari satu kunci jawaban benar.'
+                        : 'Ketuk lingkaran huruf di sebelah kiri untuk menandai kunci jawaban yang benar.'}
+                    </Text>
+                  </>
+                )}
 
                 {/* 7. Bobot Nilai */}
                 <View style={[styles.inputGroup, { width: 140, marginTop: 10 }]}>
@@ -5993,9 +6180,27 @@ Format JSON array murni tanpa pembuka/penutup markdown:
             )}
 
             {/* Question Text & Image */}
+            {(() => {
+              const currentQKind = normalizeCbtQuestionType(currentQuestion?.type, parsedOptions);
+              const selectedOptionKeys = parseSelectedOptionKeys(studentAnswers[currentQuestion?.id || '']);
+
+              return (
+              <>
             <View style={styles.questionCardBody}>
               <View style={styles.questionNumRow}>
-                <Text style={styles.bigQuestionNum}>Pertanyaan No. {currentQuestionIndex + 1}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <Text style={styles.bigQuestionNum}>Pertanyaan No. {currentQuestionIndex + 1}</Text>
+                  {currentQKind === 'PGK' && (
+                    <View style={{ backgroundColor: '#EEF2FF', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#C7D2FE' }}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: '#4338CA' }}>PG MULTI JAWABAN</Text>
+                    </View>
+                  )}
+                  {currentQKind === 'ESAI' && (
+                    <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderColor: '#FDE68A' }}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color: '#B45309' }}>ESAI</Text>
+                    </View>
+                  )}
+                </View>
                 {doubtfulAnswers[currentQuestion?.id || ''] && (
                   <View style={styles.doubtfulBadge}>
                     <Text style={styles.doubtfulBadgeText}>Ragu-Ragu</Text>
@@ -6015,19 +6220,20 @@ Format JSON array murni tanpa pembuka/penutup markdown:
             </View>
 
             {/* PGK: Checkbox Multi Options */}
-            {currentQuestion?.type === 'PGK' && (
+            {currentQKind === 'PGK' && (
               <View style={styles.optionsListWrapper}>
-                <View style={{ backgroundColor: '#EEF2FF', padding: 10, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: '#C7D2FE' }}>
-                  <Text style={{ fontSize: 12, color: '#4338CA', fontWeight: '700' }}>
+                <View style={{ backgroundColor: '#EEF2FF', padding: 10, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: '#C7D2FE', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                  <Text style={{ fontSize: 12, color: '#4338CA', fontWeight: '700', flex: 1 }}>
                     ℹ️ Pilihan Ganda Kompleks: Anda dapat memilih lebih dari satu jawaban yang benar.
                   </Text>
+                  <View style={{ backgroundColor: selectedOptionKeys.length > 0 ? '#4F46E5' : '#E2E8F0', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: selectedOptionKeys.length > 0 ? '#FFFFFF' : '#475569' }}>
+                      {selectedOptionKeys.length > 0 ? `Terpilih: ${selectedOptionKeys.join(', ')}` : 'Belum dipilih'}
+                    </Text>
+                  </View>
                 </View>
                 {Object.entries(parsedOptions).map(([key, val]) => {
-                  const currentAns = studentAnswers[currentQuestion?.id || ''];
-                  const selectedList = typeof currentAns === 'string'
-                    ? currentAns.split(',').map((s) => s.trim().toUpperCase())
-                    : (Array.isArray(currentAns) ? currentAns : []);
-                  const isSelected = selectedList.includes(key);
+                  const isSelected = selectedOptionKeys.includes(String(key).toUpperCase());
 
                   return (
                     <TouchableOpacity
@@ -6060,10 +6266,10 @@ Format JSON array murni tanpa pembuka/penutup markdown:
             )}
 
             {/* PG: Single Radio Options */}
-            {(currentQuestion?.type === 'PG' || (!currentQuestion?.type && Object.keys(parsedOptions).length > 0)) && (
+            {currentQKind === 'PG' && (
               <View style={styles.optionsListWrapper}>
                 {Object.entries(parsedOptions).map(([key, val]) => {
-                  const isSelected = studentAnswers[currentQuestion?.id || ''] === key;
+                  const isSelected = selectedOptionKeys.includes(String(key).toUpperCase());
 
                   return (
                     <TouchableOpacity
@@ -6096,7 +6302,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
             )}
 
             {/* ESAI: Toolbar Simbol Ilmiah/Arab, Text Input Multibahasa & Camera Capture */}
-            {(currentQuestion?.type === 'Esai' || currentQuestion?.type === 'ESSAY') && (() => {
+            {currentQKind === 'ESAI' && (() => {
               const rawAnsObj: any = studentAnswers[currentQuestion?.id || ''];
               const essayTextValue: string =
                 typeof rawAnsObj === 'object' && rawAnsObj !== null
@@ -6226,6 +6432,9 @@ Format JSON array murni tanpa pembuka/penutup markdown:
               </View>
               );
             })()}
+              </>
+              );
+            })()}
 
             <View style={{ height: 60 }} />
           </ScrollView>
@@ -6316,9 +6525,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                 <ScrollView contentContainerStyle={styles.numbersGrid}>
                   {studentQuestions.map((q, idx) => {
                     const ans = studentAnswers[q.id];
-                    const isAnswered = typeof ans === 'object' && ans !== null
-                      ? Boolean(ans.answer?.trim()) || Boolean(ans.image_url)
-                      : Boolean(ans && String(ans).trim());
+                    const isAnswered = isCbtQuestionAnswered(ans, q.type);
                     const isDoubt = !!doubtfulAnswers[q.id];
                     const isCurrent = currentQuestionIndex === idx;
 

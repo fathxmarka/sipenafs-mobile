@@ -164,6 +164,57 @@ export function extractCbtImages(raw: string | null | undefined, apiUrl: string)
   return urls;
 }
 
+export function normalizeCbtQuestionType(type?: string | null, options?: any): 'PG' | 'PGK' | 'ESAI' {
+  const t = String(type || '').trim().toUpperCase();
+  if (
+    t === 'PGK' ||
+    t === 'PG KOMPLEKS' ||
+    t === 'PG_KOMPLEKS' ||
+    t === 'KOMPLEKS' ||
+    t === 'MULTIPLE_CHOICE_COMPLEX'
+  ) {
+    return 'PGK';
+  }
+  if (t === 'ESAI' || t === 'ESSAY' || t === 'URAIAN') {
+    return 'ESAI';
+  }
+  if (t === 'PG' || (options && Object.keys(options).length > 0)) {
+    return 'PG';
+  }
+  return 'PG';
+}
+
+export function parseSelectedOptionKeys(ans: any): string[] {
+  if (!ans) return [];
+  let raw: any = ans;
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    raw = raw.answer ?? '';
+  }
+  const arr = Array.isArray(raw)
+    ? raw
+    : typeof raw === 'string'
+    ? raw.split(',')
+    : [String(raw)];
+  return Array.from(
+    new Set(arr.map((s) => String(s).trim().toUpperCase()).filter(Boolean))
+  ).sort();
+}
+
+export function isCbtQuestionAnswered(ans: any, qType?: string | null): boolean {
+  if (!ans) return false;
+  const kind = normalizeCbtQuestionType(qType);
+  if (kind === 'ESAI') {
+    if (typeof ans === 'object' && !Array.isArray(ans)) {
+      return Boolean(String(ans.answer || '').trim()) || Boolean(ans.image_url);
+    }
+    return Boolean(String(ans).trim());
+  }
+  if (kind === 'PGK') {
+    return parseSelectedOptionKeys(ans).length > 0;
+  }
+  return parseSelectedOptionKeys(ans).length > 0 || (typeof ans === 'string' && ans.trim().length > 0);
+}
+
 export function normalizeQuestionOptions(rawOptions: any): { [key: string]: string } {
   if (!rawOptions) return {};
   let parsed = rawOptions;
