@@ -67,6 +67,13 @@ Tautan Permanen Versi Terbaru:
 - Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
 Apa yang Baru di Versi ${version}:
+• Dukungan Penuh Rumus Sains & Multibahasa CBT (Matematika, Fisika, Kimia, Biologi, Arab, Mandarin):
+  - Rendering KaTeX Offline Hybrid untuk rumus bertingkat (pecahan, akar, integral, matriks, reaksi kimia) langsung di layar ujian Android tanpa koneksi internet luar.
+  - Deteksi otomatis arah baca RTL (Right-to-Left) & line-height lega untuk Bahasa Arab berharakat serta Bahasa Mandarin/CJK agar tidak terpotong.
+• Panel Simbol Ilmiah & Mini Keyboard Arab pada Jawaban Esai:
+  - Toolbar simbol Matematika, Pangkat/Subscript Kimia & Biologi, Yunani, Kalkulus, Template Rumus LaTeX + Live Preview, serta Keyboard Hijaiyah + Harakat untuk menjawab soal esai langsung dari aplikasi.
+• Perbaikan Tampilan PG Jawaban Bergambar & Gambar Soal di Android:
+  - Mengatasi bug layout flexbox yang menjepit gambar opsi PG/PGK, normalisasi URL gambar & opsi Array, menampilkan gambar soal (`image_url` dan inline `<img>`), serta tombol Perbesar (Zoom Overlay anti-pelanggaran).
 • Validasi Pengaturan Ujian CBT (Kunci Selesai Ujian Lebih Awal):
   - Tombol "Selesai Ujian" di layar ujian dan drawer nomor soal terkunci otomatis jika pengajar menonaktifkan "Izinkan Selesai Ujian Lebih Awal".
   - Menampilkan sisa waktu tunggu dinamis pada tombol ("Terkunci (Xm lagi)") serta pesan notifikasi informatif jika siswa mencoba menyelesaikan ujian sebelum batas waktu minimal tercapai.

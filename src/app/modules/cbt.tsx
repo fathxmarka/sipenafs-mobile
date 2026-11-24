@@ -34,7 +34,15 @@ import * as SecureStore from 'expo-secure-store';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { formatCbtText } from '../../utils/cbtFormatter';
+import {
+  formatCbtText,
+  normalizeQuestionOptions,
+  resolveCbtMediaUrl,
+  hasArabicScript,
+  hasCjkScript,
+} from '../../utils/cbtFormatter';
+import RichCbtContent from '../../components/RichCbtContent';
+import EssaySymbolToolbar from '../../components/EssaySymbolToolbar';
 
 const FaceProctorNative = NativeModules.FaceProctorModule || null;
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -89,6 +97,7 @@ interface Question {
   options: string | { [key: string]: string };
   answer: string;
   score_weight: number;
+  image_url?: string | null;
   passage_id?: string | null;
   academic_year?: string | null;
   semester?: string | null;
@@ -339,6 +348,8 @@ export default function CbtScreen() {
   const [inputToken, setInputToken] = useState('');
   const [pendingExamToStart, setPendingExamToStart] = useState<Exam | null>(null);
   const [isNavDrawerOpen, setIsNavDrawerOpen] = useState(false);
+  const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
+  const essaySelectionRef = useRef<{ start: number; end: number } | null>(null);
   const [examResultSummary, setExamResultSummary] = useState<any | null>(null);
 
   // Essay Answer Camera Upload States
@@ -2148,6 +2159,10 @@ Format JSON array murni tanpa pembuka/penutup markdown:
     if (!isStudentExamModalOpen) return;
 
     const backSub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (zoomImageUrl) {
+        setZoomImageUrl(null);
+        return true;
+      }
       if (isNavDrawerOpen) {
         setIsNavDrawerOpen(false);
         return true;
@@ -2173,7 +2188,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       kbHideSub.remove();
       isKeyboardVisibleRef.current = false;
     };
-  }, [isStudentExamModalOpen, isNavDrawerOpen, isAnswerCameraModalOpen]);
+  }, [isStudentExamModalOpen, isNavDrawerOpen, isAnswerCameraModalOpen, zoomImageUrl]);
 
   // Anti-Cheat Layer 1: AppState Tab/Background Lock Listener (Hanya jika Kunci Layar/Tab Aktif)
   useEffect(() => {
@@ -2716,15 +2731,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
   // Current active question in student arena
   const currentQuestion: Question | undefined = studentQuestions[currentQuestionIndex];
   const parsedOptions: { [key: string]: string } = currentQuestion
-    ? typeof currentQuestion.options === 'string'
-      ? (() => {
-          try {
-            return JSON.parse(currentQuestion.options);
-          } catch {
-            return {};
-          }
-        })()
-      : currentQuestion.options || {}
+    ? normalizeQuestionOptions(currentQuestion.options)
     : {};
 
   // Current active passage / story text for the current question
@@ -3629,7 +3636,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                       <View style={styles.optionsPreviewBox}>
                         {Object.entries(opts).map(([key, val]) => (
                           <Text key={key} style={[styles.optLine, item.answer === key && styles.optLineCorrect]}>
-                            <Text style={{ fontWeight: '700' }}>{key}.</Text> {String(val)}
+                            <Text style={{ fontWeight: '700' }}>{key}.</Text> {formatCbtText(String(val)) || (String(val).includes('<img') ? '[Gambar]' : '')}
                           </Text>
                         ))}
                       </View>
@@ -5963,7 +5970,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
           )}
 
           {/* Question & Content Area */}
-          <ScrollView contentContainerStyle={styles.arenaContentScroll} showsVerticalScrollIndicator={false}>
+          <ScrollView contentContainerStyle={styles.arenaContentScroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {/* If Current Question has Passage / Soal Cerita */}
             {currentPassage && (
               <View style={styles.passageCard}>
@@ -5973,13 +5980,19 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                     {formatCbtText(currentPassage.title || 'Wacana / Teks Cerita')}
                   </Text>
                 </View>
-                <Text style={styles.passageCardContent}>
-                  {formatCbtText(currentPassage.content)}
-                </Text>
+                <RichCbtContent
+                  content={currentPassage.content}
+                  apiUrl={apiUrl}
+                  fontSize={13}
+                  textColor="#1E293B"
+                  textStyle={styles.passageCardContent}
+                  imageHeight={190}
+                  onZoomImage={(uri) => setZoomImageUrl(uri)}
+                />
               </View>
             )}
 
-            {/* Question Text */}
+            {/* Question Text & Image */}
             <View style={styles.questionCardBody}>
               <View style={styles.questionNumRow}>
                 <Text style={styles.bigQuestionNum}>Pertanyaan No. {currentQuestionIndex + 1}</Text>
@@ -5989,9 +6002,16 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   </View>
                 )}
               </View>
-              <Text style={styles.arenaQuestionText}>
-                {formatCbtText(currentQuestion?.text)}
-              </Text>
+              <RichCbtContent
+                content={currentQuestion?.text}
+                extraImageUrl={currentQuestion?.image_url}
+                apiUrl={apiUrl}
+                fontSize={15}
+                textColor="#0F172A"
+                textStyle={styles.arenaQuestionText}
+                imageHeight={200}
+                onZoomImage={(uri) => setZoomImageUrl(uri)}
+              />
             </View>
 
             {/* PGK: Checkbox Multi Options */}
@@ -6008,9 +6028,6 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                     ? currentAns.split(',').map((s) => s.trim().toUpperCase())
                     : (Array.isArray(currentAns) ? currentAns : []);
                   const isSelected = selectedList.includes(key);
-                  const imgMatch = typeof val === 'string' ? val.match(/<img[^>]+src=["']([^"']+)["']/i) : null;
-                  const optionImgSrc = imgMatch ? imgMatch[1] : null;
-                  const cleanText = formatCbtText(String(val));
 
                   return (
                     <TouchableOpacity
@@ -6024,18 +6041,17 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                           {isSelected ? '✓' : key}
                         </Text>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        {Boolean(cleanText) && (
-                          <Text style={[styles.arenaOptionText, isSelected && { color: '#312E81', fontWeight: '700' }]}>
-                            {cleanText}
-                          </Text>
-                        )}
-                        {Boolean(optionImgSrc) && (
-                          <Image
-                            source={{ uri: optionImgSrc!.startsWith('http') || optionImgSrc!.startsWith('data:') ? optionImgSrc! : `${apiUrl}${optionImgSrc!.startsWith('/') ? '' : '/'}${optionImgSrc!}` }}
-                            style={{ width: '100%', height: 120, resizeMode: 'contain', marginTop: 6, borderRadius: 6, backgroundColor: '#F8FAFC' }}
-                          />
-                        )}
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <RichCbtContent
+                          content={String(val)}
+                          apiUrl={apiUrl}
+                          fontSize={13}
+                          textColor={isSelected ? '#312E81' : '#334155'}
+                          textStyle={[styles.arenaOptionText, isSelected && { color: '#312E81', fontWeight: '700' }]}
+                          imageHeight={140}
+                          nonInteractiveWebView={true}
+                          onZoomImage={(uri) => setZoomImageUrl(uri)}
+                        />
                       </View>
                     </TouchableOpacity>
                   );
@@ -6048,9 +6064,6 @@ Format JSON array murni tanpa pembuka/penutup markdown:
               <View style={styles.optionsListWrapper}>
                 {Object.entries(parsedOptions).map(([key, val]) => {
                   const isSelected = studentAnswers[currentQuestion?.id || ''] === key;
-                  const imgMatch = typeof val === 'string' ? val.match(/<img[^>]+src=["']([^"']+)["']/i) : null;
-                  const optionImgSrc = imgMatch ? imgMatch[1] : null;
-                  const cleanText = formatCbtText(String(val));
 
                   return (
                     <TouchableOpacity
@@ -6064,18 +6077,17 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                           {key}
                         </Text>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        {Boolean(cleanText) && (
-                          <Text style={[styles.arenaOptionText, isSelected && styles.arenaOptionTextSelected]}>
-                            {cleanText}
-                          </Text>
-                        )}
-                        {Boolean(optionImgSrc) && (
-                          <Image
-                            source={{ uri: optionImgSrc!.startsWith('http') || optionImgSrc!.startsWith('data:') ? optionImgSrc! : `${apiUrl}${optionImgSrc!.startsWith('/') ? '' : '/'}${optionImgSrc!}` }}
-                            style={{ width: '100%', height: 120, resizeMode: 'contain', marginTop: 6, borderRadius: 6, backgroundColor: '#F8FAFC' }}
-                          />
-                        )}
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <RichCbtContent
+                          content={String(val)}
+                          apiUrl={apiUrl}
+                          fontSize={13}
+                          textColor={isSelected ? '#0369A1' : '#334155'}
+                          textStyle={[styles.arenaOptionText, isSelected && styles.arenaOptionTextSelected]}
+                          imageHeight={140}
+                          nonInteractiveWebView={true}
+                          onZoomImage={(uri) => setZoomImageUrl(uri)}
+                        />
                       </View>
                     </TouchableOpacity>
                   );
@@ -6083,9 +6095,55 @@ Format JSON array murni tanpa pembuka/penutup markdown:
               </View>
             )}
 
-            {/* ESAI: Text Input & Camera Capture */}
-            {(currentQuestion?.type === 'Esai' || currentQuestion?.type === 'ESSAY') && (
+            {/* ESAI: Toolbar Simbol Ilmiah/Arab, Text Input Multibahasa & Camera Capture */}
+            {(currentQuestion?.type === 'Esai' || currentQuestion?.type === 'ESSAY') && (() => {
+              const rawAnsObj: any = studentAnswers[currentQuestion?.id || ''];
+              const essayTextValue: string =
+                typeof rawAnsObj === 'object' && rawAnsObj !== null
+                  ? String(rawAnsObj.answer || '')
+                  : String(rawAnsObj || '');
+              const isAnsRtl = hasArabicScript(essayTextValue);
+              const isAnsCjk = hasCjkScript(essayTextValue);
+
+              const handleInsertMobileSymbol = (sym: string) => {
+                if (!currentQuestion) return;
+                const sel = essaySelectionRef.current;
+                const start = sel ? Math.min(sel.start, essayTextValue.length) : essayTextValue.length;
+                const end = sel ? Math.min(sel.end, essayTextValue.length) : essayTextValue.length;
+                const nextText = `${essayTextValue.slice(0, start)}${sym}${essayTextValue.slice(end)}`;
+                const nextCursor = start + sym.length;
+                essaySelectionRef.current = { start: nextCursor, end: nextCursor };
+                handleEssayChangeMobile(currentQuestion.id, nextText);
+              };
+
+              const handleMobileBackspace = () => {
+                if (!currentQuestion || !essayTextValue) return;
+                const sel = essaySelectionRef.current;
+                const start = sel ? Math.min(sel.start, essayTextValue.length) : essayTextValue.length;
+                const end = sel ? Math.min(sel.end, essayTextValue.length) : essayTextValue.length;
+                let nextText = essayTextValue;
+                let nextCursor = start;
+                if (start !== end) {
+                  nextText = `${essayTextValue.slice(0, start)}${essayTextValue.slice(end)}`;
+                } else if (start > 0) {
+                  const charsBefore = Array.from(essayTextValue.slice(0, start));
+                  const removed = charsBefore.pop() || '';
+                  nextText = `${charsBefore.join('')}${essayTextValue.slice(end)}`;
+                  nextCursor = Math.max(0, start - removed.length);
+                }
+                essaySelectionRef.current = { start: nextCursor, end: nextCursor };
+                handleEssayChangeMobile(currentQuestion.id, nextText);
+              };
+
+              return (
               <View style={{ marginTop: 16 }}>
+                <EssaySymbolToolbar
+                  value={essayTextValue}
+                  apiUrl={apiUrl}
+                  onInsert={handleInsertMobileSymbol}
+                  onBackspace={handleMobileBackspace}
+                />
+
                 <TextInput
                   style={{
                     backgroundColor: '#FFFFFF',
@@ -6093,20 +6151,24 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                     borderWidth: 1.5,
                     borderColor: '#CBD5E1',
                     padding: 14,
-                    fontSize: 14,
+                    fontSize: isAnsRtl ? 18 : 15,
+                    lineHeight: isAnsRtl ? 32 : (isAnsCjk ? 26 : 23),
                     color: '#0F172A',
-                    minHeight: 120,
-                    textAlignVertical: 'top'
+                    minHeight: 135,
+                    textAlignVertical: 'top',
+                    writingDirection: isAnsRtl ? 'rtl' : 'ltr',
+                    textAlign: isAnsRtl ? 'right' : 'left',
                   }}
                   multiline
-                  placeholder="Ketikkan uraian jawaban Anda di sini..."
+                  placeholder="Ketikkan uraian jawaban Anda (bisa pakai simbol di atas, keyboard bahasa Arab/Mandarin, atau foto kertas jawaban di bawah)..."
                   placeholderTextColor="#94A3B8"
-                  value={
-                    typeof studentAnswers[currentQuestion?.id || ''] === 'object' && studentAnswers[currentQuestion?.id || ''] !== null
-                      ? studentAnswers[currentQuestion?.id || ''].answer || ''
-                      : (studentAnswers[currentQuestion?.id || ''] || '')
-                  }
-                  onChangeText={(val) => currentQuestion && handleEssayChangeMobile(currentQuestion.id, val)}
+                  value={essayTextValue}
+                  onSelectionChange={(e) => {
+                    essaySelectionRef.current = e.nativeEvent.selection;
+                  }}
+                  onChangeText={(val) => {
+                    if (currentQuestion) handleEssayChangeMobile(currentQuestion.id, val);
+                  }}
                 />
 
                 {/* Upload / Capture Answer Photo */}
@@ -6115,13 +6177,13 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                     📸 Foto Lembar Jawaban (Opsional)
                   </Text>
                   <Text style={{ fontSize: 11, color: '#64748B', marginBottom: 12 }}>
-                    Lampirkan foto coretan rumus atau tulisan tangan jawaban Anda.
+                    Untuk hitungan panjang, reaksi kimia, diagram biologi, atau tulisan tangan Arab/Mandarin, Anda juga dapat memfoto lembar jawaban.
                   </Text>
 
-                  {typeof studentAnswers[currentQuestion?.id || ''] === 'object' && studentAnswers[currentQuestion?.id || '']?.image_url ? (
+                  {typeof rawAnsObj === 'object' && rawAnsObj?.image_url ? (
                     <View style={{ alignItems: 'center' }}>
                       <Image
-                        source={{ uri: `${apiUrl}${studentAnswers[currentQuestion?.id || ''].image_url}` }}
+                        source={{ uri: resolveCbtMediaUrl(rawAnsObj.image_url, apiUrl) }}
                         style={{ width: '100%', height: 180, borderRadius: 8, resizeMode: 'contain', backgroundColor: '#000' }}
                       />
                       <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
@@ -6162,7 +6224,8 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   )}
                 </View>
               </View>
-            )}
+              );
+            })()}
 
             <View style={{ height: 60 }} />
           </ScrollView>
@@ -6299,6 +6362,48 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   </Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          )}
+
+          {/* Fullscreen Image Zoom Overlay (In-Activity agar aman dari false-positive proctoring focus loss) */}
+          {Boolean(zoomImageUrl) && (
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                {
+                  backgroundColor: 'rgba(15, 23, 42, 0.94)',
+                  zIndex: 10000,
+                  elevation: 100,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  padding: 16,
+                },
+              ]}
+            >
+              <TouchableOpacity
+                onPress={() => setZoomImageUrl(null)}
+                style={{
+                  position: 'absolute',
+                  top: insets.top + 14,
+                  right: 16,
+                  zIndex: 10001,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  backgroundColor: 'rgba(255,255,255,0.18)',
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 20,
+                }}
+              >
+                <Ionicons name="close" size={20} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Tutup</Text>
+              </TouchableOpacity>
+              <Image
+                source={{ uri: zoomImageUrl! }}
+                style={{ width: '100%', height: '78%' }}
+                resizeMode="contain"
+              />
             </View>
           )}
         </View>
@@ -7577,7 +7682,6 @@ const styles = StyleSheet.create({
   arenaOptionText: {
     fontSize: 13,
     color: '#334155',
-    flex: 1,
     lineHeight: 20,
   },
   arenaOptionTextSelected: {
