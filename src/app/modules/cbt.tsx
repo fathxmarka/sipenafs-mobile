@@ -1900,18 +1900,25 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       const res = await axios.get(`${apiUrl}/api/exams/student/${exam.id}`, {
         headers: {
           Authorization: `Bearer ${token}`,
-          'X-App-Version': '1.0.33',
+          'X-App-Version': '1.0.42',
           'X-Client-Platform': Platform.OS,
         },
       });
 
-      const loadedQuestions = res.data?.questions || res.data?.shuffledQuestions || [];
+      const rawLoaded: Question[] = res.data?.questions || res.data?.shuffledQuestions || [];
+      // Pastikan seluruh PG & PGK berada di awal, dan seluruh Esai selalu di urutan terakhir
+      const loadedNonEssay = rawLoaded.filter((q) => normalizeCbtQuestionType(q.type, q.options) !== 'ESAI');
+      const loadedEssay = rawLoaded.filter((q) => normalizeCbtQuestionType(q.type, q.options) === 'ESAI');
+      const loadedQuestions = [...loadedNonEssay, ...loadedEssay];
 
       if (!loadedQuestions || loadedQuestions.length === 0) {
         showToast('Belum ada soal pada ujian ini.', 'warning');
         setLoading(false);
         return;
       }
+
+      setZoomImageUrl(null);
+      setIsNavDrawerOpen(false);
 
       const mergedExam: Exam = {
         ...exam,
@@ -2704,17 +2711,50 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       }
 
       const studentId = user?.student_id || user?.id;
-      const finalAnswersObj = studentAnswersRef.current || studentAnswers;
+      const rawAnswersObj = studentAnswersRef.current || studentAnswers;
+      const sanitizedAnswers: { [key: string]: any } = { ...rawAnswersObj };
 
-      // KIRIM OBJEK answers LANGSUNG (BUKAN JSON.stringify!) agar penilaian skor PG 100% akurat
+      // Normalisasi format jawaban sebelum submit agar PG, PGK, dan Esai 100% terbaca akurat di server
+      studentQuestions.forEach((q) => {
+        const qId = String(q.id);
+        const val = rawAnswersObj[qId];
+        if (val === undefined || val === null) return;
+        const kind = normalizeCbtQuestionType(q.type, q.options);
+        if (kind === 'PG') {
+          const picked = parseSelectedOptionKeys(val);
+          if (picked.length > 0) sanitizedAnswers[qId] = picked[0];
+          else delete sanitizedAnswers[qId];
+        } else if (kind === 'PGK') {
+          const picked = parseSelectedOptionKeys(val);
+          if (picked.length > 0) sanitizedAnswers[qId] = picked.join(',');
+          else delete sanitizedAnswers[qId];
+        } else {
+          if (typeof val === 'object' && !Array.isArray(val)) {
+            sanitizedAnswers[qId] = {
+              answer: String(val.answer || ''),
+              image_url: val.image_url || null,
+            };
+          } else {
+            sanitizedAnswers[qId] = {
+              answer: String(val || ''),
+              image_url: null,
+            };
+          }
+        }
+      });
+
+      // KIRIM OBJEK answers LANGSUNG (BUKAN JSON.stringify!) agar penilaian skor PG/PGK/Esai 100% akurat
       const res = await axios.post(
         `${apiUrl}/api/exams/${activeStudentExam.id}/submit`,
         {
           student_id: studentId,
-          answers: finalAnswersObj,
+          answers: sanitizedAnswers,
           started_at: examStartedAtRef.current,
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 20000,
+        }
       );
 
       // Bersihkan FLAG_SECURE, alarm, face recognizer & penanda sesi aktif
@@ -2734,21 +2774,29 @@ Format JSON array murni tanpa pembuka/penutup markdown:
       }
 
       setProctorAlertBanner(null);
+      setIsNavDrawerOpen(false);
+      setZoomImageUrl(null);
       setIsStudentExamModalOpen(false);
       const computedScore = res.data?.score_pg !== undefined
         ? res.data.score_pg
         : (res.data?.score_total !== undefined ? res.data.score_total : 0);
+
+      const hasEssayResult = Boolean(
+        res.data?.hasEssay ??
+        studentQuestions.some((q) => normalizeCbtQuestionType(q.type, q.options) === 'ESAI')
+      );
 
       setExamResultSummary({
         title: activeStudentExam.title,
         subjectName: activeStudentExam.subject?.name,
         scoreTotal: computedScore,
         scorePg: computedScore,
-        answeredCount: studentQuestions.filter((q) => isCbtQuestionAnswered(finalAnswersObj[q.id], q.type)).length,
+        hasEssay: hasEssayResult,
+        answeredCount: studentQuestions.filter((q) => isCbtQuestionAnswered(sanitizedAnswers[q.id], q.type)).length,
         totalQuestions: studentQuestions.length,
       });
 
-      showToast('Ujian berhasil dikumpulkan & dinilai!', 'success');
+      showToast(hasEssayResult ? 'Ujian berhasil dikumpulkan! Esai menunggu koreksi guru.' : 'Ujian berhasil dikumpulkan & dinilai!', 'success');
       fetchStudentExamsList();
     } catch (err: any) {
       showToast('Gagal submit ujian: ' + (err.response?.data?.message || err.message), 'error');
@@ -6483,12 +6531,17 @@ Format JSON array murni tanpa pembuka/penutup markdown:
               </TouchableOpacity>
             ) : (
               <TouchableOpacity 
-                style={[styles.arenaFinishBtn, isFinishLocked && { backgroundColor: '#94A3B8' }]} 
+                style={[styles.arenaFinishBtn, (isFinishLocked || isSubmittingExam) && { backgroundColor: '#94A3B8' }]} 
+                disabled={isSubmittingExam}
                 onPress={handleConfirmSubmit}
               >
-                <Ionicons name={isFinishLocked ? "lock-closed" : "checkmark-done"} size={18} color="#FFFFFF" />
+                {isSubmittingExam ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Ionicons name={isFinishLocked ? "lock-closed" : "checkmark-done"} size={18} color="#FFFFFF" />
+                )}
                 <Text style={styles.arenaFinishBtnText}>
-                  {isFinishLocked ? `Terkunci (${lockWaitMinutes}m)` : 'Selesai'}
+                  {isSubmittingExam ? 'Mengirim...' : isFinishLocked ? `Terkunci (${lockWaitMinutes}m)` : 'Selesai'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -6521,51 +6574,90 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   </View>
                 </View>
 
-                {/* Numbers Grid */}
-                <ScrollView contentContainerStyle={styles.numbersGrid}>
-                  {studentQuestions.map((q, idx) => {
-                    const ans = studentAnswers[q.id];
-                    const isAnswered = isCbtQuestionAnswered(ans, q.type);
-                    const isDoubt = !!doubtfulAnswers[q.id];
-                    const isCurrent = currentQuestionIndex === idx;
+                {/* Numbers Grid (Dipisahkan PG/PGK dulu, lalu Esai di akhir) */}
+                <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16, gap: 14 }}>
+                  {(() => {
+                    const pgItems = studentQuestions
+                      .map((q, idx) => ({ q, idx }))
+                      .filter((x) => normalizeCbtQuestionType(x.q.type, x.q.options) !== 'ESAI');
+                    const essayItems = studentQuestions
+                      .map((q, idx) => ({ q, idx }))
+                      .filter((x) => normalizeCbtQuestionType(x.q.type, x.q.options) === 'ESAI');
 
-                    let bg = '#F1F5F9';
-                    let txt = '#475569';
+                    const renderTile = ({ q, idx }: { q: Question; idx: number }) => {
+                      const ans = studentAnswers[q.id];
+                      const isAnswered = isCbtQuestionAnswered(ans, q.type);
+                      const isDoubt = !!doubtfulAnswers[q.id];
+                      const isCurrent = currentQuestionIndex === idx;
 
-                    if (isAnswered) {
-                      bg = '#10B981';
-                      txt = '#FFF';
-                    }
-                    if (isDoubt) {
-                      bg = '#F59E0B';
-                      txt = '#FFF';
-                    }
+                      let bg = '#F1F5F9';
+                      let txt = '#475569';
+
+                      if (isAnswered) {
+                        bg = '#10B981';
+                        txt = '#FFF';
+                      }
+                      if (isDoubt) {
+                        bg = '#F59E0B';
+                        txt = '#FFF';
+                      }
+
+                      return (
+                        <TouchableOpacity
+                          key={q.id}
+                          style={[
+                            styles.gridNumberTile,
+                            { backgroundColor: bg },
+                            isCurrent && styles.gridNumberTileCurrent,
+                          ]}
+                          onPress={() => {
+                            setCurrentQuestionIndex(idx);
+                            setIsNavDrawerOpen(false);
+                          }}
+                        >
+                          <Text style={[styles.gridNumberText, { color: txt }]}>{idx + 1}</Text>
+                        </TouchableOpacity>
+                      );
+                    };
 
                     return (
-                      <TouchableOpacity
-                        key={q.id}
-                        style={[
-                          styles.gridNumberTile,
-                          { backgroundColor: bg },
-                          isCurrent && styles.gridNumberTileCurrent,
-                        ]}
-                        onPress={() => {
-                          setCurrentQuestionIndex(idx);
-                          setIsNavDrawerOpen(false);
-                        }}
-                      >
-                        <Text style={[styles.gridNumberText, { color: txt }]}>{idx + 1}</Text>
-                      </TouchableOpacity>
+                      <>
+                        {pgItems.length > 0 && (
+                          <View>
+                            <Text style={{ fontSize: 11, fontWeight: '800', color: '#64748B', marginBottom: 8 }}>
+                              PILIHAN GANDA & PGK ({pgItems.length} Soal)
+                            </Text>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                              {pgItems.map(renderTile)}
+                            </View>
+                          </View>
+                        )}
+                        {essayItems.length > 0 && (
+                          <View>
+                            <Text style={{ fontSize: 11, fontWeight: '800', color: '#B45309', marginBottom: 8 }}>
+                              ESAI / URAIAN ({essayItems.length} Soal)
+                            </Text>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                              {essayItems.map(renderTile)}
+                            </View>
+                          </View>
+                        )}
+                      </>
                     );
-                  })}
+                  })()}
                 </ScrollView>
 
                 <TouchableOpacity 
-                  style={[styles.saveSubmitBtn, isFinishLocked && { backgroundColor: '#94A3B8' }]} 
+                  style={[styles.saveSubmitBtn, (isFinishLocked || isSubmittingExam) && { backgroundColor: '#94A3B8' }]} 
+                  disabled={isSubmittingExam}
                   onPress={handleConfirmSubmit}
                 >
                   <Text style={styles.saveSubmitBtnText}>
-                    {isFinishLocked ? `Terkunci (${lockWaitMinutes}m lagi)` : 'Selesaikan Ujian Sekarang'}
+                    {isSubmittingExam
+                      ? 'Mengirim Jawaban...'
+                      : isFinishLocked
+                      ? `Terkunci (${lockWaitMinutes}m lagi)`
+                      : 'Selesaikan Ujian Sekarang'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -6661,18 +6753,25 @@ Format JSON array murni tanpa pembuka/penutup markdown:
               <View style={styles.resultSummaryIconCircle}>
                 <Ionicons name="trophy" size={36} color="#F59E0B" />
               </View>
-              <Text style={styles.resultSummaryTitle}>Ujian Selesai Dikoreksi!</Text>
+              <Text style={styles.resultSummaryTitle}>
+                {examResultSummary.hasEssay ? 'Ujian Selesai & Terkirim!' : 'Ujian Selesai Dikoreksi!'}
+              </Text>
               <Text style={styles.resultSummaryExamTitle}>{examResultSummary.title}</Text>
               <Text style={styles.resultSummarySubject}>{examResultSummary.subjectName}</Text>
 
               {/* Big Score Display */}
               <View style={styles.bigScoreBox}>
                 <Text style={styles.bigScoreValue}>{examResultSummary.scoreTotal}</Text>
-                <Text style={styles.bigScoreLabel}>SKOR NILAI TOTAL</Text>
+                <Text style={styles.bigScoreLabel}>
+                  {examResultSummary.hasEssay ? 'SKOR SEMENTARA (PG / PGK)' : 'SKOR NILAI TOTAL'}
+                </Text>
               </View>
 
               <Text style={styles.resultSummaryDesc}>
-                Terjawab {examResultSummary.answeredCount} dari {examResultSummary.totalQuestions} soal. Nilai Anda telah tercatat otomatis di buku nilai guru.
+                Terjawab {examResultSummary.answeredCount} dari {examResultSummary.totalQuestions} soal.{' '}
+                {examResultSummary.hasEssay
+                  ? 'Jawaban esai Anda telah tersimpan dan menunggu koreksi guru.'
+                  : 'Nilai Anda telah tercatat otomatis di buku nilai guru.'}
               </Text>
 
               <TouchableOpacity style={styles.closeSummaryBtn} onPress={() => setExamResultSummary(null)}>

@@ -67,6 +67,10 @@ Tautan Permanen Versi Terbaru:
 - Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
 Apa yang Baru di Versi ${version}:
+• Pengurutan Soal Acak & Submit Andal (PG, PGK Kompleks, Esai):
+  - Soal Pilihan Ganda (PG & PGK) selalu diacak di bagian awal, dan soal Esai selalu ditempatkan di urutan terakhir (tidak pernah menyisip di tengah soal PG).
+  - Pemisahan grup "Pilihan Ganda & PGK" vs "Esai / Uraian" di Daftar Nomor Soal Android.
+  - Normalisasi otomatis payload jawaban PG, PGK (multi-jawaban), dan Esai (teks + lampiran foto) saat submit, indikator proses kirim, dan status hasil "Menunggu Koreksi Esai Guru" yang akurat.
 • Dukungan Penuh Soal PG Multi Jawaban (PGK / Pilihan Ganda Kompleks) untuk Siswa & Guru:
   - Normalisasi tipe soal (PGK, pgk, PG Kompleks, PG_KOMPLEKS) dan pemulihan jawaban tersimpan baik format string maupun object dari server.
   - Indikator badge "PG MULTI JAWABAN" serta status pilihan aktif ("Terpilih: A, C") dan penghapusan otomatis status terjawab jika semua opsi di-uncheck.
