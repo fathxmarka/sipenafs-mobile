@@ -58,6 +58,8 @@ interface Exam {
   proctor_max_warnings: number;
   proctor_face_tolerance?: number;
   proctor_face_interval?: number;
+  allow_early_submit?: boolean;
+  min_time_before_submit?: number;
   subject?: { id: number; name: string };
   class?: { id: number; name: string; level: number };
   _count?: { questions: number; results: number };
@@ -326,6 +328,12 @@ export default function CbtScreen() {
   const [studentAnswers, setStudentAnswers] = useState<{ [questionId: string]: any }>({});
   const [doubtfulAnswers, setDoubtfulAnswers] = useState<{ [questionId: string]: boolean }>({});
   const [timeLeftSeconds, setTimeLeftSeconds] = useState(0);
+  const isFinishLocked = Boolean(
+    activeStudentExam && 
+    activeStudentExam.allow_early_submit === false && 
+    timeLeftSeconds > (activeStudentExam.min_time_before_submit || 0) * 60
+  );
+  const lockWaitMinutes = activeStudentExam ? Math.max(1, Math.ceil(timeLeftSeconds / 60) - (activeStudentExam.min_time_before_submit || 0)) : 0;
   const [isSubmittingExam, setIsSubmittingExam] = useState(false);
   const [isTokenPromptOpen, setIsTokenPromptOpen] = useState(false);
   const [inputToken, setInputToken] = useState('');
@@ -2588,6 +2596,16 @@ Format JSON array murni tanpa pembuka/penutup markdown:
   };
 
   const handleConfirmSubmit = () => {
+    if (isFinishLocked) {
+      showToast(`Tombol selesai ujian baru aktif saat sisa waktu kurang dari ${activeStudentExam?.min_time_before_submit || 0} menit (${lockWaitMinutes} menit lagi).`, 'warning');
+      Alert.alert(
+        'Tombol Terkunci',
+        `Ujian tidak dapat diselesaikan lebih awal.\n\nTombol selesai ujian baru akan aktif saat sisa waktu ujian kurang dari ${activeStudentExam?.min_time_before_submit || 0} menit (${lockWaitMinutes} menit lagi).`,
+        [{ text: 'Mengerti', style: 'default' }]
+      );
+      return;
+    }
+
     const totalQ = studentQuestions.length;
     const answeredCount = Object.keys(studentAnswersRef.current).length;
     const unansweredCount = totalQ - answeredCount;
@@ -6192,9 +6210,14 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                 <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity style={styles.arenaFinishBtn} onPress={handleConfirmSubmit}>
-                <Ionicons name="checkmark-done" size={18} color="#FFFFFF" />
-                <Text style={styles.arenaFinishBtnText}>Selesai</Text>
+              <TouchableOpacity 
+                style={[styles.arenaFinishBtn, isFinishLocked && { backgroundColor: '#94A3B8' }]} 
+                onPress={handleConfirmSubmit}
+              >
+                <Ionicons name={isFinishLocked ? "lock-closed" : "checkmark-done"} size={18} color="#FFFFFF" />
+                <Text style={styles.arenaFinishBtnText}>
+                  {isFinishLocked ? `Terkunci (${lockWaitMinutes}m)` : 'Selesai'}
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -6267,8 +6290,13 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                   })}
                 </ScrollView>
 
-                <TouchableOpacity style={styles.saveSubmitBtn} onPress={handleConfirmSubmit}>
-                  <Text style={styles.saveSubmitBtnText}>Selesaikan Ujian Sekarang</Text>
+                <TouchableOpacity 
+                  style={[styles.saveSubmitBtn, isFinishLocked && { backgroundColor: '#94A3B8' }]} 
+                  onPress={handleConfirmSubmit}
+                >
+                  <Text style={styles.saveSubmitBtnText}>
+                    {isFinishLocked ? `Terkunci (${lockWaitMinutes}m lagi)` : 'Selesaikan Ujian Sekarang'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
