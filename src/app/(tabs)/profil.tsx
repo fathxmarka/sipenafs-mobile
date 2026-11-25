@@ -93,7 +93,14 @@ export default function ProfilScreen() {
 
   useEffect(() => {
     const roleStr = (userData?.role || '').toLowerCase();
-    const isAdmin = roleStr.includes('admin') || roleStr.includes('operator') || userData?.role_id === 1 || userData?.role_id === 2;
+    const isStudentOrParent =
+      roleStr.includes('siswa') ||
+      roleStr.includes('student') ||
+      roleStr.includes('parent') ||
+      roleStr.includes('orang tua') ||
+      roleStr.includes('ortu') ||
+      (Boolean(userData?.student_id) && !userData?.teacher_id);
+    const isAdmin = !isStudentOrParent && (roleStr.includes('admin') || roleStr.includes('operator') || userData?.role_id === 1 || userData?.role_id === 2);
     if (params?.openChangePassword === '1' && !isAdmin) {
       setIsPasswordModalOpen(true);
     }

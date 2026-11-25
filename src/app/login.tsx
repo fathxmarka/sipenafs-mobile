@@ -504,7 +504,14 @@ export default function LoginScreen() {
         
         setIsLoadingLogin(false);
         const roleStr = (userData?.role || '').toLowerCase();
-        const isAdminUser = roleStr.includes('admin') || roleStr.includes('operator') || userData?.role_id === 1 || userData?.role_id === 2;
+        const isStudentOrParent =
+          roleStr.includes('siswa') ||
+          roleStr.includes('student') ||
+          roleStr.includes('parent') ||
+          roleStr.includes('orang tua') ||
+          roleStr.includes('ortu') ||
+          (Boolean(userData?.student_id) && !userData?.teacher_id);
+        const isAdminUser = !isStudentOrParent && (roleStr.includes('admin') || roleStr.includes('operator') || userData?.role_id === 1 || userData?.role_id === 2);
 
         // User admin & operator TIDAK diarahkan ke ubah password
         if (userData.must_change_password && !isAdminUser) {

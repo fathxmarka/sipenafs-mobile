@@ -729,6 +729,7 @@ export default function PerangkatAjarAIScreen() {
   const [mySubjects, setMySubjects] = useState<string[]>([]);
   const [subjectObjects, setSubjectObjects] = useState<Array<{ id: number; name: string }>>([]);
   const [isSelectMapelOpen, setIsSelectMapelOpen] = useState(false);
+  const [isAccessDenied, setIsAccessDenied] = useState(false);
 
   useEffect(() => {
     fetchMySubjects();
@@ -741,6 +742,22 @@ export default function PerangkatAjarAIScreen() {
       const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
       const storedSchoolLevel = await SecureStore.getItemAsync('sipena_school_level');
       const storedSchoolName = await SecureStore.getItemAsync('sipena_school_name');
+
+      const parsedGuardUser = storedUser ? JSON.parse(storedUser) : null;
+      const guardRoleStr = String(parsedGuardUser?.role || '').toLowerCase();
+      const isStudentOrParent =
+        guardRoleStr.includes('siswa') ||
+        guardRoleStr.includes('student') ||
+        guardRoleStr.includes('parent') ||
+        guardRoleStr.includes('orang tua') ||
+        guardRoleStr.includes('ortu') ||
+        guardRoleStr.includes('wali') ||
+        (Boolean(parsedGuardUser?.student_id) && !parsedGuardUser?.teacher_id);
+
+      if (!parsedGuardUser || isStudentOrParent) {
+        setIsAccessDenied(true);
+        return;
+      }
       
       if (storedUser && token && apiUrl) {
         const user = JSON.parse(storedUser);
@@ -1304,6 +1321,23 @@ Aturan Penulisan:
         <View style={{ width: 40 }} />
       </View>
 
+      {isAccessDenied ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+          <View style={{ width: 68, height: 68, borderRadius: 34, backgroundColor: '#FEE2E2', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+            <Ionicons name="lock-closed" size={30} color="#DC2626" />
+          </View>
+          <Text style={{ fontSize: 17, fontWeight: '800', color: '#1E293B', marginBottom: 6 }}>Akses Dibatasi</Text>
+          <Text style={{ fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
+            Modul Perangkat Ajar AI hanya tersedia untuk Guru, Pimpinan, dan Staf Pengelola.
+          </Text>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={{ backgroundColor: '#0EA5E9', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
+          >
+            <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 13 }}>Kembali ke Beranda</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Banner */}
         <View style={styles.bannerContainer}>
@@ -1576,6 +1610,7 @@ Aturan Penulisan:
         
         <View style={{ height: 40 }} />
       </ScrollView>
+      )}
 
       {toast.visible && (
         <Toast

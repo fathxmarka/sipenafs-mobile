@@ -491,14 +491,40 @@ export default function HomeScreen() {
     return <Feather name={name} size={24} color={color} />;
   };
 
-  // Determine effective role strictly from logged in user profile
-  const detectedRole = (userData?.role || 'admin').toLowerCase();
-  let effectiveRole: 'admin' | 'guru' | 'siswa' | 'ortu' = 'admin';
+  // Determine effective role strictly from logged in user profile (never default to admin)
+  const detectedRole = (userData?.role || '').toLowerCase();
+  const isStudentOrParent =
+    detectedRole.includes('siswa') ||
+    detectedRole.includes('student') ||
+    detectedRole.includes('orang tua') ||
+    detectedRole.includes('parent') ||
+    detectedRole.includes('wali') ||
+    detectedRole.includes('ortu') ||
+    (Boolean(userData?.student_id) && !userData?.teacher_id);
 
-  if (detectedRole.includes('guru') || detectedRole.includes('teacher')) effectiveRole = 'guru';
-  else if (detectedRole.includes('siswa') || detectedRole.includes('student')) effectiveRole = 'siswa';
-  else if (detectedRole.includes('orang tua') || detectedRole.includes('parent') || detectedRole.includes('wali') || detectedRole.includes('ortu')) effectiveRole = 'ortu';
-  else effectiveRole = 'admin';
+  let effectiveRole: 'admin' | 'guru' | 'siswa' | 'ortu' = 'siswa';
+
+  if (isStudentOrParent) {
+    effectiveRole = (detectedRole.includes('orang tua') || detectedRole.includes('parent') || detectedRole.includes('wali') || detectedRole.includes('ortu')) ? 'ortu' : 'siswa';
+  } else if (detectedRole.includes('guru') || detectedRole.includes('teacher')) {
+    effectiveRole = 'guru';
+  } else if (
+    detectedRole.includes('admin') ||
+    detectedRole.includes('operator') ||
+    detectedRole.includes('kepala') ||
+    detectedRole.includes('tata usaha')
+  ) {
+    effectiveRole = 'admin';
+  } else {
+    effectiveRole = 'siswa';
+  }
+
+  const canOpenSystemSettings =
+    !isStudentOrParent &&
+    (detectedRole.includes('admin') ||
+     detectedRole.includes('operator') ||
+     detectedRole.includes('kepala sekolah') ||
+     detectedRole.includes('wakil kepala'));
 
   // Deteksi peran & tugas tambahan Guru / Tenaga Pendidik
   const userJabatan = (userData?.jabatan || '').toLowerCase();
@@ -540,8 +566,8 @@ export default function HomeScreen() {
 
   // Filter Menu Berdasarkan Hak Akses & Role Pengguna
   const filteredMenus = MENU_ITEMS.filter(item => {
-    // Admin / Operator / Superadmin selalu memiliki akses penuh ke semua modul
-    if (effectiveRole === 'admin' || detectedRole.includes('admin') || detectedRole.includes('operator')) {
+    // Admin / Operator / Superadmin selalu memiliki akses penuh ke semua modul (kecuali akun siswa/orang tua)
+    if (!isStudentOrParent && (effectiveRole === 'admin' || detectedRole.includes('admin') || detectedRole.includes('operator'))) {
       return true;
     }
 
@@ -634,13 +660,15 @@ export default function HomeScreen() {
           </View>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => router.push('/modules/system' as any)}
-            activeOpacity={0.7}
-          >
-            <Feather name="settings" size={20} color={Colors.secondary} />
-          </TouchableOpacity>
+          {canOpenSystemSettings && (
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={() => router.push('/modules/system' as any)}
+              activeOpacity={0.7}
+            >
+              <Feather name="settings" size={20} color={Colors.secondary} />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={styles.iconButton}
             onPress={() => router.push('/(tabs)/notifikasi' as any)}

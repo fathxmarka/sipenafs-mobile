@@ -30,13 +30,14 @@ export default function SystemSettingsScreen() {
   const [resettingUser, setResettingUser] = useState<any>(null);
   const [isResetting, setIsResetting] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [isAccessDenied, setIsAccessDenied] = useState<boolean>(false);
 
   useEffect(() => {
     fetchAllData();
   }, []);
 
   const handleConfirmReset = async () => {
-    if (!resettingUser) return;
+    if (!resettingUser || isAccessDenied) return;
     setIsResetting(true);
     try {
       const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
@@ -55,6 +56,37 @@ export default function SystemSettingsScreen() {
 
   const fetchAllData = async () => {
     try {
+      const userRaw = await SecureStore.getItemAsync('sipena_user');
+      const user = userRaw ? JSON.parse(userRaw) : null;
+      const roleStr = String(user?.role || '').toLowerCase();
+      const jabStr = String(user?.jabatan || '').toLowerCase();
+      const isStudentOrParent =
+        roleStr.includes('siswa') ||
+        roleStr.includes('student') ||
+        roleStr.includes('parent') ||
+        roleStr.includes('orang tua') ||
+        roleStr.includes('ortu') ||
+        roleStr.includes('wali') ||
+        (Boolean(user?.student_id) && !user?.teacher_id);
+
+      const isAllowed =
+        !isStudentOrParent &&
+        !roleStr.includes('guru') &&
+        (roleStr.includes('admin') ||
+          roleStr.includes('operator') ||
+          roleStr.includes('kepala sekolah') ||
+          roleStr.includes('wakil kepala') ||
+          jabStr.includes('kepala sekolah'));
+
+      if (!user || !isAllowed) {
+        setIsAccessDenied(true);
+        setUsersList([]);
+        setAuditLogs([]);
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return;
+      }
+
       const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
       const token = await SecureStore.getItemAsync('sipena_token');
 
@@ -168,7 +200,23 @@ export default function SystemSettingsScreen() {
       </View>
 
       {/* Main Content */}
-      {isLoading ? (
+      {isAccessDenied ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+          <View style={{ width: 68, height: 68, borderRadius: 34, backgroundColor: '#FEE2E2', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+            <Feather name="shield-off" size={32} color="#DC2626" />
+          </View>
+          <Text style={{ fontSize: 17, fontWeight: '800', color: '#1E293B', marginBottom: 6 }}>Akses Dibatasi</Text>
+          <Text style={{ fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
+            Halaman Pengaturan Sistem hanya dapat diakses oleh Administrator, Operator Sekolah, dan Pimpinan Sekolah.
+          </Text>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={{ backgroundColor: Colors.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
+          >
+            <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 13 }}>Kembali ke Beranda</Text>
+          </TouchableOpacity>
+        </View>
+      ) : isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
           <Text style={styles.loadingText}>Memuat data konfigurasi...</Text>

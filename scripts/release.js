@@ -67,6 +67,7 @@ Tautan Permanen Versi Terbaru:
 - Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
 Apa yang Baru di Versi ${version}:
+• Peningkatan keamanan hak akses pengguna (RBAC) serta penyempurnaan konsistensi pembatasan modul dan stabilitas aplikasi.
 • Fitur Pengumuman Terpadu & Sasaran Kelas Dinamis:
   - Pengumuman resmi dari Pimpinan / Admin / TU / Operator kini langsung muncul di kartu Notifikasi Terbaru Beranda, Menu Notifikasi (tab Pengumuman), dan dapat diklik untuk membaca rincian pengumuman penuh.
   - Pengelola (Admin, Kepsek, Wakasek, TU, Operator) kini memiliki tab "Pengumuman" khusus di modul Kurikulum & Jadwal (disembunyikan dari Guru biasa & Siswa) dengan filter sasaran dinamis: Semua Civitas, Guru & Staf, atau Siswa/Orang Tua (Semua Kelas vs Kelas Tertentu) plus opsi kirim via WhatsApp Broadcast.

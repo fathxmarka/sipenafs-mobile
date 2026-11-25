@@ -62,6 +62,7 @@ export default function BroadcastModuleScreen() {
   });
 
   const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
+  const [isAccessDenied, setIsAccessDenied] = useState(false);
 
   useEffect(() => {
     fetchWaData();
@@ -69,6 +70,40 @@ export default function BroadcastModuleScreen() {
 
   const fetchWaData = async () => {
     try {
+      const userRaw = await SecureStore.getItemAsync('sipena_user');
+      const user = userRaw ? JSON.parse(userRaw) : null;
+      const roleStr = String(user?.role || '').toLowerCase();
+      const jabStr = String(user?.jabatan || '').toLowerCase();
+      const caps: string[] = Array.isArray(user?.capabilities) ? user.capabilities.map((c: any) => String(c).toLowerCase()) : [];
+      const isStudentOrParent =
+        roleStr.includes('siswa') ||
+        roleStr.includes('student') ||
+        roleStr.includes('parent') ||
+        roleStr.includes('orang tua') ||
+        roleStr.includes('ortu') ||
+        (Boolean(user?.student_id) && !user?.teacher_id);
+
+      const isAllowed =
+        !isStudentOrParent &&
+        (roleStr.includes('admin') ||
+          roleStr.includes('operator') ||
+          roleStr.includes('kepala') ||
+          roleStr.includes('wakil') ||
+          roleStr.includes('tata usaha') ||
+          jabStr.includes('humas') ||
+          jabStr.includes('kesiswaan') ||
+          jabStr.includes('kepala') ||
+          jabStr.includes('wakil') ||
+          caps.includes('humas') ||
+          caps.includes('kesiswaan'));
+
+      if (!user || !isAllowed) {
+        setIsAccessDenied(true);
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return;
+      }
+
       const apiUrl = await SecureStore.getItemAsync('sipena_api_url');
       const token = await SecureStore.getItemAsync('sipena_token');
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
@@ -276,6 +311,24 @@ export default function BroadcastModuleScreen() {
         </TouchableOpacity>
       </View>
 
+      {isAccessDenied ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+          <View style={{ width: 68, height: 68, borderRadius: 34, backgroundColor: '#FEE2E2', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+            <Feather name="shield-off" size={32} color="#DC2626" />
+          </View>
+          <Text style={{ fontSize: 17, fontWeight: '800', color: '#1E293B', marginBottom: 6 }}>Akses Dibatasi</Text>
+          <Text style={{ fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 20, marginBottom: 20 }}>
+            Modul WhatsApp Broadcast hanya tersedia untuk pengelola, pimpinan sekolah, atau staf berwenang.
+          </Text>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={{ backgroundColor: Colors.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }}
+          >
+            <Text style={{ color: '#FFF', fontWeight: '700', fontSize: 13 }}>Kembali ke Beranda</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+      <>
       {/* KPI Overview */}
       <View style={styles.kpiContainer}>
         <View style={[styles.kpiCard, { backgroundColor: '#F0FDF4' }]}>
@@ -558,6 +611,8 @@ export default function BroadcastModuleScreen() {
             </View>
           )}
         </ScrollView>
+      )}
+      </>
       )}
 
       {/* Toast Notification */}
