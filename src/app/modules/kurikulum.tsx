@@ -13,7 +13,7 @@ import axios from 'axios';
 const avatarMale = require('../../../assets/images/avatar_male.png');
 const avatarFemale = require('../../../assets/images/avatar_female.png');
 
-type TabType = 'schedule' | 'journal' | 'subjects' | 'timeline';
+type TabType = 'schedule' | 'journal' | 'subjects' | 'timeline' | 'announcements';
 
 const DAYS = [
   { value: 1, label: 'Senin' },
@@ -108,7 +108,8 @@ export default function KurikulumScreen() {
 
   const initialTab: TabType = 
     params.tab === 'journal' || params.tab === 'jurnal' ? 'journal' :
-    params.tab === 'subjects' || params.tab === 'mapel' ? 'subjects' : 'schedule';
+    params.tab === 'subjects' || params.tab === 'mapel' ? 'subjects' :
+    params.tab === 'announcements' || params.tab === 'pengumuman' ? 'announcements' : 'schedule';
 
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [selectedDay, setSelectedDay] = useState<number>(defaultDay);
@@ -132,6 +133,19 @@ export default function KurikulumScreen() {
   const [classesList, setClassesList] = useState<any[]>([]);
   const [journalsList, setJournalsList] = useState<JournalItem[]>([]);
   const [schoolSettings, setSchoolSettings] = useState<SchoolSettings | null>(null);
+
+  // Pengumuman state (Khusus role pengelola / isAdmin)
+  const [announcementsList, setAnnouncementsList] = useState<any[]>([]);
+  const [isAnnModalOpen, setIsAnnModalOpen] = useState(false);
+  const [annTitle, setAnnTitle] = useState('');
+  const [annContent, setAnnContent] = useState('');
+  const [annCategory, setAnnCategory] = useState('umum');
+  const [annTargetRole, setAnnTargetRole] = useState<'ALL' | 'STUDENTS' | 'TEACHERS'>('ALL');
+  const [annClassMode, setAnnClassMode] = useState<'all' | 'specific'>('all');
+  const [annSelectedClassIds, setAnnSelectedClassIds] = useState<string[]>([]);
+  const [annIsPinned, setAnnIsPinned] = useState(false);
+  const [annSendWa, setAnnSendWa] = useState(false);
+  const [isSavingAnn, setIsSavingAnn] = useState(false);
 
   // Jurnal Date Filter (Default Hari Ini: YYYY-MM-DD)
   const [journalDate, setJournalDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -240,13 +254,14 @@ export default function KurikulumScreen() {
         setSelectedClassId(sClassId);
       }
 
-      // Load Schedules, Subjects, Classes, Journals, and School Settings in parallel
-      const [resSchedules, resSubjects, resClasses, resJournals, resSchool] = await Promise.allSettled([
+      // Load Schedules, Subjects, Classes, Journals, School Settings, and Announcements (if permitted)
+      const [resSchedules, resSubjects, resClasses, resJournals, resSchool, resAnn] = await Promise.allSettled([
         axios.get(`${apiUrl}/api/schedules`, { headers }),
         axios.get(`${apiUrl}/api/subjects?perPage=all`, { headers }),
         axios.get(`${apiUrl}/api/classes?perPage=all`, { headers }),
         axios.get(`${apiUrl}/api/journals`, { headers }),
-        axios.get(`${apiUrl}/api/school`, { headers })
+        axios.get(`${apiUrl}/api/school`, { headers }),
+        axios.get(`${apiUrl}/api/announcements?manage=true`, { headers })
       ]);
 
       if (resSchedules.status === 'fulfilled' && resSchedules.value.data) {
@@ -279,6 +294,9 @@ export default function KurikulumScreen() {
       if (resSchool.status === 'fulfilled' && resSchool.value.data) {
         setSchoolSettings(resSchool.value.data.data || null);
       }
+      if (resAnn.status === 'fulfilled' && resAnn.value.data?.success && Array.isArray(resAnn.value.data.data)) {
+        setAnnouncementsList(resAnn.value.data.data);
+      }
     } catch (e: any) {
       console.log('Gagal memuat data Kurikulum & Jadwal:', e.message);
     } finally {
@@ -290,6 +308,74 @@ export default function KurikulumScreen() {
   const onRefresh = () => {
     setIsRefreshing(true);
     fetchAllData();
+  };
+
+  const toggleAnnClassId = (cid: string) => {
+    setAnnSelectedClassIds((prev) =>
+      prev.includes(cid) ? prev.filter((id) => id !== cid) : [...prev, cid]
+    );
+  };
+
+  const handleCreateAnnouncement = async () => {
+    if (!annTitle.trim()) {
+      showToast('Validasi', 'Judul pengumuman wajib diisi.', 'warning');
+      return;
+    }
+    if (!annContent.trim()) {
+      showToast('Validasi', 'Isi pengumuman wajib diisi.', 'warning');
+      return;
+    }
+    if (annTargetRole === 'STUDENTS' && annClassMode === 'specific' && annSelectedClassIds.length === 0) {
+      showToast('Validasi', 'Pilih minimal 1 kelas sasaran atau pilih Semua Kelas.', 'warning');
+      return;
+    }
+
+    setIsSavingAnn(true);
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const res = await axios.post(
+        `${apiBaseUrl}/api/announcements`,
+        {
+          title: annTitle.trim(),
+          content: annContent.trim(),
+          category: annCategory,
+          target_role: annTargetRole,
+          target_class_ids: annTargetRole === 'STUDENTS' && annClassMode === 'specific' ? annSelectedClassIds : [],
+          is_pinned: annIsPinned,
+          send_wa: annSendWa,
+        },
+        { headers }
+      );
+      if (res.data?.success) {
+        setIsAnnModalOpen(false);
+        setAnnTitle('');
+        setAnnContent('');
+        setAnnSelectedClassIds([]);
+        setAnnIsPinned(false);
+        setAnnSendWa(false);
+        fetchAllData();
+        showToast('Berhasil', res.data.wa_warning || res.data.message || 'Pengumuman diterbitkan.', 'success');
+      } else {
+        showToast('Gagal', res.data?.message || 'Gagal menerbitkan pengumuman.', 'error');
+      }
+    } catch (err: any) {
+      showToast('Error', err?.response?.data?.message || 'Gagal terhubung ke server.', 'error');
+    } finally {
+      setIsSavingAnn(false);
+    }
+  };
+
+  const handleDeleteAnnouncement = async (annId: string) => {
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const res = await axios.delete(`${apiBaseUrl}/api/announcements/${annId}`, { headers });
+      if (res.data?.success) {
+        setAnnouncementsList((prev) => prev.filter((a) => String(a.id) !== String(annId)));
+        showToast('Terhapus', 'Pengumuman berhasil dihapus.', 'success');
+      }
+    } catch (err: any) {
+      showToast('Gagal', err?.response?.data?.message || 'Gagal menghapus pengumuman.', 'error');
+    }
   };
 
   // Helper date navigation for Jurnal Mengajar
@@ -644,6 +730,14 @@ export default function KurikulumScreen() {
           >
             <Feather name="clock" size={14} color={activeTab === 'timeline' ? '#FFF' : Colors.textLight} />
             <Text style={[styles.tabText, activeTab === 'timeline' && styles.tabTextActive]}>Slot JP</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.tabButton, activeTab === 'announcements' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('announcements')}
+          >
+            <Ionicons name="megaphone-outline" size={14} color={activeTab === 'announcements' ? '#FFF' : Colors.textLight} />
+            <Text style={[styles.tabText, activeTab === 'announcements' && styles.tabTextActive]}>Pengumuman</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -1162,6 +1256,74 @@ export default function KurikulumScreen() {
             </ScrollView>
           )}
 
+          {/* ======================================================== */}
+          {/* TAB 5: PENGUMUMAN (KHUSUS ROLE PENGELOLA / isAdmin)       */}
+          {/* ======================================================== */}
+          {isAdmin && activeTab === 'announcements' && (
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+              <TouchableOpacity
+                onPress={() => setIsAnnModalOpen(true)}
+                activeOpacity={0.8}
+                style={{
+                  backgroundColor: '#0D9488',
+                  borderRadius: 12,
+                  paddingVertical: 12,
+                  paddingHorizontal: 16,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  marginBottom: 14,
+                }}
+              >
+                <Ionicons name="megaphone" size={18} color="#FFF" />
+                <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 13 }}>+ Buat Pengumuman Baru</Text>
+              </TouchableOpacity>
+
+              {announcementsList.length === 0 ? (
+                <View style={{ backgroundColor: '#FFF', borderRadius: 14, padding: 28, alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0' }}>
+                  <Ionicons name="megaphone-outline" size={36} color="#CBD5E1" />
+                  <Text style={{ marginTop: 10, fontSize: 14, fontWeight: '700', color: '#475569' }}>Belum Ada Pengumuman</Text>
+                  <Text style={{ marginTop: 4, fontSize: 12, color: '#94A3B8', textAlign: 'center' }}>
+                    Buat pengumuman untuk dikirim langsung ke aplikasi siswa/orang tua atau guru.
+                  </Text>
+                </View>
+              ) : (
+                announcementsList.map((ann: any) => (
+                  <View
+                    key={String(ann.id)}
+                    style={{
+                      backgroundColor: '#FFF',
+                      borderRadius: 14,
+                      padding: 14,
+                      marginBottom: 10,
+                      borderWidth: 1,
+                      borderColor: '#E2E8F0',
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                      <Text style={{ flex: 1, fontSize: 14, fontWeight: '800', color: '#1E293B' }}>
+                        {ann.is_pinned ? '📌 ' : ''}{ann.title}
+                      </Text>
+                      <TouchableOpacity onPress={() => handleDeleteAnnouncement(String(ann.id))} style={{ padding: 4 }}>
+                        <Feather name="trash-2" size={15} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#0B8A7D', marginTop: 4 }}>
+                      Sasaran: {ann.target_label || 'Semua Civitas'}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#475569', marginTop: 6, lineHeight: 18 }}>
+                      {ann.content}
+                    </Text>
+                    <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 8 }}>
+                      {ann.created_by_name || 'Admin'} • {ann.created_at ? new Date(ann.created_at).toLocaleDateString('id-ID') : ''}
+                    </Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          )}
+
         </View>
       )}
 
@@ -1467,6 +1629,217 @@ export default function KurikulumScreen() {
                 </TouchableOpacity>
               </ScrollView>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ======================================================== */}
+      {/* MODAL PENGUMUMAN BARU (KHUSUS ROLE PENGELOLA / isAdmin)  */}
+      {/* ======================================================== */}
+      <Modal visible={isAnnModalOpen} transparent animationType="slide" onRequestClose={() => setIsAnnModalOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { maxHeight: '90%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <Ionicons name="megaphone" size={20} color="#0D9488" />
+                <Text style={styles.modalTitle}>Buat Pengumuman</Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsAnnModalOpen(false)}>
+                <Feather name="x" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.formLabel}>Judul Pengumuman *</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Contoh: Pemberitahuan Libur / Perubahan Jadwal"
+                value={annTitle}
+                onChangeText={setAnnTitle}
+              />
+
+              <Text style={styles.formLabel}>Kategori</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                {[
+                  { id: 'umum', label: 'Umum' },
+                  { id: 'libur', label: 'Libur' },
+                  { id: 'darurat', label: 'Mendadak' },
+                  { id: 'akademik', label: 'Akademik' },
+                  { id: 'kegiatan', label: 'Kegiatan' },
+                ].map((cat) => (
+                  <TouchableOpacity
+                    key={cat.id}
+                    onPress={() => setAnnCategory(cat.id)}
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      backgroundColor: annCategory === cat.id ? '#0D9488' : '#F8FAFC',
+                      borderColor: annCategory === cat.id ? '#0D9488' : '#E2E8F0',
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: annCategory === cat.id ? '#FFF' : '#475569' }}>
+                      {cat.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.formLabel}>Sasaran Penerima</Text>
+              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
+                {[
+                  { id: 'ALL' as const, label: 'Semua' },
+                  { id: 'STUDENTS' as const, label: 'Siswa/Kelas' },
+                  { id: 'TEACHERS' as const, label: 'Guru & Staf' },
+                ].map((opt) => (
+                  <TouchableOpacity
+                    key={opt.id}
+                    onPress={() => setAnnTargetRole(opt.id)}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      alignItems: 'center',
+                      backgroundColor: annTargetRole === opt.id ? '#0D9488' : '#F8FAFC',
+                      borderColor: annTargetRole === opt.id ? '#0D9488' : '#E2E8F0',
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: annTargetRole === opt.id ? '#FFF' : '#475569' }}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {annTargetRole === 'STUDENTS' && (
+                <View style={{ backgroundColor: '#FFFBEB', borderRadius: 10, padding: 10, borderWidth: 1, borderColor: '#FDE68A', marginBottom: 12 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: '#92400E', marginBottom: 8 }}>Filter Kelas Siswa</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                    <TouchableOpacity
+                      onPress={() => setAnnClassMode('all')}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 7,
+                        borderRadius: 8,
+                        alignItems: 'center',
+                        backgroundColor: annClassMode === 'all' ? '#0D9488' : '#FFF',
+                        borderWidth: 1,
+                        borderColor: annClassMode === 'all' ? '#0D9488' : '#E2E8F0',
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: annClassMode === 'all' ? '#FFF' : '#475569' }}>Semua Kelas</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setAnnClassMode('specific')}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 7,
+                        borderRadius: 8,
+                        alignItems: 'center',
+                        backgroundColor: annClassMode === 'specific' ? '#0D9488' : '#FFF',
+                        borderWidth: 1,
+                        borderColor: annClassMode === 'specific' ? '#0D9488' : '#E2E8F0',
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: annClassMode === 'specific' ? '#FFF' : '#475569' }}>
+                        Pilih Kelas ({annSelectedClassIds.length})
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {annClassMode === 'specific' && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {classesList.filter((c: any) => !classesList.some((x: any) => x?.term?.is_active) || c?.term?.is_active).map((c: any) => {
+                        const cid = String(c.id);
+                        const selected = annSelectedClassIds.includes(cid);
+                        return (
+                          <TouchableOpacity
+                            key={cid}
+                            onPress={() => toggleAnnClassId(cid)}
+                            style={{
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              borderRadius: 8,
+                              backgroundColor: selected ? '#0D9488' : '#FFF',
+                              borderWidth: 1,
+                              borderColor: selected ? '#0D9488' : '#CBD5E1',
+                            }}
+                          >
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: selected ? '#FFF' : '#334155' }}>{c.name}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              )}
+
+              <Text style={styles.formLabel}>Isi Pengumuman *</Text>
+              <TextInput
+                style={[styles.formInput, { minHeight: 90, textAlignVertical: 'top' }]}
+                placeholder="Tuliskan isi pengumuman secara lengkap..."
+                multiline
+                value={annContent}
+                onChangeText={setAnnContent}
+              />
+
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                <TouchableOpacity
+                  onPress={() => setAnnIsPinned((p) => !p)}
+                  style={{
+                    flex: 1,
+                    padding: 10,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    backgroundColor: annIsPinned ? '#FEF2F2' : '#F8FAFC',
+                    borderColor: annIsPinned ? '#FECACA' : '#E2E8F0',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: annIsPinned ? '#E11D48' : '#475569' }}>
+                    {annIsPinned ? '📌 Disematkan' : 'Sematkan'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => setAnnSendWa((w) => !w)}
+                  style={{
+                    flex: 1,
+                    padding: 10,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    backgroundColor: annSendWa ? '#ECFDF5' : '#F8FAFC',
+                    borderColor: annSendWa ? '#A7F3D0' : '#E2E8F0',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: annSendWa ? '#059669' : '#475569' }}>
+                    {annSendWa ? '✓ Kirim WA' : 'Kirim WA Juga'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                onPress={handleCreateAnnouncement}
+                disabled={isSavingAnn}
+                style={{
+                  backgroundColor: '#0D9488',
+                  paddingVertical: 12,
+                  borderRadius: 12,
+                  alignItems: 'center',
+                  opacity: isSavingAnn ? 0.6 : 1,
+                  marginBottom: 8,
+                }}
+              >
+                {isSavingAnn ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 13 }}>Terbitkan Pengumuman</Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>

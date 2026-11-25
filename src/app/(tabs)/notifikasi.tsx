@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl
+  ActivityIndicator, RefreshControl, Modal
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -20,6 +20,10 @@ interface NotificationItem {
   time: string;
   isRead: boolean;
   path?: string;
+  targetLabel?: string;
+  category?: string;
+  isPinned?: boolean;
+  author?: string;
 }
 
 export default function NotifikasiScreen() {
@@ -30,6 +34,7 @@ export default function NotifikasiScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<NotificationItem | null>(null);
 
   useEffect(() => {
     fetchNotifications();
@@ -72,11 +77,17 @@ export default function NotifikasiScreen() {
               type: 'pengumuman' as const,
               title: item.title || 'Pengumuman Sekolah',
               body: item.content || item.description || '',
-              time: item.created_at ? new Date(item.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) : 'Hari ini',
+              time: item.published_at || item.created_at
+                ? new Date(item.published_at || item.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+                : 'Hari ini',
               isRead: false,
               path: '',
+              targetLabel: item.target_label || '',
+              category: item.category || 'umum',
+              isPinned: Boolean(item.is_pinned),
+              author: item.created_by_name || 'Admin Sekolah',
             }));
-            allItems.push(...annItems);
+            allItems.unshift(...annItems);
           }
 
           setNotifications(allItems);
@@ -109,6 +120,8 @@ export default function NotifikasiScreen() {
 
     if (item?.type === 'maintenance' || item?.path?.includes('assets')) {
       router.push('/modules/sarpras');
+    } else if (item?.id?.startsWith('ann-') || item?.type === 'pengumuman') {
+      setSelectedAnnouncement(item);
     }
   };
 
@@ -212,10 +225,17 @@ export default function NotifikasiScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <View style={styles.notifTopRow}>
-                    <Text style={styles.notifTitle}>{item.title}</Text>
+                    <Text style={styles.notifTitle}>
+                      {item.isPinned ? '📌 ' : ''}{item.title}
+                    </Text>
                     {!item.isRead && <View style={styles.unreadDot} />}
                   </View>
-                  <Text style={styles.notifBody}>{item.body}</Text>
+                  {!!item.targetLabel && (
+                    <Text style={{ fontSize: 10, fontWeight: '700', color: '#0B8A7D', marginTop: 2 }}>
+                      Sasaran: {item.targetLabel}
+                    </Text>
+                  )}
+                  <Text style={styles.notifBody} numberOfLines={3}>{item.body}</Text>
                   <Text style={styles.notifTime}>{item.time}</Text>
                 </View>
               </TouchableOpacity>
@@ -223,6 +243,60 @@ export default function NotifikasiScreen() {
           })
         )}
       </ScrollView>
+
+      {/* Modal Detail Pengumuman */}
+      <Modal
+        visible={Boolean(selectedAnnouncement)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedAnnouncement(null)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 18, padding: 20, maxHeight: '80%' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="megaphone" size={18} color="#D97706" />
+                <Text style={{ fontSize: 12, fontWeight: '800', color: '#D97706', textTransform: 'uppercase' }}>
+                  Pengumuman
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setSelectedAnnouncement(null)}>
+                <Ionicons name="close" size={22} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ fontSize: 16, fontWeight: '800', color: '#1E293B', marginBottom: 6 }}>
+              {selectedAnnouncement?.title}
+            </Text>
+
+            {!!selectedAnnouncement?.targetLabel && (
+              <View style={{ alignSelf: 'flex-start', backgroundColor: '#E6F4F1', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginBottom: 10 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#0B8A7D' }}>
+                  {selectedAnnouncement.targetLabel}
+                </Text>
+              </View>
+            )}
+
+            <ScrollView style={{ maxHeight: 320, marginBottom: 14 }}>
+              <Text style={{ fontSize: 13, color: '#334155', lineHeight: 20 }}>
+                {selectedAnnouncement?.body}
+              </Text>
+            </ScrollView>
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 10 }}>
+              <Text style={{ fontSize: 11, color: '#94A3B8' }}>
+                {selectedAnnouncement?.author ? `${selectedAnnouncement.author} • ` : ''}{selectedAnnouncement?.time}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setSelectedAnnouncement(null)}
+                style={{ backgroundColor: '#0B8A7D', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 }}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>Tutup</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

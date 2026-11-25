@@ -133,10 +133,12 @@ export default function HomeScreen() {
           if (resNotif.data && resNotif.data.success && Array.isArray(resNotif.data.data)) {
             setNotifications(resNotif.data.data.slice(0, 3).map((item: any, idx: number) => ({
               id: item.id?.toString() || idx.toString(),
-              title: item.title || 'Pengumuman Sekolah',
-              time: item.created_at ? new Date(item.created_at).toLocaleDateString('id-ID') : 'Baru saja',
+              title: item.is_pinned ? `📌 ${item.title || 'Pengumuman Sekolah'}` : (item.title || 'Pengumuman Sekolah'),
+              time: item.target_label
+                ? `${item.target_label} • ${item.published_at || item.created_at ? new Date(item.published_at || item.created_at).toLocaleDateString('id-ID') : 'Baru saja'}`
+                : (item.created_at ? new Date(item.created_at).toLocaleDateString('id-ID') : 'Baru saja'),
               type: 'success',
-              icon: 'information-circle-outline',
+              icon: 'megaphone-outline',
             })));
           }
         } catch (_) {}
@@ -1626,7 +1628,12 @@ export default function HomeScreen() {
               </View>
             ) : (
               notifications.map((notif: any) => (
-                <View key={notif.id} style={styles.notificationCard}>
+                <TouchableOpacity
+                  key={notif.id}
+                  style={styles.notificationCard}
+                  activeOpacity={0.75}
+                  onPress={() => router.push('/(tabs)/notifikasi' as any)}
+                >
                   <View style={styles.notifIconWrapper}>
                     <Ionicons
                       name={notif.icon as any}
@@ -1635,10 +1642,10 @@ export default function HomeScreen() {
                     />
                   </View>
                   <View style={styles.notifContent}>
-                    <Text style={styles.notifTitle}>{notif.title}</Text>
-                    <Text style={styles.notifTime}>{notif.time}</Text>
+                    <Text style={styles.notifTitle} numberOfLines={2}>{notif.title}</Text>
+                    <Text style={styles.notifTime} numberOfLines={1}>{notif.time}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))
             )}
           </View>

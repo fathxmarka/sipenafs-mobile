@@ -67,6 +67,9 @@ Tautan Permanen Versi Terbaru:
 - Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
 Apa yang Baru di Versi ${version}:
+• Fitur Pengumuman Terpadu & Sasaran Kelas Dinamis:
+  - Pengumuman resmi dari Pimpinan / Admin / TU / Operator kini langsung muncul di kartu Notifikasi Terbaru Beranda, Menu Notifikasi (tab Pengumuman), dan dapat diklik untuk membaca rincian pengumuman penuh.
+  - Pengelola (Admin, Kepsek, Wakasek, TU, Operator) kini memiliki tab "Pengumuman" khusus di modul Kurikulum & Jadwal (disembunyikan dari Guru biasa & Siswa) dengan filter sasaran dinamis: Semua Civitas, Guru & Staf, atau Siswa/Orang Tua (Semua Kelas vs Kelas Tertentu) plus opsi kirim via WhatsApp Broadcast.
 • Pengurutan Soal Acak & Submit Andal (PG, PGK Kompleks, Esai):
   - Soal Pilihan Ganda (PG & PGK) selalu diacak di bagian awal, dan soal Esai selalu ditempatkan di urutan terakhir (tidak pernah menyisip di tengah soal PG).
   - Pemisahan grup "Pilihan Ganda & PGK" vs "Esai / Uraian" di Daftar Nomor Soal Android.
