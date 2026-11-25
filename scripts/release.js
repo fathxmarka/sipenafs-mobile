@@ -160,23 +160,61 @@ function githubRequest(method, endpoint, data = null, headers = {}) {
     });
 }
 
-async function uploadAsset(uploadUrl, filePath, fileName, maxRetries = 3) {
+async function uploadAsset(uploadUrl, filePath, fileName, maxRetries = 4) {
     const cleanUploadUrl = uploadUrl.replace(/\{.*\}/, '') + `?name=${encodeURIComponent(fileName)}`;
     const stats = fs.statSync(filePath);
-    const sizeMb = (stats.size / (1024 * 1024)).toFixed(2);
+    const totalBytes = stats.size;
+    const sizeMb = (totalBytes / (1024 * 1024)).toFixed(2);
     console.log(`Mengunggah ${fileName} (${sizeMb} MB)...`);
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-            // Gunakan curl.exe native untuk streaming upload yang cepat, bebas hang 408, dan stabil
-            const normalizedPath = filePath.replace(/\\/g, '/');
-            const curlCmd = `curl.exe -f -s -S --retry 2 --retry-delay 3 -X POST -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Content-Type: application/vnd.android.package-archive" --data-binary "@${normalizedPath}" "${cleanUploadUrl}"`;
-            const out = execSync(curlCmd, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 600000 });
-            try {
-                return JSON.parse(out);
-            } catch (_) {
-                return { success: true };
-            }
+            const result = await new Promise((resolve, reject) => {
+                const urlObj = new URL(cleanUploadUrl);
+                const req = https.request({
+                    hostname: urlObj.hostname,
+                    path: urlObj.pathname + urlObj.search,
+                    method: 'POST',
+                    family: 4,
+                    headers: {
+                        'User-Agent': 'SIPENAFS-Release-Bot',
+                        'Authorization': `Bearer ${GITHUB_TOKEN}`,
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Content-Type': 'application/vnd.android.package-archive',
+                        'Content-Length': totalBytes
+                    }
+                }, (res) => {
+                    let body = '';
+                    res.on('data', chunk => body += chunk);
+                    res.on('end', () => {
+                        if (res.statusCode >= 200 && res.statusCode < 300) {
+                            try { resolve(JSON.parse(body)); } catch (_) { resolve({ success: true }); }
+                        } else {
+                            reject(new Error(`HTTP ${res.statusCode}: ${body.slice(0, 300)}`));
+                        }
+                    });
+                });
+
+                req.setTimeout(180000, () => {
+                    req.destroy(new Error('Upload socket timeout (180s)'));
+                });
+                req.on('error', reject);
+
+                let uploaded = 0;
+                let lastLoggedPct = -1;
+                const rs = fs.createReadStream(filePath, { highWaterMark: 256 * 1024 });
+                rs.on('data', (chunk) => {
+                    uploaded += chunk.length;
+                    const pct = Math.floor((uploaded / totalBytes) * 100);
+                    if (pct >= lastLoggedPct + 25 || pct === 100) {
+                        lastLoggedPct = pct;
+                        console.log(`  [${fileName}] ${pct}% (${(uploaded / (1024 * 1024)).toFixed(1)}/${sizeMb} MB)`);
+                    }
+                });
+                rs.on('error', (err) => req.destroy(err));
+                rs.pipe(req);
+            });
+            return result;
         } catch (e) {
             console.warn(`Upaya ${attempt}/${maxRetries} gagal mengunggah ${fileName}: ${e.message}`);
             if (attempt === maxRetries) throw e;
