@@ -138,8 +138,8 @@ export default function ElearningModuleScreen() {
   const [isCreateAssignmentModalOpen, setIsCreateAssignmentModalOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newSubject, setNewSubject] = useState('');
-  const [newClass, setNewClass] = useState('XII MIPA 1');
-  const [newDeadline, setNewDeadline] = useState('06 Okt 2026, 23:59 WIB');
+  const [newClass, setNewClass] = useState('');
+  const [newDeadline, setNewDeadline] = useState('Besok, 23:59 WIB');
   const [newMaxScore, setNewMaxScore] = useState('100');
   const [newDescription, setNewDescription] = useState('');
   const [newAttachedFile, setNewAttachedFile] = useState<any>(null);
@@ -149,7 +149,7 @@ export default function ElearningModuleScreen() {
   const [isUploadMaterialModalOpen, setIsUploadMaterialModalOpen] = useState(false);
   const [newMaterialTitle, setNewMaterialTitle] = useState('');
   const [newMaterialSubject, setNewMaterialSubject] = useState('');
-  const [newMaterialClass, setNewMaterialClass] = useState('XII MIPA 1');
+  const [newMaterialClass, setNewMaterialClass] = useState('');
   const [newMaterialType, setNewMaterialType] = useState<'PDF' | 'VIDEO' | 'SLIDE' | 'DOC'>('PDF');
   const [newMaterialDesc, setNewMaterialDesc] = useState('');
   const [isUploadingMaterial, setIsUploadingMaterial] = useState(false);
@@ -209,163 +209,6 @@ export default function ElearningModuleScreen() {
         currentRole.includes('ortu');
       const roleIsTeacherOrAdmin = !roleIsStudent && !roleIsParent;
 
-      // Default mock fallback for Teacher
-      const defaultTeacherAssignments: AssignmentItem[] = [
-        {
-          id: 'ta1',
-          title: 'Analisis Gelombang Elektromagnetik & Optik',
-          subjectName: userObj?.subject || 'Fisika Peminatan',
-          className: 'XII MIPA 1',
-          teacherName: userObj?.name || 'Dr. Hendra Gunawan, M.Si',
-          deadline: 'Besok, 23:59 WIB',
-          description: 'Selesaikan 5 studi kasus aplikasi gelombang mikro pada telekomunikasi dan sertakan rumusan penurunan frekuensi.',
-          totalSubmissions: 28,
-          totalStudents: 34,
-          gradedCount: 22,
-          pendingReviewCount: 6,
-          status: 'active',
-          maxScore: 100,
-        },
-        {
-          id: 'ta2',
-          title: 'Praktikum Virtual Hukum Snellius & Pemantulan',
-          subjectName: userObj?.subject || 'Fisika Peminatan',
-          className: 'XII MIPA 2',
-          teacherName: userObj?.name || 'Dr. Hendra Gunawan, M.Si',
-          deadline: '03 Okt 2026, 17:00 WIB',
-          description: 'Laporan praktikum mandiri menggunakan simulasi PhET dengan analisis sudut bias medium.',
-          totalSubmissions: 32,
-          totalStudents: 32,
-          gradedCount: 32,
-          pendingReviewCount: 0,
-          status: 'completed',
-          maxScore: 100,
-        },
-        {
-          id: 'ta3',
-          title: 'Tugas Mandiri: Teori Kuantum Planck & Foton',
-          subjectName: userObj?.subject || 'Fisika Peminatan',
-          className: 'XI MIPA 3',
-          teacherName: userObj?.name || 'Dr. Hendra Gunawan, M.Si',
-          deadline: '06 Okt 2026, 12:00 WIB',
-          description: 'Pengerjaan 10 soal essay pemecahan masalah efek fotolistrik dan model spektrum atom.',
-          totalSubmissions: 15,
-          totalStudents: 35,
-          gradedCount: 0,
-          pendingReviewCount: 15,
-          status: 'active',
-          maxScore: 100,
-        },
-      ];
-
-      // Default mock fallback for Student
-      const defaultStudentAssignments: AssignmentItem[] = [
-        {
-          id: 'sa1',
-          title: 'Analisis Gelombang Elektromagnetik & Optik',
-          subjectName: 'Fisika Peminatan',
-          teacherName: 'Dr. Hendra Gunawan, M.Si',
-          deadline: 'Besok, 23:59 WIB',
-          description: 'Selesaikan 5 studi kasus aplikasi gelombang mikro pada telekomunikasi dan sertakan rumusan penurunan frekuensi.',
-          totalSubmissions: 28,
-          myStatus: 'pending',
-        },
-        {
-          id: 'sa2',
-          title: 'Resensi Novel Sastra Periode Balai Pustaka',
-          subjectName: 'Bahasa Indonesia',
-          teacherName: 'Ibu Ratna Dewi, M.Pd',
-          deadline: '03 Okt 2026, 17:00 WIB',
-          description: 'Buat resensi minimal 500 kata dengan menganalisis unsur intrinsik, ekstrinsik, dan amanat moral.',
-          totalSubmissions: 34,
-          myStatus: 'submitted',
-          score: 88,
-        },
-        {
-          id: 'sa3',
-          title: 'Integral Parsial dan Terapan Luas Bidang',
-          subjectName: 'Matematika Tingkat Lanjut',
-          teacherName: 'Bambang Kusuma, S.Pd',
-          deadline: '05 Okt 2026, 12:00 WIB',
-          description: 'Kerjakan LKS Mandiri halaman 45-48 nomor 1 sampai 10 lengkap beserta grafik kurva perpotongan.',
-          totalSubmissions: 15,
-          myStatus: 'pending',
-        },
-      ];
-
-      const defaultMaterials: MaterialItem[] = [
-        {
-          id: 'm1',
-          title: 'Modul Bab 4: Gelombang Elektromagnetik & Spektrum',
-          subjectName: userObj?.subject || 'Fisika Peminatan',
-          className: 'XII MIPA 1 & 2',
-          teacherName: userObj?.name || 'Dr. Hendra Gunawan, M.Si',
-          type: 'PDF',
-          size: '3.4 MB',
-          uploadDate: '28 Sep 2026',
-          description: 'Ringkasan materi persamaan Maxwell, sifat radiasi elektromagnetik, serta latihan soal UTBK.',
-        },
-        {
-          id: 'm2',
-          title: 'Video Pembelajaran: Simulasi Pembiasan Cahaya PhET',
-          subjectName: userObj?.subject || 'Fisika Peminatan',
-          className: 'XII MIPA 1',
-          teacherName: userObj?.name || 'Dr. Hendra Gunawan, M.Si',
-          type: 'VIDEO',
-          size: '48.2 MB',
-          uploadDate: '26 Sep 2026',
-          description: 'Tutorial konfigurasi parameter indeks bias kaca dan prisma menggunakan simulasi interaktif.',
-        },
-        {
-          id: 'm3',
-          title: 'Slide Presentasi: Teori Relativitas Khusus Einstein',
-          subjectName: userObj?.subject || 'Fisika Peminatan',
-          className: 'XII MIPA 2',
-          teacherName: userObj?.name || 'Dr. Hendra Gunawan, M.Si',
-          type: 'SLIDE',
-          size: '5.1 MB',
-          uploadDate: '24 Sep 2026',
-          description: 'Bahan tayang pertemuan ke-6 tentang dilatasi waktu, kontraksi panjang, dan kesetaraan massa-energi.',
-        },
-      ];
-
-      const defaultExams: ExamItem[] = [
-        {
-          id: 'e1',
-          title: 'Penilaian Tengah Semester (PTS) Ganjil Fisika CBT',
-          subjectName: userObj?.subject || 'Fisika Peminatan',
-          className: 'XII MIPA 1',
-          durationMinutes: 90,
-          totalQuestions: 40,
-          startTime: '02 Okt 2026, 08:00 WIB',
-          status: 'upcoming',
-          totalParticipants: 34,
-        },
-        {
-          id: 'e2',
-          title: 'Kuis Harian 2: Optik Fisis & Difraksi Cahaya',
-          subjectName: userObj?.subject || 'Fisika Peminatan',
-          className: 'XII MIPA 2',
-          durationMinutes: 45,
-          totalQuestions: 25,
-          startTime: 'Hari ini, 13:00 WIB',
-          status: 'ongoing',
-          totalParticipants: 32,
-        },
-        {
-          id: 'e3',
-          title: 'Tryout Mandiri Asesmen Kompetensi Fisika Terapan',
-          subjectName: userObj?.subject || 'Fisika Peminatan',
-          className: 'XII MIPA 1',
-          durationMinutes: 120,
-          totalQuestions: 50,
-          startTime: '25 Sep 2026',
-          status: 'completed',
-          totalParticipants: 34,
-          score: 89,
-        },
-      ];
-
       if (apiUrl && token) {
         try {
           const assignmentUrl = roleIsTeacherOrAdmin
@@ -386,40 +229,35 @@ export default function ElearningModuleScreen() {
             axios.get(materialUrl, { headers }),
           ]);
 
-          if (resExams.status === 'fulfilled' && resExams.value.data?.data) {
+          if (resExams.status === 'fulfilled' && Array.isArray(resExams.value.data?.data)) {
             const apiExams = resExams.value.data.data.map((e: any) => ({
               id: e.id?.toString() || Math.random().toString(),
-              title: e.title || 'Ujian Penilaian Harian',
+              title: e.title || 'Ujian CBT',
               subjectName: e.subject?.name || e.subjectName || 'Mata Pelajaran',
               className: e.class?.name || e.className || 'Semua Kelas',
               durationMinutes: Number(e.duration || 60),
-              totalQuestions: Number(e.question_count || 30),
-              startTime: e.start_time || 'Hari ini, 08:00 WIB',
+              totalQuestions: Number(e.question_count || 0),
+              startTime: e.start_time || '-',
               status: e.status || 'upcoming',
               score: e.score !== undefined ? Number(e.score) : undefined,
-              totalParticipants: Number(e.total_participants || 34),
+              totalParticipants: Number(e.total_participants || 0),
             }));
             setExams(apiExams);
           } else {
-            setExams(defaultExams);
+            setExams([]);
           }
 
-          if (
-            resAssignments.status === 'fulfilled' &&
-            resAssignments.value.data?.data &&
-            Array.isArray(resAssignments.value.data.data) &&
-            resAssignments.value.data.data.length > 0
-          ) {
+          if (resAssignments.status === 'fulfilled' && Array.isArray(resAssignments.value.data?.data)) {
             const apiAssignments: AssignmentItem[] = resAssignments.value.data.data.map((a: any) => ({
               id: a.id?.toString() || 'a_' + Math.random(),
               title: a.title,
               subjectName: a.subject_name || a.subjectName || a.subject?.name || 'Mata Pelajaran',
-              className: a.class_name || a.className || a.class?.name || 'Kelas XII',
+              className: a.class_name || a.className || a.class?.name || '-',
               teacherName: a.teacher_name || a.teacherName || a.teacher?.name || userObj?.name || 'Guru',
-              deadline: a.deadline_formatted || a.deadline || 'Besok, 23:59 WIB',
+              deadline: a.deadline_formatted || a.deadline || '-',
               description: a.description || '',
               totalSubmissions: Number(a.total_submissions ?? a.totalSubmissions ?? 0),
-              totalStudents: Number(a.total_students ?? a.totalStudents ?? 34),
+              totalStudents: Number(a.total_students ?? a.totalStudents ?? 0),
               gradedCount: Number(a.graded_submissions ?? a.gradedCount ?? 0),
               pendingReviewCount: Math.max(
                 0,
@@ -432,39 +270,34 @@ export default function ElearningModuleScreen() {
             }));
             setAssignments(apiAssignments);
           } else {
-            setAssignments(roleIsTeacherOrAdmin ? defaultTeacherAssignments : defaultStudentAssignments);
+            setAssignments([]);
           }
 
-          if (
-            resMaterials.status === 'fulfilled' &&
-            resMaterials.value.data?.data &&
-            Array.isArray(resMaterials.value.data.data) &&
-            resMaterials.value.data.data.length > 0
-          ) {
+          if (resMaterials.status === 'fulfilled' && Array.isArray(resMaterials.value.data?.data)) {
             const apiMaterials: MaterialItem[] = resMaterials.value.data.data.map((m: any) => ({
               id: m.id?.toString() || 'm_' + Math.random(),
               title: m.title,
               subjectName: m.subject_name || m.subjectName || m.subject?.name || 'Mata Pelajaran',
-              className: m.class_name || m.className || 'Kelas XII',
-              teacherName: m.teacher_name || m.teacherName || userObj?.name || 'Guru',
+              className: m.class_name || m.className || m.class?.name || '-',
+              teacherName: m.teacher_name || m.teacherName || m.teacher?.name || userObj?.name || 'Guru',
               type: m.type || 'PDF',
-              size: m.size || '1.5 MB',
-              uploadDate: m.uploadDate || m.created_at || 'Hari ini',
+              size: m.size || '-',
+              uploadDate: m.uploadDate || m.created_at || '-',
               description: m.description || '',
             }));
             setMaterials(apiMaterials);
           } else {
-            setMaterials(defaultMaterials);
+            setMaterials([]);
           }
         } catch (_) {
-          setAssignments(roleIsTeacherOrAdmin ? defaultTeacherAssignments : defaultStudentAssignments);
-          setMaterials(defaultMaterials);
-          setExams(defaultExams);
+          setAssignments([]);
+          setMaterials([]);
+          setExams([]);
         }
       } else {
-        setAssignments(roleIsTeacherOrAdmin ? defaultTeacherAssignments : defaultStudentAssignments);
-        setMaterials(defaultMaterials);
-        setExams(defaultExams);
+        setAssignments([]);
+        setMaterials([]);
+        setExams([]);
       }
     } catch (e: any) {
       console.warn('LMS fetch error:', e.message);
@@ -660,10 +493,10 @@ export default function ElearningModuleScreen() {
 
     setPreviewDocData({
       title: task.title,
-      docSubtitle: `${task.subjectName} • ${task.className || 'Kelas XII'}`,
+      docSubtitle: `${task.subjectName} • ${task.className || '-'}`,
       studentName: sub.studentName,
       nisn: sub.nisn,
-      className: task.className || 'XII MIPA 1',
+      className: task.className || '-',
       fileName: sub.fileName || 'Lembar_Jawaban_Tugas.pdf',
       fileSize: sub.fileSize || '345 KB',
       pages: sub.filePages || 2,
@@ -684,8 +517,8 @@ export default function ElearningModuleScreen() {
       title: mat.title,
       docSubtitle: `${mat.subjectName} • Pengajar: ${mat.teacherName}`,
       studentName: mat.teacherName,
-      nisn: 'NIP: 198503152010011002',
-      className: mat.className || 'XII MIPA 1 & 2',
+      nisn: '-',
+      className: mat.className || '-',
       fileName: `${mat.title.replace(/[\s\W]+/g, '_')}.${mat.type.toLowerCase()}`,
       fileSize: mat.size,
       pages: mat.type === 'PDF' ? 14 : 1,
@@ -792,8 +625,8 @@ export default function ElearningModuleScreen() {
   // ----------------------------------------------------
   const handleOpenCreateAssignment = () => {
     setNewTitle('');
-    setNewSubject(currentUser?.subject || 'Fisika Peminatan');
-    setNewClass('XII MIPA 1');
+    setNewSubject(currentUser?.subject || '');
+    setNewClass('');
     setNewDeadline('Besok, 23:59 WIB');
     setNewMaxScore('100');
     setNewDescription('');
@@ -878,8 +711,8 @@ export default function ElearningModuleScreen() {
   // ----------------------------------------------------
   const handleOpenUploadMaterial = () => {
     setNewMaterialTitle('');
-    setNewMaterialSubject(currentUser?.subject || 'Fisika Peminatan');
-    setNewMaterialClass('XII MIPA 1');
+    setNewMaterialSubject(currentUser?.subject || '');
+    setNewMaterialClass('');
     setNewMaterialType('PDF');
     setNewMaterialDesc('');
     setIsUploadMaterialModalOpen(true);

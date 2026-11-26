@@ -67,7 +67,7 @@ Tautan Permanen Versi Terbaru:
 - Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
 Apa yang Baru di Versi ${version}:
-• Peningkatan keamanan hak akses pengguna (RBAC) serta penyempurnaan konsistensi pembatasan modul dan stabilitas aplikasi.
+• Peningkatan keamanan hak akses pengguna (RBAC) serta sinkronisasi penuh data master sekolah di seluruh modul Android.
 • Fitur Pengumuman Terpadu & Sasaran Kelas Dinamis:
   - Pengumuman resmi dari Pimpinan / Admin / TU / Operator kini langsung muncul di kartu Notifikasi Terbaru Beranda, Menu Notifikasi (tab Pengumuman), dan dapat diklik untuk membaca rincian pengumuman penuh.
   - Pengelola (Admin, Kepsek, Wakasek, TU, Operator) kini memiliki tab "Pengumuman" khusus di modul Kurikulum & Jadwal (disembunyikan dari Guru biasa & Siswa) dengan filter sasaran dinamis: Semua Civitas, Guru & Staf, atau Siswa/Orang Tua (Semua Kelas vs Kelas Tertentu) plus opsi kirim via WhatsApp Broadcast.
@@ -275,48 +275,26 @@ async function main() {
 
     const assetsToUpload = [];
 
-    // 1. Siapkan file APK 64-bit arm64-v8a (Prioritas 1: Digunakan oleh >90% ponsel modern, ukuran ~80 MB cepat terunggah)
+    // 1. File APK 64-bit arm64-v8a (Digunakan oleh >90% ponsel modern)
     if (fs.existsSync(arm64Apk)) {
-        const destStatic64 = path.join(releaseDir, 'sipenafs-mobile-64bit.apk');
-        fs.copyFileSync(arm64Apk, destStatic64);
-        assetsToUpload.push({ path: destStatic64, name: 'sipenafs-mobile-64bit.apk' });
-
         const destArm64 = path.join(releaseDir, `sipenafs-mobile-${tagName}-arm64.apk`);
         fs.copyFileSync(arm64Apk, destArm64);
         assetsToUpload.push({ path: destArm64, name: `sipenafs-mobile-${tagName}-arm64.apk` });
     }
 
-    // 2. Siapkan file APK 32-bit armeabi-v7a (Prioritas 2: Khusus HP entry-level 32-bit, ukuran ~68 MB cepat terunggah)
+    // 2. File APK 32-bit armeabi-v7a (Khusus HP entry-level 32-bit)
     if (fs.existsSync(armeabiApk)) {
         const destStatic32 = path.join(releaseDir, 'sipenafs-mobile-32bit.apk');
         fs.copyFileSync(armeabiApk, destStatic32);
         assetsToUpload.push({ path: destStatic32, name: 'sipenafs-mobile-32bit.apk' });
-
-        const destV7a = path.join(releaseDir, `sipenafs-mobile-${tagName}-armeabi-v7a.apk`);
-        fs.copyFileSync(armeabiApk, destV7a);
-        assetsToUpload.push({ path: destV7a, name: `sipenafs-mobile-${tagName}-armeabi-v7a.apk` });
     }
 
-    // 3. File APK Utama / Universal (Prioritas 3: Kompatibel semua HP)
+    // 3. File APK Universal / Utama (Kompatibel semua perangkat)
     const primarySrc = fs.existsSync(universalApk) ? universalApk : (fs.existsSync(arm64Apk) ? arm64Apk : (fs.existsSync(releaseApk) ? releaseApk : null));
     if (primarySrc) {
         const destStaticMain = path.join(releaseDir, 'sipenafs-mobile.apk');
         fs.copyFileSync(primarySrc, destStaticMain);
         assetsToUpload.push({ path: destStaticMain, name: 'sipenafs-mobile.apk' });
-
-        const dest = path.join(releaseDir, `sipenafs-mobile-${tagName}.apk`);
-        fs.copyFileSync(primarySrc, dest);
-        assetsToUpload.push({ path: dest, name: `sipenafs-mobile-${tagName}.apk` });
-    }
-
-    if (fs.existsSync(universalApk)) {
-        const destStaticUniversal = path.join(releaseDir, 'sipenafs-mobile-universal.apk');
-        fs.copyFileSync(universalApk, destStaticUniversal);
-        assetsToUpload.push({ path: destStaticUniversal, name: 'sipenafs-mobile-universal.apk' });
-
-        const destUniversal = path.join(releaseDir, `sipenafs-mobile-${tagName}-universal.apk`);
-        fs.copyFileSync(universalApk, destUniversal);
-        assetsToUpload.push({ path: destUniversal, name: `sipenafs-mobile-${tagName}-universal.apk` });
     }
 
     if (assetsToUpload.length === 0) {

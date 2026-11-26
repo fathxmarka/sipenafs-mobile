@@ -66,6 +66,7 @@ export default function HomeScreen() {
   const [noticeModule, setNoticeModule] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [todaySchedules, setTodaySchedules] = useState<any[]>([]);
+  const [studentPendingTasks, setStudentPendingTasks] = useState<any[]>([]);
   const [apiUrl, setApiUrl] = useState<string>('');
   const [imgError, setImgError] = useState(false);
   const [selectedExecDetail, setSelectedExecDetail] = useState<any>(null);
@@ -237,15 +238,20 @@ export default function HomeScreen() {
           }
         } else if (roleStr.includes('siswa') || roleStr.includes('student')) {
           try {
-            const [resAtt, resMe] = await Promise.allSettled([
+            const [resAtt, resMe, resSched, resAssign] = await Promise.allSettled([
               axios.get(`${apiUrl}/api/student-attendance/status`, { headers }),
               axios.get(`${apiUrl}/api/students/me`, { headers }),
+              axios.get(`${apiUrl}/api/schedules`, { headers }),
+              axios.get(`${apiUrl}/api/lms/student/assignments`, { headers }),
             ]);
+
+            let resolvedClassId: string | null = userObj?.class_id ? String(userObj.class_id) : null;
 
             if (resAtt.status === 'fulfilled' && resAtt.value.data?.success) {
               const attData = resAtt.value.data;
               setStudentAttStatus(attData.data || null);
               setIsStudentPjj(Boolean(attData.is_pjj));
+              if (attData.class_id) resolvedClassId = String(attData.class_id);
               if (attData.class_name) {
                 setStudentClassName(attData.class_name);
                 setUserData((prev: any) => prev ? ({ ...prev, class_name: attData.class_name }) : prev);
@@ -257,6 +263,8 @@ export default function HomeScreen() {
               const studentData = resMe.value.data.data || resMe.value.data;
               const hasFace = Boolean(studentData?.face_descriptor || studentData?.has_face_id);
               setIsFaceRegistered(hasFace);
+              const freshClassId = studentData.class_id || studentData.class?.id || studentData.enrollments?.[0]?.class_id;
+              if (freshClassId) resolvedClassId = String(freshClassId);
               const freshClass = studentData.class_name || 
                                  studentData.class?.name || 
                                  (studentData.enrollments && studentData.enrollments[0]?.class?.name);
@@ -269,6 +277,7 @@ export default function HomeScreen() {
                   ...safeStudent,
                   has_face_id: hasFace,
                   nisn: safeStudent.nisn || prev?.nisn || prev?.username,
+                  class_id: freshClassId || prev?.class_id,
                   class_name: freshClass || prev?.class_name,
                 };
                 SecureStore.setItemAsync('sipena_user', JSON.stringify(updated)).catch(() => {});
@@ -287,6 +296,28 @@ export default function HomeScreen() {
                 );
               }
               return;
+            }
+
+            if (resSched.status === 'fulfilled' && Array.isArray(resSched.value.data?.data)) {
+              const allSched = resSched.value.data.data;
+              const classSched = resolvedClassId
+                ? allSched.filter((s: any) => String(s.class_id) === String(resolvedClassId))
+                : allSched;
+              const jsDay = new Date().getDay();
+              const todayDow = jsDay === 0 ? 7 : jsDay;
+              const todayFiltered = classSched
+                .filter((s: any) => Number(s.day_of_week) === todayDow)
+                .sort((a: any, b: any) => String(a.start_time || '').localeCompare(String(b.start_time || '')));
+              setTodaySchedules(todayFiltered.slice(0, 3));
+            } else {
+              setTodaySchedules([]);
+            }
+
+            if (resAssign.status === 'fulfilled' && Array.isArray(resAssign.value.data?.data)) {
+              const pending = resAssign.value.data.data.filter((a: any) => a.myStatus !== 'submitted' && a.is_active !== false);
+              setStudentPendingTasks(pending.slice(0, 3));
+            } else {
+              setStudentPendingTasks([]);
             }
           } catch (e: any) {
             console.warn('Fetch student attendance error:', e.message);
@@ -1153,27 +1184,31 @@ export default function HomeScreen() {
             {/* Jadwal Pelajaran Hari Ini */}
             <View style={styles.cardSection}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Pelajaran Hari Ini (Senin)</Text>
+                <Text style={styles.sectionTitle}>Pelajaran Hari Ini</Text>
                 <TouchableOpacity onPress={() => router.push('/(tabs)/akademik' as any)}>
                   <Text style={styles.seeAllText}>Semua Hari {'>'}</Text>
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.scheduleItemStudent}>
-                <Text style={styles.schedTimeStudent}>07:30 - 09:00</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.schedSubjStudent}>Matematika Peminatan</Text>
-                  <Text style={styles.schedTeachStudent}>Bambang Kusuma, S.Pd • R.12-A</Text>
+              {todaySchedules.length === 0 ? (
+                <View style={{ paddingVertical: 14, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 12, color: '#94A3B8' }}>Belum ada jadwal pelajaran hari ini</Text>
                 </View>
-              </View>
-
-              <View style={styles.scheduleItemStudent}>
-                <Text style={styles.schedTimeStudent}>09:15 - 10:45</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.schedSubjStudent}>Fisika Terapan</Text>
-                  <Text style={styles.schedTeachStudent}>Dr. Hendra Gunawan • Lab Fisika</Text>
-                </View>
-              </View>
+              ) : (
+                todaySchedules.map((sched: any, idx: number) => (
+                  <View key={sched.id || idx} style={styles.scheduleItemStudent}>
+                    <Text style={styles.schedTimeStudent}>
+                      {(sched.start_time || '').slice(0, 5)} - {(sched.end_time || '').slice(0, 5)}
+                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.schedSubjStudent}>{sched.subject?.name || 'Mata Pelajaran'}</Text>
+                      <Text style={styles.schedTeachStudent}>
+                        {sched.teacher?.name || 'Guru Pengampu'}{sched.room ? ` • ${sched.room}` : ''}
+                      </Text>
+                    </View>
+                  </View>
+                ))
+              )}
             </View>
 
             {/* Tugas Mendatang */}
@@ -1185,18 +1220,28 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.taskAlertCard}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.taskAlertTitle}>Analisis Gelombang Elektromagnetik</Text>
-                  <Text style={styles.taskAlertMeta}>Fisika Peminatan • Batas: Besok 23:59 WIB</Text>
+              {studentPendingTasks.length === 0 ? (
+                <View style={{ paddingVertical: 14, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 12, color: '#94A3B8' }}>Tidak ada tugas aktif saat ini</Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.submitTaskQuickBtn}
-                  onPress={() => router.push('/modules/elearning' as any)}
-                >
-                  <Text style={styles.submitTaskQuickText}>Kirim</Text>
-                </TouchableOpacity>
-              </View>
+              ) : (
+                studentPendingTasks.map((task: any, idx: number) => (
+                  <View key={task.id || idx} style={styles.taskAlertCard}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.taskAlertTitle} numberOfLines={1}>{task.title}</Text>
+                      <Text style={styles.taskAlertMeta} numberOfLines={1}>
+                        {task.subject?.name || task.subject_name || 'Mata Pelajaran'} • Batas: {task.deadline_formatted || task.deadline || 'Lihat LMS'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.submitTaskQuickBtn}
+                      onPress={() => router.push('/modules/elearning' as any)}
+                    >
+                      <Text style={styles.submitTaskQuickText}>Buka</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
             </View>
           </View>
         )}

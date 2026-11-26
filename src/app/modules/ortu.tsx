@@ -88,21 +88,21 @@ export default function OrtuModuleScreen() {
 
   // State data
   const [child, setChild] = useState<ChildProfile>({
-    id: '1',
-    name: 'Ahmad Fauzan',
-    nisn: '0087654321',
-    nis: '222301045',
-    className: 'XII MIPA 1 (Sains & Teknologi)',
+    id: '',
+    name: 'Memuat...',
+    nisn: '-',
+    nis: '-',
+    className: '-',
     homeroomTeacher: {
-      name: 'Drs. Supriyanto, M.Pd',
-      phone: '081234567890',
-      nip: '197508122005011003',
+      name: '-',
+      phone: '',
+      nip: '-',
     },
     attendanceSummary: {
-      hadir: 42,
-      terlambat: 2,
-      sakit: 1,
-      izin: 1,
+      hadir: 0,
+      terlambat: 0,
+      sakit: 0,
+      izin: 0,
       alpa: 0,
     },
   });
@@ -191,39 +191,6 @@ export default function OrtuModuleScreen() {
           }
         } catch (_) {}
       }
-
-      // Default structured data
-      const defaultLogs: AttendanceLog[] = [
-        { id: '1', date: '30 Sep 2026', time: '06:42 WIB', status: 'Hadir' },
-        { id: '2', date: '29 Sep 2026', time: '06:45 WIB', status: 'Hadir' },
-        { id: '3', date: '28 Sep 2026', time: '07:05 WIB', status: 'Terlambat' },
-        { id: '4', date: '25 Sep 2026', time: '06:38 WIB', status: 'Hadir' },
-        { id: '5', date: '24 Sep 2026', time: '-', status: 'Izin' },
-        { id: '6', date: '23 Sep 2026', time: '06:40 WIB', status: 'Hadir' },
-      ];
-      setAttendanceLogs(prev => (prev.length > 0 ? prev : defaultLogs));
-
-      const defaultScores: SubjectScore[] = [
-        { id: 's1', subjectName: 'Matematika Peminatan', tugas: 88, uts: 85, uas: 90, average: 88, grade: 'A' },
-        { id: 's2', subjectName: 'Fisika Terapan', tugas: 82, uts: 80, uas: 84, average: 82, grade: 'B+' },
-        { id: 's3', subjectName: 'Bahasa Indonesia', tugas: 90, uts: 88, uas: 92, average: 90, grade: 'A' },
-        { id: 's4', subjectName: 'Bahasa Inggris', tugas: 85, uts: 86, uas: 87, average: 86, grade: 'A' },
-        { id: 's5', subjectName: 'Kimia Mandiri', tugas: 78, uts: 80, uas: 82, average: 80, grade: 'B' },
-      ];
-      setSubjectScores(prev => (prev.length > 0 ? prev : defaultScores));
-
-      const defaultLeaves: LeaveRequestItem[] = [
-        {
-          id: 'l1',
-          type: 'Izin',
-          startDate: '24 Sep 2026',
-          endDate: '24 Sep 2026',
-          reason: 'Menghadiri acara keluarga di luar kota',
-          status: 'Disetujui',
-          approver: 'Drs. Supriyanto, M.Pd',
-        },
-      ];
-      setLeaveRequests(defaultLeaves);
 
     } catch (e: any) {
       console.warn('Parent portal fetch error:', e.message);

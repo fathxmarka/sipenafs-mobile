@@ -143,12 +143,12 @@ export default function AkademikScreen() {
               startTime: s.start_time ? s.start_time.slice(0, 5) : '07:15',
               endTime: s.end_time ? s.end_time.slice(0, 5) : '08:45',
               roomName: s.room || 'R-01',
-              className: s.class?.name || 'XII MIPA 1',
+              className: s.class?.name || '-',
               classId: s.class_id ? String(s.class_id) : undefined,
               teacherId: s.teacher_id ? String(s.teacher_id) : undefined,
             }));
 
-            // Filter for student / parent class if applicable
+            // Filter strict sesuai kelas siswa / jadwal guru dari master data
             let filteredSchedules = apiSched;
             if (storedUser) {
               const u = JSON.parse(storedUser);
@@ -159,28 +159,30 @@ export default function AkademikScreen() {
               if ((r.includes('siswa') || r.includes('student')) && !sClassId) {
                 try {
                   const resMe = await axios.get(`${apiUrl}/api/students/me`, { headers });
-                  if (resMe.data?.enrollments?.[0]) {
-                    sClassId = String(resMe.data.enrollments[0].class_id);
-                    sClassName = resMe.data.enrollments[0].class?.name || null;
+                  const meData = resMe.data?.data || resMe.data;
+                  const enr = meData?.enrollments?.[0];
+                  if (enr?.class_id) {
+                    sClassId = String(enr.class_id);
+                    sClassName = enr.class?.name || null;
+                  } else if (meData?.class_id) {
+                    sClassId = String(meData.class_id);
+                    sClassName = meData.class_name || meData.class?.name || null;
                   }
                 } catch (_) {}
               }
 
               if (sClassId) {
-                const matched = apiSched.filter((sc: any) => String(sc.classId) === String(sClassId));
-                if (matched.length > 0) filteredSchedules = matched;
+                filteredSchedules = apiSched.filter((sc: any) => String(sc.classId) === String(sClassId));
               } else if (sClassName) {
-                const matched = apiSched.filter((sc: any) => (sc.className || '').toLowerCase() === sClassName?.toLowerCase());
-                if (matched.length > 0) filteredSchedules = matched;
+                filteredSchedules = apiSched.filter((sc: any) => (sc.className || '').toLowerCase() === sClassName?.toLowerCase());
               } else if (u.teacher_id) {
-                const matched = apiSched.filter((sc: any) => String(sc.teacherId) === String(u.teacher_id));
-                if (matched.length > 0) filteredSchedules = matched;
+                filteredSchedules = apiSched.filter((sc: any) => String(sc.teacherId) === String(u.teacher_id));
               }
             }
 
-            if (filteredSchedules.length > 0) {
-              setSchedules(filteredSchedules);
-            }
+            setSchedules(filteredSchedules);
+          } else {
+            setSchedules([]);
           }
 
           if (resSubj.status === 'fulfilled' && resSubj.value.data?.data) {
@@ -189,10 +191,12 @@ export default function AkademikScreen() {
               name: sb.name || 'Mata Pelajaran',
               category: sb.group || 'Umum',
               teacherName: sb.teacher?.name || 'Guru Bidang Studi',
-              hoursPerWeek: Number(sb.hours || 3),
+              hoursPerWeek: Number(sb.hours_per_week || sb.hours || 2),
               kkm: Number(sb.kkm || 75),
             }));
             setSubjects(apiSubj);
+          } else {
+            setSubjects([]);
           }
 
           if (resCal.status === 'fulfilled' && resCal.value.data) {
@@ -211,45 +215,6 @@ export default function AkademikScreen() {
           }
         } catch (_) {}
       }
-
-      // Default structured data covering all 6 days
-      const defaultSchedules: ScheduleItem[] = [
-        // Senin
-        { id: '1', day: 'Senin', subjectName: 'Upacara Bendera', teacherName: 'Semua Civitas & Pembina', startTime: '06:45', endTime: '07:30', roomName: 'Lapangan Utama', className: 'Seluruh Siswa' },
-        { id: '2', day: 'Senin', subjectName: 'Matematika Peminatan', teacherName: 'Bambang Kusuma, S.Pd', startTime: '07:30', endTime: '09:00', roomName: 'Ruang 12-A', className: 'XII MIPA 1' },
-        { id: '3', day: 'Senin', subjectName: 'Fisika Terapan', teacherName: 'Dr. Hendra Gunawan, M.Si', startTime: '09:15', endTime: '10:45', roomName: 'Lab Fisika', className: 'XII MIPA 1' },
-        { id: '4', day: 'Senin', subjectName: 'Bahasa Indonesia', teacherName: 'Ibu Ratna Dewi, M.Pd', startTime: '11:00', endTime: '12:30', roomName: 'Ruang 12-A', className: 'XII MIPA 1' },
-        // Selasa
-        { id: '5', day: 'Selasa', subjectName: 'Kimia Larutan', teacherName: 'Siti Nurhaliza, S.Si', startTime: '07:15', endTime: '08:45', roomName: 'Lab Kimia', className: 'XII MIPA 1' },
-        { id: '6', day: 'Selasa', subjectName: 'Bahasa Inggris', teacherName: 'Ahmad Zakaria, M.Hum', startTime: '09:00', endTime: '10:30', roomName: 'Ruang 12-A', className: 'XII MIPA 1' },
-        { id: '7', day: 'Selasa', subjectName: 'Sejarah Indonesia', teacherName: 'Dra. Sri Wahyuni', startTime: '10:45', endTime: '12:15', roomName: 'Ruang 12-A', className: 'XII MIPA 1' },
-        // Rabu
-        { id: '8', day: 'Rabu', subjectName: 'Informatika & Pemrograman', teacherName: 'Arya Wibowo, S.Kom', startTime: '07:15', endTime: '09:30', roomName: 'Lab Komputer 1', className: 'XII MIPA 1' },
-        { id: '9', day: 'Rabu', subjectName: 'Biologi Terapan', teacherName: 'Nurul Hidayah, M.Pd', startTime: '09:45', endTime: '11:15', roomName: 'Lab Biologi', className: 'XII MIPA 1' },
-        { id: '10', day: 'Rabu', subjectName: 'Seni Budaya & Keterampilan', teacherName: 'Bayu Pratama, S.Sn', startTime: '11:30', endTime: '13:00', roomName: 'Ruang Seni', className: 'XII MIPA 1' },
-        // Kamis
-        { id: '11', day: 'Kamis', subjectName: 'Pendidikan Agama & Budi Pekerti', teacherName: 'Ustadz H. Mansyur, Lc', startTime: '07:15', endTime: '08:45', roomName: 'Ruang 12-A', className: 'XII MIPA 1' },
-        { id: '12', day: 'Kamis', subjectName: 'PPKn & Kewarganegaraan', teacherName: 'Drs. H. Mulyono', startTime: '09:00', endTime: '10:30', roomName: 'Ruang 12-A', className: 'XII MIPA 1' },
-        { id: '13', day: 'Kamis', subjectName: 'Kewirausahaan & Prakarya', teacherName: 'Dewi Lestari, S.E.', startTime: '10:45', endTime: '12:15', roomName: 'Ruang 12-A', className: 'XII MIPA 1' },
-        // Jumat
-        { id: '14', day: 'Jumat', subjectName: 'Pendidikan Jasmani & Olahraga', teacherName: 'Coach Yulianto, S.Pd', startTime: '06:45', endTime: '08:15', roomName: 'Gedung Olahraga', className: 'XII MIPA 1' },
-        { id: '15', day: 'Jumat', subjectName: 'Bimbingan Konseling (BK)', teacherName: 'Dra. Rahmawati', startTime: '08:30', endTime: '09:30', roomName: 'Ruang 12-A', className: 'XII MIPA 1' },
-        { id: '16', day: 'Jumat', subjectName: 'Kajian Rohis & Shalat Jumat', teacherName: 'Tim Kesiswaan & Rohis', startTime: '11:30', endTime: '13:00', roomName: 'Masjid Sekolah', className: 'Seluruh Siswa' },
-        // Sabtu
-        { id: '17', day: 'Sabtu', subjectName: 'Pramuka Wajib', teacherName: 'Kakak Pembina Gugus Depan', startTime: '07:30', endTime: '09:30', roomName: 'Lapangan Utama', className: 'XII MIPA 1' },
-        { id: '18', day: 'Sabtu', subjectName: 'Proyek Penguatan Profil Pelajar Pancasila (P5)', teacherName: 'Fasilitator P5', startTime: '09:45', endTime: '12:00', roomName: 'Aula Sekolah', className: 'XII MIPA 1' },
-      ];
-      setSchedules(prev => (prev.length > 0 ? prev : defaultSchedules));
-
-      const defaultSubjects: SubjectItem[] = [
-        { id: 'sb1', name: 'Matematika Peminatan', category: 'Kelompok Peminatan Sains', teacherName: 'Bambang Kusuma, S.Pd', hoursPerWeek: 4, kkm: 75 },
-        { id: 'sb2', name: 'Fisika Terapan & Lab', category: 'Kelompok Peminatan Sains', teacherName: 'Dr. Hendra Gunawan, M.Si', hoursPerWeek: 4, kkm: 75 },
-        { id: 'sb3', name: 'Kimia Organik & Larutan', category: 'Kelompok Peminatan Sains', teacherName: 'Siti Nurhaliza, S.Si', hoursPerWeek: 4, kkm: 75 },
-        { id: 'sb4', name: 'Bahasa Indonesia', category: 'Mata Pelajaran Wajib', teacherName: 'Ibu Ratna Dewi, M.Pd', hoursPerWeek: 3, kkm: 78 },
-        { id: 'sb5', name: 'Bahasa Inggris', category: 'Mata Pelajaran Wajib', teacherName: 'Ahmad Zakaria, M.Hum', hoursPerWeek: 3, kkm: 78 },
-        { id: 'sb6', name: 'Informatika & Multimedia', category: 'Mata Pelajaran Pilihan', teacherName: 'Arya Wibowo, S.Kom', hoursPerWeek: 3, kkm: 75 },
-      ];
-      setSubjects(prev => (prev.length > 0 ? prev : defaultSubjects));
 
     } catch (e: any) {
       console.warn('Academic fetch error:', e.message);

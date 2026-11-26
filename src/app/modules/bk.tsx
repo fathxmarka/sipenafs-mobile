@@ -285,123 +285,12 @@ export default function BkModuleScreen() {
         } catch (_) {}
       }
 
-      // Default structured BK data jika belum dari API
+      // Kosongkan bersih jika server belum memiliki catatan BK (tidak menampilkan kelas dummy)
       if (!hasLoadedFromApi) {
-        if (isStudent || isParent) {
-          // Bagi siswa: catatan bersih (0 pelanggaran)
-          setViolations([]);
-          setDeductions([]);
-          setAchievements([
-            {
-              id: 'ac1',
-              studentName: isParent ? (u?.student_name || 'Putra/Putri') : (u?.name || 'Saya'),
-              className: u?.kelas || u?.student_class || 'XII',
-              title: 'Siswa Teladan - Kehadiran Disiplin & Bebas Pelanggaran',
-              level: 'Tingkat Sekolah',
-              points: 25,
-              date: 'Semester Aktif',
-            },
-          ]);
-          setCounselingLogs([
-            {
-              id: 'cl1',
-              studentName: isParent ? (u?.student_name || 'Putra/Putri') : (u?.name || 'Saya'),
-              className: u?.kelas || u?.student_class || 'XII',
-              counselorName: 'Guru Pembimbing BK',
-              topic: 'Pengembangan Minat & Potensi Belajar',
-              actionTaken: 'Pendampingan positif dan penguatan motivasi akademik.',
-              date: 'Tersedia',
-              status: 'Selesai',
-            },
-          ]);
-        } else {
-          // Admin / Guru BK / Wali Kelas view
-          const defaultViolations: ViolationItem[] = [
-            {
-              id: 'v1',
-              studentName: 'Rendy Pratama',
-              className: 'XI IPS 2',
-              category: 'Keterlambatan',
-              description: 'Terlambat masuk sekolah lebih dari 3 kali berturut-turut.',
-              points: 15,
-              date: '28 Sep 2026',
-              sanction: 'Bina karakter & piket perpustakaan',
-              status: 'Diproses',
-            },
-            {
-              id: 'v2',
-              studentName: 'Dimas Anggara',
-              className: 'X-3',
-              category: 'Atribut Seragam',
-              description: 'Tidak memakai dasi dan ikat pinggang resmi sekolah saat upacara.',
-              points: 5,
-              date: '23 Sep 2026',
-              sanction: 'Peringatan lisan & teguran tertulis',
-              status: 'Selesai',
-            },
-          ];
-          setViolations(defaultViolations);
-
-          const defaultDeductions: PointDeductionItem[] = [
-            {
-              id: 'pd1',
-              studentName: 'Rendy Pratama',
-              className: 'XI IPS 2',
-              deductionPoints: 5,
-              actionType: 'Piket Perpustakaan & Resume Buku Disiplin',
-              notes: 'Tugas edukatif kompensasi keterlambatan diselesaikan',
-              date: '30 Sep 2026',
-              teacherName: 'Dra. Endang Sulastri (Guru BK)',
-            }
-          ];
-          setDeductions(defaultDeductions);
-
-          const defaultAchievements: AchievementItem[] = [
-            {
-              id: 'ac1',
-              studentName: 'Ahmad Fauzan',
-              className: 'XII MIPA 1',
-              title: 'Juara 1 Olimpiade Sains Nasional (OSN) Fisika',
-              level: 'Tingkat Provinsi',
-              points: 50,
-              date: '25 Sep 2026',
-            },
-            {
-              id: 'ac2',
-              studentName: 'Siti Nur Aini',
-              className: 'XI MIPA 3',
-              title: 'Juara 2 Lomba Debat Bahasa Inggris Nasional',
-              level: 'Tingkat Nasional',
-              points: 40,
-              date: '20 Sep 2026',
-            },
-          ];
-          setAchievements(defaultAchievements);
-
-          const defaultLogs: CounselingLog[] = [
-            {
-              id: 'cl1',
-              studentName: 'Ahmad Fauzan',
-              className: 'XII MIPA 1',
-              counselorName: 'Dra. Endang Sulastri (Guru BK)',
-              topic: 'Konsultasi Pemilihan Jurusan & Kampus SNBP / UTBK',
-              actionTaken: 'Analisis nilai rapor semester 1-5 dan rekomendasi program studi prioritas.',
-              date: '29 Sep 2026',
-              status: 'Selesai',
-            },
-            {
-              id: 'cl2',
-              studentName: 'Bima Sakti',
-              className: 'X-1',
-              counselorName: 'Ibu Rahmi, S.Pd',
-              topic: 'Adaptasi Lingkungan Baru & Manajemen Waktu',
-              actionTaken: 'Pembuatan jadwal belajar mandiri mingguan.',
-              date: '02 Okt 2026',
-              status: 'Terjadwal',
-            },
-          ];
-          setCounselingLogs(defaultLogs);
-        }
+        setViolations([]);
+        setDeductions([]);
+        setAchievements([]);
+        setCounselingLogs([]);
       }
 
     } catch (e: any) {

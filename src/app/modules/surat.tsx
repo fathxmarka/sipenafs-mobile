@@ -148,27 +148,7 @@ export default function SuratModuleScreen() {
       ];
       setOutgoingLetters(prev => (prev.length > 0 ? prev : defaultOutgoing));
 
-      const defaultRequests: StudentLetterRequest[] = [
-        {
-          id: 'req1',
-          requestType: 'Surat Keterangan Aktif Siswa',
-          studentName: 'Ahmad Fauzan',
-          className: 'XII MIPA 1',
-          purpose: 'Kelengkapan administrasi beasiswa Pemda',
-          requestDate: '27 Sep 2026',
-          status: 'Selesai Dicetak',
-        },
-        {
-          id: 'req2',
-          requestType: 'Surat Rekomendasi Lomba',
-          studentName: 'Ahmad Fauzan',
-          className: 'XII MIPA 1',
-          purpose: 'Syarat delegasi Olimpiade Fisika Nasional',
-          requestDate: '15 Sep 2026',
-          status: 'Selesai Dicetak',
-        },
-      ];
-      setStudentRequests(defaultRequests);
+      setStudentRequests(prev => prev);
 
     } catch (e: any) {
       console.warn('Surat load error:', e.message);
@@ -192,11 +172,13 @@ export default function SuratModuleScreen() {
     try {
       await new Promise(r => setTimeout(r, 600));
 
+      const storedUser = await SecureStore.getItemAsync('sipena_user');
+      const u = storedUser ? JSON.parse(storedUser) : null;
       const newReq: StudentLetterRequest = {
         id: `req-${Date.now()}`,
         requestType: selectedLetterType,
-        studentName: 'Ahmad Fauzan',
-        className: 'XII MIPA 1',
+        studentName: u?.name || u?.student_name || 'Siswa',
+        className: u?.class_name || u?.kelas || '-',
         purpose: requestPurpose,
         requestDate: 'Hari ini',
         status: 'Menunggu TU',

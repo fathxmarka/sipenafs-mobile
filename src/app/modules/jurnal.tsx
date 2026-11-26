@@ -132,25 +132,6 @@ const DEFAULT_SYLLABUSES: Record<number, SyllabusItem[]> = {
   ]
 };
 
-const INITIAL_STUDENTS_MIPA1: StudentItem[] = [
-  { id: '1', name: 'Ahmad Fauzan Pratama', nis: '10291', gender: 'L', status: 'H' },
-  { id: '2', name: 'Aisyah Putri Rahmawati', nis: '10292', gender: 'P', status: 'H' },
-  { id: '3', name: 'Budi Santoso', nis: '10293', gender: 'L', status: 'H' },
-  { id: '4', name: 'Citra Dewi Lestari', nis: '10294', gender: 'P', status: 'H' },
-  { id: '5', name: 'Daffa Raihan Alfarizi', nis: '10295', gender: 'L', status: 'H' },
-  { id: '6', name: 'Dinda Ayu Maharani', nis: '10296', gender: 'P', status: 'H' },
-  { id: '7', name: 'Fajar Nugraha', nis: '10297', gender: 'L', status: 'H' },
-  { id: '8', name: 'Gita Permata Sari', nis: '10298', gender: 'P', status: 'H' },
-  { id: '9', name: 'Hafiz Danendra', nis: '10299', gender: 'L', status: 'H' },
-  { id: '10', name: 'Indah Puspitasari', nis: '10300', gender: 'P', status: 'H' },
-  { id: '11', name: 'Kevin Kurniawan', nis: '10301', gender: 'L', status: 'H' },
-  { id: '12', name: 'Larasati Kirana', nis: '10302', gender: 'P', status: 'H' },
-  { id: '13', name: 'Muhammad Aditya', nis: '10303', gender: 'L', status: 'H' },
-  { id: '14', name: 'Nabila Azzahra', nis: '10304', gender: 'P', status: 'H' },
-  { id: '15', name: 'Raditya Arya Putra', nis: '10305', gender: 'L', status: 'H' },
-  { id: '16', name: 'Siti Rahmawati', nis: '10306', gender: 'P', status: 'H' },
-];
-
 export default function JurnalMengajarScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -163,39 +144,14 @@ export default function JurnalMengajarScreen() {
   }>();
 
   // User & School Policy State
-  const [userName, setUserName] = useState('Indra Mulyana');
-  const [userNip, setUserNip] = useState('197508122005011003');
+  const [userName, setUserName] = useState('');
+  const [userNip, setUserNip] = useState('');
   const [userRole, setUserRole] = useState('guru');
   const [isFaceJournalEnabled, setIsFaceJournalEnabled] = useState(true);
   const [journalGracePeriod, setJournalGracePeriod] = useState(15);
 
-  // Schedules state (Persis alur KBM SIPENAFS)
-  const [todaySchedules, setTodaySchedules] = useState<ScheduleCardData[]>([
-    {
-      id: 'sched-1',
-      subject: 'Matematika Peminatan',
-      class_name: 'Kelas XII MIPA 1',
-      time: '07:30 - 09:00 WIB',
-      room: 'Ruang 12-A',
-      total_students: 36,
-      class_id: 1,
-      subject_id: 101,
-      status: 'BELUM',
-      is_filled: false,
-    },
-    {
-      id: 'sched-2',
-      subject: 'Fisika Terapan & Gelombang',
-      class_name: 'Kelas XII MIPA 2',
-      time: '09:15 - 10:45 WIB',
-      room: 'Lab Fisika',
-      total_students: 34,
-      class_id: 2,
-      subject_id: 102,
-      status: 'BELUM',
-      is_filled: false,
-    }
-  ]);
+  // Schedules state (Diisi otomatis dari API Master Jadwal)
+  const [todaySchedules, setTodaySchedules] = useState<ScheduleCardData[]>([]);
 
   // Face Camera Verification Modal (100% Hands-Free Auto-Detect)
   const [isFaceModalOpen, setIsFaceModalOpen] = useState(false);
@@ -224,7 +180,7 @@ export default function JurnalMengajarScreen() {
   const [description, setDescription] = useState('');
   const [selectedMethod, setSelectedMethod] = useState('Diskusi Kelompok');
   const [selectedMedia, setSelectedMedia] = useState('Papan Tulis & Spidol');
-  const [students, setStudents] = useState<StudentItem[]>(INITIAL_STUDENTS_MIPA1);
+  const [students, setStudents] = useState<StudentItem[]>([]);
   const [searchStudent, setSearchStudent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -234,21 +190,7 @@ export default function JurnalMengajarScreen() {
   const [isLoadingSyllabuses, setIsLoadingSyllabuses] = useState(false);
 
   // Journal history
-  const [historyJournals, setHistoryJournals] = useState<any[]>([
-    {
-      id: 'hist-1',
-      date: 'Selasa, 29 Sep 2026',
-      subject: 'Matematika Peminatan',
-      class_name: 'Kelas XI MIPA 3',
-      time: '10:00 - 11:30 WIB',
-      topic: 'Trigonometri: Rumus Jumlah & Selisih Dua Sudut',
-      hadir: 36,
-      sakit: 0,
-      izin: 0,
-      alpa: 0,
-      status: 'SELESAI'
-    }
-  ]);
+  const [historyJournals, setHistoryJournals] = useState<any[]>([]);
 
   // Toast
   const [toast, setToast] = useState<{ visible: boolean; message: string; type: ToastType }>({
@@ -356,20 +298,65 @@ export default function JurnalMengajarScreen() {
         if (u.role) setUserRole(u.role);
       }
 
-      // Fetch School Face Policy from Backend
+      // Fetch School Face Policy + Master Schedules & Journals from Backend
       if (apiUrl && token && !token.startsWith('demo-')) {
+        const headers = { Authorization: `Bearer ${token}` };
+        const parsedU = storedUser ? JSON.parse(storedUser) : null;
         try {
-          const resSchool = await axios.get(`${apiUrl}/api/school`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (resSchool.data && resSchool.data.data) {
-            const sc = resSchool.data.data;
+          const [resSchool, resSched, resJourn] = await Promise.allSettled([
+            axios.get(`${apiUrl}/api/school`, { headers }),
+            axios.get(`${apiUrl}/api/schedules`, { headers }),
+            axios.get(`${apiUrl}/api/journals`, { headers }),
+          ]);
+
+          if (resSchool.status === 'fulfilled' && resSchool.value.data?.data) {
+            const sc = resSchool.value.data.data;
             if (sc.is_face_journal !== undefined) {
               setIsFaceJournalEnabled(Boolean(sc.is_face_journal));
             }
             if (sc.journal_grace_period !== undefined) {
               setJournalGracePeriod(Number(sc.journal_grace_period));
             }
+          }
+
+          if (resSched.status === 'fulfilled' && Array.isArray(resSched.value.data?.data)) {
+            const jsDay = new Date().getDay();
+            const todayDow = jsDay === 0 ? 7 : jsDay;
+            let schedList = resSched.value.data.data;
+            if (parsedU?.teacher_id) {
+              schedList = schedList.filter((s: any) => String(s.teacher_id) === String(parsedU.teacher_id));
+            }
+            const todayList = schedList
+              .filter((s: any) => Number(s.day_of_week) === todayDow)
+              .map((s: any) => ({
+                id: String(s.id),
+                subject: s.subject?.name || 'Mata Pelajaran',
+                class_name: s.class?.name ? `Kelas ${s.class.name}` : '-',
+                time: `${String(s.start_time || '').slice(0, 5)} - ${String(s.end_time || '').slice(0, 5)} WIB`,
+                room: s.room || '-',
+                total_students: s.class?._count?.enrollments || 0,
+                class_id: Number(s.class_id),
+                subject_id: Number(s.subject_id),
+                status: 'BELUM' as const,
+                is_filled: false,
+              }));
+            setTodaySchedules(todayList);
+          }
+
+          if (resJourn.status === 'fulfilled' && Array.isArray(resJourn.value.data?.data)) {
+            setHistoryJournals(resJourn.value.data.data.slice(0, 20).map((j: any) => ({
+              id: String(j.id),
+              date: j.date ? new Date(j.date).toLocaleDateString('id-ID') : '-',
+              subject: j.subject?.name || 'Mata Pelajaran',
+              class_name: j.class?.name ? `Kelas ${j.class.name}` : '-',
+              time: `${String(j.start_time || '').slice(0, 5)} - ${String(j.end_time || '').slice(0, 5)} WIB`,
+              topic: j.topic || '-',
+              hadir: Number(j.present_count || 0),
+              sakit: Number(j.sick_count || 0),
+              izin: Number(j.permission_count || 0),
+              alpa: Number(j.alpha_count || 0),
+              status: 'SELESAI',
+            })));
           }
         } catch (_) {}
       }
