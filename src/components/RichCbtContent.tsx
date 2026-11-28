@@ -200,8 +200,9 @@ export default function RichCbtContent({
             isRtl && {
               writingDirection: 'rtl',
               textAlign: 'right',
-              fontSize: Math.max(fontSize + 2, 16),
-              lineHeight: Math.max((fontSize + 2) * 1.85, 30),
+              fontSize: Math.max(fontSize + 3, 18),
+              lineHeight: Math.max((fontSize + 3) * 2.0, 36),
+              includeFontPadding: true,
             },
             isCjk && !isRtl && {
               fontSize: Math.max(fontSize + 1, 15),

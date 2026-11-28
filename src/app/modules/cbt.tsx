@@ -353,6 +353,7 @@ export default function CbtScreen() {
   const [isNavDrawerOpen, setIsNavDrawerOpen] = useState(false);
   const [zoomImageUrl, setZoomImageUrl] = useState<string | null>(null);
   const essaySelectionRef = useRef<{ start: number; end: number } | null>(null);
+  const lastEssayQuestionIdRef = useRef<string | null>(null);
   const [examResultSummary, setExamResultSummary] = useState<any | null>(null);
 
   // Essay Answer Camera Upload States
@@ -6205,7 +6206,7 @@ Format JSON array murni tanpa pembuka/penutup markdown:
           )}
 
           {/* Question & Content Area */}
-          <ScrollView contentContainerStyle={styles.arenaContentScroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ScrollView contentContainerStyle={styles.arenaContentScroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="always">
             {/* If Current Question has Passage / Soal Cerita */}
             {currentPassage && (
               <View style={styles.passageCard}>
@@ -6351,21 +6352,61 @@ Format JSON array murni tanpa pembuka/penutup markdown:
 
             {/* ESAI: Toolbar Simbol Ilmiah/Arab, Text Input Multibahasa & Camera Capture */}
             {currentQKind === 'ESAI' && (() => {
-              const rawAnsObj: any = studentAnswers[currentQuestion?.id || ''];
+              const currentQId = currentQuestion?.id || '';
+              if (lastEssayQuestionIdRef.current !== currentQId) {
+                lastEssayQuestionIdRef.current = currentQId;
+                essaySelectionRef.current = null;
+              }
+
+              const rawAnsObj: any = studentAnswers[currentQId];
               const essayTextValue: string =
                 typeof rawAnsObj === 'object' && rawAnsObj !== null
                   ? String(rawAnsObj.answer || '')
                   : String(rawAnsObj || '');
-              const isAnsRtl = hasArabicScript(essayTextValue);
+              const isArabicQuestion =
+                hasArabicScript(currentQuestion?.text || '') ||
+                hasArabicScript(currentPassage?.content || '') ||
+                /arab|pai|agama islam|qur'?an|hadits|fiqih|aqidah|akhlak|\bski\b/i.test(
+                  `${activeStudentExam?.subject?.name || ''} ${activeStudentExam?.title || ''}`
+                );
+              const isAnsRtl = hasArabicScript(essayTextValue) || isArabicQuestion;
               const isAnsCjk = hasCjkScript(essayTextValue);
+
+              const ARABIC_HARAKAT_REGEX = /[\u064B-\u065F\u0670\u06D6-\u06ED]/;
+              const ARABIC_VOWEL_ONLY_REGEX = /^[\u064B-\u0650\u0652\u0670]$/;
 
               const handleInsertMobileSymbol = (sym: string) => {
                 if (!currentQuestion) return;
                 const sel = essaySelectionRef.current;
                 const start = sel ? Math.min(sel.start, essayTextValue.length) : essayTextValue.length;
                 const end = sel ? Math.min(sel.end, essayTextValue.length) : essayTextValue.length;
-                const nextText = `${essayTextValue.slice(0, start)}${sym}${essayTextValue.slice(end)}`;
-                const nextCursor = start + sym.length;
+                let before = essayTextValue.slice(0, start);
+                const after = essayTextValue.slice(end);
+                let inserted = sym;
+
+                // Normalisasi urutan Unicode Arab: Tasydid (\u0651) harus berada SEBELUM harakat vokal (\u064B-\u0650, \u0670)
+                // agar posisi fathah/kasrah/dammah tidak saling menumpuk di Android
+                if (inserted === '\u0651' && before.length > 0 && ARABIC_VOWEL_ONLY_REGEX.test(before[before.length - 1])) {
+                  const prevVowel = before[before.length - 1];
+                  before = before.slice(0, -1);
+                  inserted = `\u0651${prevVowel}`;
+                }
+
+                const nextText = `${before}${inserted}${after}`;
+                const nextCursor = before.length + inserted.length;
+                essaySelectionRef.current = { start: nextCursor, end: nextCursor };
+                handleEssayChangeMobile(currentQuestion.id, nextText);
+              };
+
+              const handleStripLastHarakat = () => {
+                if (!currentQuestion || !essayTextValue) return;
+                const sel = essaySelectionRef.current;
+                const pos = sel ? Math.min(sel.start, essayTextValue.length) : essayTextValue.length;
+                if (pos <= 0) return;
+                const prevChar = essayTextValue[pos - 1];
+                if (!ARABIC_HARAKAT_REGEX.test(prevChar)) return;
+                const nextText = `${essayTextValue.slice(0, pos - 1)}${essayTextValue.slice(pos)}`;
+                const nextCursor = Math.max(0, pos - 1);
                 essaySelectionRef.current = { start: nextCursor, end: nextCursor };
                 handleEssayChangeMobile(currentQuestion.id, nextText);
               };
@@ -6394,8 +6435,11 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                 <EssaySymbolToolbar
                   value={essayTextValue}
                   apiUrl={apiUrl}
+                  isArabicContext={isArabicQuestion}
+                  questionKey={currentQId}
                   onInsert={handleInsertMobileSymbol}
                   onBackspace={handleMobileBackspace}
+                  onStripLastHarakat={handleStripLastHarakat}
                 />
 
                 <TextInput
@@ -6403,18 +6447,26 @@ Format JSON array murni tanpa pembuka/penutup markdown:
                     backgroundColor: '#FFFFFF',
                     borderRadius: 12,
                     borderWidth: 1.5,
-                    borderColor: '#CBD5E1',
-                    padding: 14,
-                    fontSize: isAnsRtl ? 18 : 15,
-                    lineHeight: isAnsRtl ? 32 : (isAnsCjk ? 26 : 23),
+                    borderColor: isAnsRtl ? '#6EE7B7' : '#CBD5E1',
+                    paddingHorizontal: 14,
+                    paddingVertical: isAnsRtl ? 16 : 14,
+                    fontSize: isAnsRtl ? 22 : 15,
+                    lineHeight: isAnsRtl ? 42 : (isAnsCjk ? 26 : 23),
                     color: '#0F172A',
-                    minHeight: 135,
+                    minHeight: 140,
                     textAlignVertical: 'top',
                     writingDirection: isAnsRtl ? 'rtl' : 'ltr',
                     textAlign: isAnsRtl ? 'right' : 'left',
+                    includeFontPadding: true,
                   }}
                   multiline
-                  placeholder="Ketikkan uraian jawaban Anda (bisa pakai simbol di atas, keyboard bahasa Arab/Mandarin, atau foto kertas jawaban di bawah)..."
+                  autoCorrect={!isAnsRtl}
+                  spellCheck={!isAnsRtl}
+                  placeholder={
+                    isArabicQuestion
+                      ? 'اكتب إجابتك هنا... (Gunakan panel Harakat & Huruf Arab di atas atau keyboard HP)'
+                      : 'Ketikkan uraian jawaban Anda (bisa pakai simbol di atas, keyboard bahasa Arab/Mandarin, atau foto kertas jawaban di bawah)...'
+                  }
                   placeholderTextColor="#94A3B8"
                   value={essayTextValue}
                   onSelectionChange={(e) => {

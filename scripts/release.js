@@ -67,6 +67,10 @@ Tautan Permanen Versi Terbaru:
 - Khusus 64-Bit: https://github.com/${GITHUB_REPO}/releases/latest/download/sipenafs-mobile-64bit.apk
 
 Apa yang Baru di Versi ${version}:
+• Peningkatan Penulisan Harakat Bahasa Arab di Jawaban Esai CBT Siswa:
+  - Panel khusus Harakat lengkap dengan label jelas (Fathah, Kasrah, Dammah, Fathatain, Kasratain, Dammatain, Sukun, Tasydid, Alif Mad, Maddah) plus tombol cepat Tasydid+Harakat (1-tap), tombol Hapus Harakat, Huruf Hijaiyah, Lafadz اللّٰه, dan Angka Arab (٠-٩).
+  - Otomatis mengaktifkan tab "Arab & Harakat", arah baca RTL, font lebih besar & lega (anti-terpotong), non-autocorrect untuk teks Arab, serta normalisasi urutan Unicode Tasydid+Vokal agar harakat tidak bertumpuk di Android.
+  - Pratinjau langsung (Live Preview) tulisan Arab berharakat di bawah kolom esai dan dukungan ketuk harakat 1x tanpa menutup keyboard HP.
 • Peningkatan keamanan hak akses pengguna (RBAC) serta sinkronisasi penuh data master sekolah di seluruh modul Android.
 • Fitur Pengumuman Terpadu & Sasaran Kelas Dinamis:
   - Pengumuman resmi dari Pimpinan / Admin / TU / Operator kini langsung muncul di kartu Notifikasi Terbaru Beranda, Menu Notifikasi (tab Pengumuman), dan dapat diklik untuk membaca rincian pengumuman penuh.
